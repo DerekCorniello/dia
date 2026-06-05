@@ -13,6 +13,7 @@ import (
 
 	"github.com/DerekCorniello/dia/internal/config"
 	"github.com/DerekCorniello/dia/internal/platform"
+	"github.com/DerekCorniello/dia/internal/registry"
 	"github.com/DerekCorniello/dia/internal/state"
 )
 
@@ -25,29 +26,49 @@ const RecentLimit = 10
 const GracePeriod = 5 * time.Second
 
 // Runtime launches, stops, and reconciles workspace instances. It is
-// safe to call Start, Stop, and Recover concurrently from different
+// safe to call Start, Stop, and Reconcile concurrently from different
 // goroutines; the underlying state.Store handles synchronization.
 type Runtime struct {
-	pf  platform.Platform
-	st  *state.Store
-	log *slog.Logger
+	pf      platform.Platform
+	st      *state.Store
+	reg     *registry.Registry
+	plugins *registry.PluginResolver
+	log     *slog.Logger
 }
 
 // Options for constructing a Runtime.
 type Options struct {
 	Platform platform.Platform
 	Store    *state.Store
+	Registry *registry.Registry
+	Plugins  *registry.PluginResolver
 	Logger   *slog.Logger
 }
 
-// New returns a Runtime. Platform and Store are required; Logger falls
-// back to slog.Default.
+// New returns a Runtime. Platform and Store are required; Registry
+// and Plugins fall back to registry.New() and an empty
+// PluginResolver (searches the process PATH); Logger falls back to
+// slog.Default().
 func New(opts Options) *Runtime {
 	log := opts.Logger
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Runtime{pf: opts.Platform, st: opts.Store, log: log}
+	reg := opts.Registry
+	if reg == nil {
+		reg = registry.New()
+	}
+	plugins := opts.Plugins
+	if plugins == nil {
+		plugins = registry.NewPluginResolver()
+	}
+	return &Runtime{
+		pf:      opts.Platform,
+		st:      opts.Store,
+		reg:     reg,
+		plugins: plugins,
+		log:     log,
+	}
 }
 
 // Start launches every app in the workspace concurrently, persists the
@@ -128,7 +149,54 @@ func (r *Runtime) Start(w *config.Workspace, src config.Source) (*state.Instance
 func (r *Runtime) launchOne(app config.App, workspaceName, instanceID string) state.AppProcess {
 	out := state.AppProcess{Type: app.Type, Cmd: app.Cmd, Status: state.StatusRunning}
 
-	cwd, err := resolvePath(app.Cwd)
+	action, err := r.reg.Resolve(app, r.plugins)
+	if err != nil {
+		out.Status = state.StatusCrashed
+		out.Err = err.Error()
+		r.log.Error("resolve", "workspace", workspaceName, "app", app.Type, "error", err)
+		return out
+	}
+
+	switch action.Kind {
+	case registry.ActionOpenURL:
+		if action.URL == "" {
+			out.Status = state.StatusCrashed
+			out.Err = "open url: empty URL"
+			return out
+		}
+		if err := r.pf.OpenURL(action.URL); err != nil {
+			out.Status = state.StatusCrashed
+			out.Err = "open url: " + err.Error()
+			r.log.Error("open url", "workspace", workspaceName, "app", app.Type, "error", err)
+			return out
+		}
+		// OpenURL hands off to the OS; there is no PID to track.
+		// Record the URL in the Cmd field so the user can see what
+		// was opened in the UI and the state file.
+		out.Cmd = action.URL
+		r.log.Info("opened url",
+			"workspace", workspaceName,
+			"instance", instanceID,
+			"app", app.Type,
+			"url", action.URL,
+		)
+		return out
+
+	case registry.ActionLaunch:
+		// fall through to launch handling below
+	default:
+		out.Status = state.StatusCrashed
+		out.Err = fmt.Sprintf("unknown action kind: %v", action.Kind)
+		return out
+	}
+
+	if action.Launch == nil {
+		out.Status = state.StatusCrashed
+		out.Err = "launch: nil opts"
+		return out
+	}
+
+	cwd, err := resolvePath(action.Launch.Cwd)
 	if err != nil {
 		out.Status = state.StatusCrashed
 		out.Err = "resolve cwd: " + err.Error()
@@ -136,29 +204,11 @@ func (r *Runtime) launchOne(app config.App, workspaceName, instanceID string) st
 		return out
 	}
 
-	var env []string
-	if len(app.Env) > 0 {
-		env = make([]string, 0, len(app.Env))
-		for k, v := range app.Env {
-			env = append(env, k+"="+v)
-		}
-	}
-
-	cmd, args, err := splitCmd(app.Cmd)
-	if err != nil {
-		out.Status = state.StatusCrashed
-		out.Err = err.Error()
-		return out
-	}
-	if len(app.Args) > 0 {
-		args = append(args, app.Args...)
-	}
-
 	handle, err := r.pf.Launch(platform.LaunchOpts{
-		Cmd:  cmd,
-		Args: args,
+		Cmd:  action.Launch.Cmd,
+		Args: action.Launch.Args,
 		Cwd:  cwd,
-		Env:  env,
+		Env:  action.Launch.Env,
 	})
 	if err != nil {
 		out.Status = state.StatusCrashed
@@ -179,7 +229,8 @@ func (r *Runtime) launchOne(app config.App, workspaceName, instanceID string) st
 
 // Stop terminates every running app in the instance. With force=false
 // a SIGTERM is sent and the runtime waits up to GracePeriod for the
-// processes to exit before escalating to SIGKILL.
+// processes to exit before escalating to SIGKILL. Apps without a
+// tracked PID (e.g. URL opens) are simply marked stopped.
 func (r *Runtime) Stop(id string, force bool) error {
 	var inst state.Instance
 	ok := false
@@ -197,6 +248,7 @@ func (r *Runtime) Stop(id string, force bool) error {
 
 	for i, app := range inst.Apps {
 		if app.PID <= 0 || app.Status != state.StatusRunning {
+			inst.Apps[i].Status = state.StatusStopped
 			continue
 		}
 		if err := r.pf.Kill(app.PID, force); err != nil {

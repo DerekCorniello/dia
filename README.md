@@ -12,8 +12,10 @@ See [PLAN.md](./PLAN.md) for the full design and implementation plan.
 
 - JetBrains-style desktop launcher (Wails + Svelte)
 - Workspace definitions in YAML
-- Built-in app types: editor, terminal, browser, service, custom
-- First-class `gh` CLI integration for GitHub workflows
+- Built-in app types: `local`, `editor`, `terminal`, `service`, `custom`
+  (all spawn a command), `open` and `browser` (open a URL), `gh` and
+  `gh:pr`/`gh:issue`/`gh:checkout`/`gh:repo-clone` (wrappers around
+  the `gh` CLI)
 - Third-party app types via `dia-*` executables on `PATH`
 - Both global and project-local configs with discovery
 - Cross-platform: Linux, macOS, Windows
@@ -24,7 +26,7 @@ See [PLAN.md](./PLAN.md) for the full design and implementation plan.
 ### From source (requires Go 1.26+)
 
 ```sh
-go install github.com/DerekCorniello/dia/cmd/dia@latest
+go install github.com/DerekCorniello/dia@latest
 ```
 
 ### Prebuilt binaries
@@ -67,6 +69,29 @@ apps:
     url: http://localhost:8080
 ```
 
+## App types
+
+| Type            | Required fields          | What it does                                              |
+|-----------------|--------------------------|-----------------------------------------------------------|
+| (default)       | `cmd`                    | Runs the program. `Cmd` may be a single program name or a shell-style string with arguments. `args` is appended. |
+| `local`         | `cmd`                    | Same as default.                                          |
+| `editor`        | `cmd`                    | Label for `local`; renders with an editor icon.           |
+| `terminal`      | `cmd`                    | Label for `local`; renders with a terminal icon.          |
+| `service`       | `cmd`                    | Label for `local`; renders with a service icon.           |
+| `custom`        | `cmd`                    | Label for `local`; renders with a generic icon.           |
+| `open`          | `url`                    | Opens the URL in the OS default handler.                  |
+| `browser`       | `url` (http/https)        | Opens the URL in the default browser.                     |
+| `gh`            | `cmd` (subcommand)       | Runs `gh <cmd> <args...>`.                                |
+| `gh:pr`         | -                        | Runs `gh pr <args...>`.                                   |
+| `gh:issue`      | -                        | Runs `gh issue <args...>`.                                |
+| `gh:checkout`   | -                        | Runs `gh checkout <args...>`.                             |
+| `gh:repo-clone` | `url`                    | Runs `gh repo clone <url> [cwd]`.                         |
+| `plugin`        | `plugin` (name)          | Runs `dia-<name>` from `$PATH`.                           |
+| `<unknown>`     | -                        | Implicit: runs `dia-<type>` from `$PATH` if it exists.    |
+
+All launch types accept `cwd` (path, `~` and `$VAR` expanded) and `env`
+(map of string to string).
+
 Project-local configs are also supported. Drop a `.dia.yaml` at the root of
 your repo and dia will pick it up automatically.
 
@@ -86,18 +111,34 @@ dia doctor              # smoke checks
 
 ## Plugins
 
-Third-party app types are just executables on your `PATH` named `dia-*`.
-dia discovers them at startup and registers each as
-`type: <name-without-prefix>`.
+Third-party app types are executables on your `PATH` named `dia-<name>`.
+dia discovers them at startup and registers each as either:
 
-For example, `dia-foo` on `PATH` is invoked as:
+- `type: <name>` (implicit; the type string is the plugin name)
+- `type: plugin` with `plugin: <name>` (explicit)
+
+For example, `dia-foo` on `PATH` is invoked from a workspace as:
 
 ```yaml
-- type: foo
+- type: foo            # implicit
+  args: ["--some", "flag"]
+  cwd: ~/projects/foo
+  env:
+    FOO: bar
 ```
 
-The plugin contract: dia sends the app spec as JSON on stdin. Exit code 0
-means success; non-zero means error; stderr is surfaced in dia's log.
+Or explicitly:
+
+```yaml
+- type: plugin
+  plugin: foo
+  args: ["--some", "flag"]
+```
+
+dia runs the plugin exactly like a `local` app: detached in its own
+session/process group, with the given `args`, `cwd`, and `env`. There
+is no JSON-RPC or stdin protocol in v1. dia tracks the plugin's PID
+and cleans up the whole process tree when you stop the workspace.
 
 A reference implementation is provided at
 `examples/plugins/dia-fake.sh`.
@@ -127,7 +168,7 @@ cmd/dia/             entry point
 internal/config      YAML, validation, discovery
 internal/runtime     instance lifecycle, PID tracking
 internal/platform    OS-specific process launching
-internal/apps        app-type registry, built-ins, plugins
+internal/registry    app-type registry, built-ins, plugin resolution
 internal/state       XDG paths, JSON state store
 internal/cli         cobra commands
 internal/wailsapp    bindings exposed to the Svelte UI

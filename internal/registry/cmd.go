@@ -1,19 +1,20 @@
-package runtime
+package registry
 
 import (
 	"fmt"
 	"strings"
 )
 
-// splitCmd parses a single Cmd string into the program name and its
-// arguments. It honours single and double quotes so that paths with
-// spaces work, e.g. code "/Users/me/My Code". The caller can still
-// append extra Args afterwards; this only handles the case where the
-// user packed everything into Cmd for convenience.
-func splitCmd(cmd string) (string, []string, error) {
+// splitProgram parses a user-written `Cmd` field into the program
+// name and a list of leading arguments. It honours single and double
+// quotes so that paths with spaces work, e.g. `code "/Users/me/My Code"`.
+// The caller can still append extra Args afterwards; this just
+// unpacks the part of the command that the user put into `Cmd` for
+// convenience.
+func splitProgram(cmd string) (string, []string, error) {
 	cmd = strings.TrimSpace(cmd)
 	if cmd == "" {
-		return "", nil, fmt.Errorf("splitCmd: empty command")
+		return "", nil, fmt.Errorf("cmd is empty")
 	}
 	var args []string
 	var cur strings.Builder
@@ -42,13 +43,13 @@ func splitCmd(cmd string) (string, []string, error) {
 		}
 	}
 	if quote != 0 {
-		return "", nil, fmt.Errorf("splitCmd: unterminated %q in %q", quote, cmd)
+		return "", nil, fmt.Errorf("unterminated %q in %q", quote, cmd)
 	}
 	if cur.Len() > 0 {
 		flush()
 	}
 	if len(args) == 0 {
-		return "", nil, fmt.Errorf("splitCmd: no tokens in %q", cmd)
+		return "", nil, fmt.Errorf("no tokens in %q", cmd)
 	}
 	return args[0], args[1:], nil
 }

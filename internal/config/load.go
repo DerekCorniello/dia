@@ -117,11 +117,20 @@ func validateApp(a *App, prefix string, errs *ValidationErrors) {
 				Msg:  fmt.Sprintf("required for type %q", a.Type),
 			})
 		}
-	case "service", "custom":
+	case "service", "custom", "local":
 		if a.Cmd == "" {
 			*errs = append(*errs, ValidationError{
 				Path: prefix + ".cmd",
 				Msg:  fmt.Sprintf("required for type %q", a.Type),
+			})
+		}
+	case "open":
+		// `open` is the general URL-in-default-handler type;
+		// mailto:, file://, ssh://, custom schemes are all fine.
+		if a.Url == "" {
+			*errs = append(*errs, ValidationError{
+				Path: prefix + ".url",
+				Msg:  "required for type \"open\"",
 			})
 		}
 	case "browser":
@@ -137,14 +146,37 @@ func validateApp(a *App, prefix string, errs *ValidationErrors) {
 				Msg:  "must start with http:// or https://",
 			})
 		}
-	case "gh:pr", "gh:issue", "gh:repo-clone", "gh:checkout":
-		// No required fields at the config layer; gh wrappers
-		// derive their inputs from cwd at launch time.
+	case "gh":
+		// `gh` is a thin wrapper around the gh CLI. The first
+		// positional (cmd) is the gh subcommand, the rest are
+		// its arguments.
+		if a.Cmd == "" {
+			*errs = append(*errs, ValidationError{
+				Path: prefix + ".cmd",
+				Msg:  "required for type \"gh\" (the gh subcommand, e.g. \"pr\")",
+			})
+		}
+	case "gh:pr", "gh:issue", "gh:checkout":
+		// Shorthand: the subcommand is baked into the type. No
+		// required fields; args are passed through.
+	case "gh:repo-clone":
+		if a.Url == "" {
+			*errs = append(*errs, ValidationError{
+				Path: prefix + ".url",
+				Msg:  "required for type \"gh:repo-clone\"",
+			})
+		}
+	case "plugin":
+		if a.Plugin == "" {
+			*errs = append(*errs, ValidationError{
+				Path: prefix + ".plugin",
+				Msg:  "required for type \"plugin\" (the suffix after dia-)",
+			})
+		}
 	default:
-		// Unknown type is accepted: it may be a third-party
-		// dia-* plugin registered at startup. The apps
-		// package will resolve it; if no launcher matches,
-		// a warning is logged at launch.
+		// Unknown type is accepted: the registry will try to
+		// resolve it as `dia-<type>` on PATH. If no executable
+		// matches, the app fails to launch with a clear error.
 	}
 
 	if a.Type == "" && a.Cmd == "" && a.Url == "" && a.Plugin == "" {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/DerekCorniello/dia/internal/config"
 	"github.com/DerekCorniello/dia/internal/platform"
+	"github.com/DerekCorniello/dia/internal/registry"
 	"github.com/DerekCorniello/dia/internal/state"
 )
 
@@ -37,6 +39,8 @@ type mockPlatform struct {
 	killFn      func(pid int, force bool) error
 	running     map[int]bool
 	runningSeed map[int]bool
+	openURLs    []string
+	openURLErr  error
 }
 
 type killCall struct {
@@ -46,6 +50,13 @@ type killCall struct {
 
 func newMock() *mockPlatform {
 	return &mockPlatform{nextPID: 1000, running: map[int]bool{}, runningSeed: map[int]bool{}}
+}
+
+// registryFromDir returns a PluginResolver that searches only the
+// given directory. Used by tests to avoid polluting the real PATH.
+func registryFromDir(t *testing.T, dir string) *registry.PluginResolver {
+	t.Helper()
+	return registry.NewPluginResolverAt([]string{dir})
 }
 
 func (m *mockPlatform) Launch(opts platform.LaunchOpts) (platform.ProcessHandle, error) {
@@ -58,7 +69,13 @@ func (m *mockPlatform) Launch(opts platform.LaunchOpts) (platform.ProcessHandle,
 	return &mockHandle{pid: pid, pf: m}, nil
 }
 
-func (m *mockPlatform) OpenURL(url string) error { return nil }
+func (m *mockPlatform) OpenURL(url string) error {
+	m.mu.Lock()
+	m.openURLs = append(m.openURLs, url)
+	err := m.openURLErr
+	m.mu.Unlock()
+	return err
+}
 
 func (m *mockPlatform) IsRunning(pid int) (bool, error) {
 	m.mu.Lock()
@@ -158,40 +175,198 @@ func TestResolvePath(t *testing.T) {
 	}
 }
 
-func TestSplitCmd(t *testing.T) {
-	cases := []struct {
-		in        string
-		prog      string
-		args      []string
-		expectErr bool
-	}{
-		{"code", "code", nil, false},
-		{"code .", "code", []string{"."}, false},
-		{`code "/Users/me/My Code"`, "code", []string{"/Users/me/My Code"}, false},
-		{`sh -c "echo hi"`, "sh", []string{"-c", "echo hi"}, false},
-		{`weird ''`, "weird", []string{""}, false},
-		{`unterminated "quote`, "", nil, true},
-		{`   `, "", nil, true},
-		{"", "", nil, true},
+func TestStart_OpenURL(t *testing.T) {
+	rt, pf, _ := newTestRuntime(t)
+	w := &config.Workspace{
+		Name: "urlws",
+		Apps: []config.App{
+			{Type: "browser", Url: "https://example.com"},
+			{Type: "open", Url: "mailto:hi@example.com"},
+		},
 	}
-	for _, c := range cases {
-		p, a, err := splitCmd(c.in)
-		if c.expectErr {
-			if err == nil {
-				t.Errorf("splitCmd(%q) expected error, got prog=%q args=%v", c.in, p, a)
-			}
-			continue
+	inst, err := rt.Start(w, config.Source{Path: "/x"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if len(inst.Apps) != 2 {
+		t.Fatalf("apps = %d, want 2", len(inst.Apps))
+	}
+	for i, a := range inst.Apps {
+		if a.PID != 0 {
+			t.Errorf("apps[%d].PID = %d, want 0 (URL apps have no PID)", i, a.PID)
 		}
-		if err != nil {
-			t.Errorf("splitCmd(%q) unexpected error: %v", c.in, err)
-			continue
+		if a.Status != state.StatusRunning {
+			t.Errorf("apps[%d].Status = %s, want running", i, a.Status)
 		}
-		if p != c.prog {
-			t.Errorf("splitCmd(%q) prog = %q, want %q", c.in, p, c.prog)
-		}
-		if fmt.Sprintf("%v", a) != fmt.Sprintf("%v", c.args) {
-			t.Errorf("splitCmd(%q) args = %v, want %v", c.in, a, c.args)
-		}
+	}
+	// Apps launch concurrently, so don't assume openURLs order.
+	sort.Strings(pf.openURLs)
+	if got := strings.Join(pf.openURLs, ","); got != "https://example.com,mailto:hi@example.com" {
+		t.Errorf("openURLs = %q, want https...,mailto:...", got)
+	}
+	// The Cmd field in the state should be the URL, not the type
+	// or anything else, so the user can see what was opened.
+	if inst.Apps[0].Cmd != "https://example.com" {
+		t.Errorf("apps[0].Cmd = %q, want https://example.com", inst.Apps[0].Cmd)
+	}
+}
+
+func TestStart_OpenURLFailure(t *testing.T) {
+	rt, pf, _ := newTestRuntime(t)
+	pf.openURLErr = errors.New("xdg-open exploded")
+	w := &config.Workspace{
+		Name: "failurl",
+		Apps: []config.App{{Type: "open", Url: "https://example.com"}},
+	}
+	inst, err := rt.Start(w, config.Source{Path: "/x"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if inst.Apps[0].Status != state.StatusCrashed {
+		t.Errorf("Status = %s, want crashed", inst.Apps[0].Status)
+	}
+	if !strings.Contains(inst.Apps[0].Err, "open url") {
+		t.Errorf("Err = %q, want contains 'open url'", inst.Apps[0].Err)
+	}
+}
+
+func TestStart_GHSugar(t *testing.T) {
+	rt, pf, _ := newTestRuntime(t)
+	w := &config.Workspace{
+		Name: "ghws",
+		Apps: []config.App{
+			{Type: "gh:pr", Args: []string{"view", "123", "--web"}},
+		},
+	}
+	inst, err := rt.Start(w, config.Source{Path: "/x"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if inst.Apps[0].PID == 0 {
+		t.Fatalf("no process started")
+	}
+	if got := pf.launched[0].Cmd; got != "gh" {
+		t.Errorf("Cmd = %q, want gh", got)
+	}
+	want := []string{"pr", "view", "123", "--web"}
+	if strings.Join(pf.launched[0].Args, ",") != strings.Join(want, ",") {
+		t.Errorf("Args = %v, want %v", pf.launched[0].Args, want)
+	}
+}
+
+func TestStart_Plugin_Explicit(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "dia-fake"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rt, pf, st := newTestRuntime(t)
+	rt.plugins = registryFromDir(t, dir)
+	w := &config.Workspace{
+		Name: "plugws",
+		Apps: []config.App{
+			{Type: "plugin", Plugin: "fake", Args: []string{"x"}},
+		},
+	}
+	inst, err := rt.Start(w, config.Source{Path: "/x"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if inst.Apps[0].Status != state.StatusRunning {
+		t.Errorf("Status = %s, want running", inst.Apps[0].Status)
+	}
+	if inst.Apps[0].PID == 0 {
+		t.Errorf("PID = 0")
+	}
+	if filepath.Base(pf.launched[0].Cmd) != "dia-fake" {
+		t.Errorf("Cmd = %q, want .../dia-fake", pf.launched[0].Cmd)
+	}
+	if got := strings.Join(pf.launched[0].Args, ","); got != "x" {
+		t.Errorf("Args = %q, want x", got)
+	}
+	if !strings.Contains(st.Snapshot().Instances[inst.ID].WorkspaceName, "plugws") {
+		t.Errorf("instance not persisted")
+	}
+}
+
+func TestStart_Plugin_Implicit(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "dia-foo"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rt, pf, _ := newTestRuntime(t)
+	rt.plugins = registryFromDir(t, dir)
+	w := &config.Workspace{
+		Name: "impl",
+		Apps: []config.App{{Type: "foo"}},
+	}
+	inst, err := rt.Start(w, config.Source{Path: "/x"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if inst.Apps[0].Status != state.StatusRunning {
+		t.Errorf("Status = %s, want running (got Err=%q)", inst.Apps[0].Status, inst.Apps[0].Err)
+	}
+	if filepath.Base(pf.launched[0].Cmd) != "dia-foo" {
+		t.Errorf("Cmd = %q, want dia-foo", pf.launched[0].Cmd)
+	}
+}
+
+func TestStart_PluginNotFound(t *testing.T) {
+	rt, _, _ := newTestRuntime(t)
+	rt.plugins = registryFromDir(t, t.TempDir())
+	w := &config.Workspace{
+		Name: "nope",
+		Apps: []config.App{{Type: "plugin", Plugin: "ghost"}},
+	}
+	inst, err := rt.Start(w, config.Source{Path: "/x"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if inst.Apps[0].Status != state.StatusCrashed {
+		t.Errorf("Status = %s, want crashed", inst.Apps[0].Status)
+	}
+	if !strings.Contains(inst.Apps[0].Err, "ghost") {
+		t.Errorf("Err = %q, want contains 'ghost'", inst.Apps[0].Err)
+	}
+}
+
+func TestStart_LocalCmdWithSpaces(t *testing.T) {
+	rt, pf, _ := newTestRuntime(t)
+	w := &config.Workspace{
+		Name: "splitsy",
+		Apps: []config.App{{Type: "local", Cmd: `code "/tmp/My Code"`}},
+	}
+	if _, err := rt.Start(w, config.Source{Path: "/x"}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if pf.launched[0].Cmd != "code" {
+		t.Errorf("Cmd = %q, want code", pf.launched[0].Cmd)
+	}
+	if got := strings.Join(pf.launched[0].Args, ","); got != "/tmp/My Code" {
+		t.Errorf("Args = %v, want [/tmp/My Code]", pf.launched[0].Args)
+	}
+}
+
+func TestStop_OpenAppNoPID(t *testing.T) {
+	rt, pf, _ := newTestRuntime(t)
+	w := &config.Workspace{
+		Name: "ws",
+		Apps: []config.App{
+			{Type: "local", Cmd: "echo"},
+			{Type: "open", Url: "https://example.com"},
+		},
+	}
+	inst, err := rt.Start(w, config.Source{Path: "/x"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := rt.Stop(inst.ID, true); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	// Only the local app should have a kill call. The open app
+	// has no PID.
+	if len(pf.killCalls) != 1 {
+		t.Errorf("killCalls = %d, want 1", len(pf.killCalls))
 	}
 }
 
@@ -210,13 +385,13 @@ func TestPushRecent(t *testing.T) {
 	}
 }
 
-func TestStart_LocalPlugin(t *testing.T) {
+func TestStart_LocalAndCustom(t *testing.T) {
 	rt, pf, st := newTestRuntime(t)
 	w := &config.Workspace{
 		Name: "test",
 		Apps: []config.App{
 			{Type: "local", Cmd: "echo", Cwd: t.TempDir()},
-			{Type: "plugin", Cmd: "echo", Cwd: t.TempDir()},
+			{Type: "custom", Cmd: "echo", Cwd: t.TempDir()},
 		},
 	}
 	inst, err := rt.Start(w, config.Source{Path: "/fake/path/test.yaml"})
@@ -275,11 +450,7 @@ func TestStart_PreservesAppOrder(t *testing.T) {
 }
 
 func TestStart_AllAppsFail(t *testing.T) {
-	rt, pf, _ := newTestRuntime(t)
-	pf.killFn = func(pid int, force bool) error { return nil }
-	pf.killFn = nil
-	pfLaunch := pf.Launch
-	_ = pfLaunch
+	rt, _, _ := newTestRuntime(t)
 	rt.pf = &failingPlatform{}
 	w := &config.Workspace{
 		Name: "broken",

@@ -15,4 +15,3 @@ func TestNew(t *testing.T) {
 		t.Errorf("got %T, want *unixPlatform", pf)
 	}
 }
-
