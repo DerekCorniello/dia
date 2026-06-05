@@ -7,15 +7,13 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/DerekCorniello/dia/internal/config"
+	"github.com/DerekCorniello/dia/internal/diag"
 	"github.com/DerekCorniello/dia/internal/platform"
 	"github.com/DerekCorniello/dia/internal/registry"
 	dia "github.com/DerekCorniello/dia/internal/runtime"
@@ -23,9 +21,11 @@ import (
 )
 
 // App is the wails-bound application surface. Methods on App are
-// exposed to the Svelte frontend via wailsjs/go/wailsapp/App.*. The
-// same type is embedded by main.App, so those bindings also appear
-// under wailsjs/go/main/App.*.
+// exposed to the Svelte frontend via the generated
+// wailsjs/go/wailsapp/App module. main.go binds *App directly;
+// routing this through a main-package facade was tried first and
+// the generator still followed the methods' return types into
+// the wailsapp package.
 type App struct {
 	ctx context.Context
 
@@ -73,6 +73,12 @@ func (a *App) Startup(ctx context.Context) {
 	if err := a.rt.Reconcile(); err != nil {
 		a.logger.Warn("reconcile on startup", "error", err)
 	}
+
+	// TODO(cross-process-state): wire a fsnotify watcher on
+	// a.store.Path() and re-Snapshot the runtime when the file
+	// changes outside this process (e.g. `dia start foo` from a
+	// shell). Deferred to v1.1 to avoid the fsnotify dependency in
+	// v1 and to keep this method's contract trivial.
 }
 
 // ListWorkspaces returns the discovered workspaces with a running
@@ -229,44 +235,22 @@ func (a *App) Reconcile() (ReconcileInfo, error) {
 // Plugins returns the absolute paths of every dia-* executable on
 // the process PATH.
 func (a *App) Plugins() []string {
-	return scanPlugins()
+	return diag.ScanPlugins()
 }
 
 // Doctor runs smoke checks and returns one row per check.
 func (a *App) Doctor() []CheckInfo {
-	var checks []CheckInfo
-	checks = append(checks, CheckInfo{
-		Name:   "platform",
-		Status: "ok",
-		Detail: runtime.GOOS + "/" + runtime.GOARCH,
-	})
+	stateDir, stateFile := "", ""
 	if a.store != nil {
-		stateDir := filepath.Dir(a.store.Path())
-		checks = append(checks,
-			CheckInfo{Name: "state dir", Status: "ok", Detail: stateDir},
-			CheckInfo{Name: "state file", Status: "ok", Detail: a.store.Path()},
-		)
-	} else {
-		checks = append(checks, CheckInfo{Name: "state", Status: "fail", Detail: "store not initialized"})
+		stateFile = a.store.Path()
+		stateDir = filepath.Dir(stateFile)
 	}
-	if ghPath, err := exec.LookPath("gh"); err != nil {
-		checks = append(checks, CheckInfo{Name: "gh cli", Status: "warn", Detail: "not found"})
-	} else {
-		checks = append(checks, CheckInfo{Name: "gh cli", Status: "ok", Detail: ghPath})
+	rows := diag.RunChecks(stateDir, stateFile)
+	out := make([]CheckInfo, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, CheckInfo{Name: r.Name, Status: r.Status, Detail: r.Detail})
 	}
-	helper := platformOpenHelper()
-	if path, err := exec.LookPath(helper); err != nil {
-		checks = append(checks, CheckInfo{Name: "url handler", Status: "warn", Detail: helper + " not found"})
-	} else {
-		checks = append(checks, CheckInfo{Name: "url handler", Status: "ok", Detail: path})
-	}
-	plugins := scanPlugins()
-	checks = append(checks, CheckInfo{
-		Name:   "plugins",
-		Status: "ok",
-		Detail: fmt.Sprintf("%d dia-* found", len(plugins)),
-	})
-	return checks
+	return out
 }
 
 // Paths returns the on-disk locations dia uses, for the UI to
@@ -370,52 +354,6 @@ func toInstanceInfo(inst *state.Instance) *InstanceInfo {
 		Status:        string(inst.Status),
 		Apps:          apps,
 	}
-}
-
-func platformOpenHelper() string {
-	switch runtime.GOOS {
-	case "darwin":
-		return "open"
-	case "windows":
-		return "cmd"
-	}
-	return "xdg-open"
-}
-
-func scanPlugins() []string {
-	dirs := strings.Split(os.Getenv("PATH"), string(os.PathListSeparator))
-	seen := map[string]bool{}
-	var out []string
-	for _, d := range dirs {
-		if d == "" {
-			continue
-		}
-		entries, err := os.ReadDir(d)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			name := e.Name()
-			if !strings.HasPrefix(name, "dia-") {
-				continue
-			}
-			full := filepath.Join(d, name)
-			info, err := e.Info()
-			if err != nil {
-				continue
-			}
-			if runtime.GOOS != "windows" && info.Mode()&0o111 == 0 {
-				continue
-			}
-			if seen[full] {
-				continue
-			}
-			seen[full] = true
-			out = append(out, full)
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 func starterYAML(name string) string {

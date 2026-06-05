@@ -16,6 +16,14 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// Note: wails binds *wailsapp.App directly. The generator routes
+// the JS bindings under wailsjs/go/wailsapp/App, not
+// wailsjs/go/main/App, because the type's Go package is wailsapp.
+// A main.App facade that delegated to wailsapp.App was tried first
+// but the generator still put the bindings in wailsapp once the
+// methods returned wailsapp.* types; binding the implementation
+// type directly is the simpler choice.
+
 func main() {
 	if len(os.Args) > 1 {
 		os.Exit(cli.Run(os.Args[1:]))

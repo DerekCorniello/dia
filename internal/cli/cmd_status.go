@@ -38,11 +38,17 @@ func newStatusCmd() *cobra.Command {
 					return err
 				}
 				for _, a := range inst.Apps {
-					pidOrUrl := a.Cmd
+					var pidOrUrl, cmdCol string
 					if a.PID > 0 {
 						pidOrUrl = "pid=" + strconv.Itoa(a.PID)
+						cmdCol = a.Cmd
+					} else {
+						// URL apps have no PID; runtime stores the
+						// URL in Cmd, so show it as the "pid/url"
+						// column and leave the command column empty.
+						pidOrUrl = a.Cmd
 					}
-					if err := out.Printf("    %-10s %-10s %-8s %s\n", a.Type, a.Status, pidOrUrl, a.Cmd); err != nil {
+					if err := out.Printf("    %-10s %-10s %-8s %s\n", a.Type, a.Status, pidOrUrl, cmdCol); err != nil {
 						return err
 					}
 				}

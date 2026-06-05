@@ -2,6 +2,8 @@ package cli
 
 import (
 	"github.com/spf13/cobra"
+
+	"github.com/DerekCorniello/dia/internal/diag"
 )
 
 func newPluginsCmd() *cobra.Command {
@@ -11,7 +13,7 @@ func newPluginsCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := newOutput(cmd)
-			plugins := scanPlugins()
+			plugins := diag.ScanPlugins()
 			if out.IsJSON() {
 				return out.JSON(plugins)
 			}

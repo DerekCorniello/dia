@@ -5,26 +5,123 @@ All notable changes to dia are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.0] - 2026-06-04
+
+First end-to-end publishable v1 release. All six implementation
+phases (0-6) are complete; see PLAN.md for the full breakdown.
 
 ### Added
 
-- Phase 0 skeleton: Wails v2 + Svelte + TypeScript + Vite desktop app
-- `internal/version` package with build-time Version, Commit, BuildTime vars
-- `internal/cli` cobra-based CLI with `--version`/`-V` and `--help`
-- `internal/wailsapp` package; main-package `App` facade keeps wails binding
-  working while implementation lives in `internal/*`
-- `Makefile` with `dev`, `build`, `test`, `vet`, `fmt`, `tidy`, `clean`,
-  `install-tools` targets
-- `.goreleaser.yaml` for cross-platform release packaging
-- GitHub Actions CI: `go test` + `go vet` + `gofmt` on linux, macos, windows
-- GitHub Actions release: matrix build via `wails build`, then GoReleaser
-  packaging and `softprops/action-gh-release` publish
-- `README.md` and updated `PLAN.md`
+**Phase 0 - Skeleton**
+- Wails v2 + Svelte + TypeScript + Vite desktop app
+- `internal/version` package with build-time `Version`, `Commit`,
+  `BuildTime` vars (overridable via `-ldflags`)
+- `internal/cli` cobra-based CLI skeleton with `--version`/`-V`
+  and `--help`
+- `Makefile` with `dev`, `build`, `test`, `vet`, `fmt`, `tidy`,
+  `clean`, `install-tools` targets
+- `.goreleaser.yaml` for cross-platform release packaging (per-OS
+  wails build hooks + tar.gz/zip archives)
+- GitHub Actions CI: `go test` + `go vet` + `gofmt` on linux,
+  macos, windows
+- GitHub Actions release: matrix wails build per OS/arch +
+  GoReleaser + `softprops/action-gh-release` publish
 
-### Known limitations
+**Phase 1 - Config + state**
+- `internal/config`: workspace YAML schema, hand-rolled validator
+  with precise per-field error messages, discovery from global
+  (`$XDG_CONFIG_HOME/dia/workspaces/*.yaml`) and project-local
+  (`.dia.yaml`, walked up from cwd) with project-local shadowing
+- `internal/state`: XDG state-dir resolution, atomic JSON store
+  with mutex, instance/recent/favorites shape
 
-- No real subcommands yet (Phase 4); the bare CLI currently shows help for
-  any unknown argument and exits 0
-- No actual workspaces (Phase 1+)
-- Frontend is a placeholder; real UI lands in Phase 5
+**Phase 2 - Platform + runtime**
+- `internal/platform`: `Platform` interface + Linux/macOS/Windows
+  impls; `Launch` uses `Setsid` (unix) / `CREATE_NEW_PROCESS_GROUP`
+  (windows); `IsRunning` via `kill 0` / `tasklist`; `Kill` via
+  SIGTERM-to-SIGKILL with 5s grace; `OpenURL` via `xdg-open` /
+  `open` / `cmd /c start ""`; `RevealInFileManager` per OS
+- `internal/runtime`: `Runtime` with concurrent per-app launch,
+  state persistence, `Stop`/`StopAll`/`Reconcile`; 12-char base32
+  instance IDs from `crypto/rand` (no UUID dep); integration test
+  launches real `sleep` and verifies PID/kill
+
+**Phase 3 - App-type registry + plugins**
+- `internal/registry`: `Registry` mapping app types to launch
+  actions; built-ins for `local`/`editor`/`terminal`/`service`/
+  `custom` (type aliases of `local`), `open`, `browser`, `gh` +
+  `gh:pr`/`gh:issue`/`gh:checkout`/`gh:repo-clone` sugars, and
+  `plugin` with implicit `dia-<type>` fallback
+- `PluginResolver` with cache; `NewPluginResolver()` (real PATH)
+  and `NewPluginResolverAt(dirs)` (test isolation); rejects
+  path-traversal in plugin names
+- `examples/plugins/dia-fake.sh` reference plugin (POSIX sh)
+- Plugin contract in v1: exec-only, no JSON-RPC/stdin protocol
+
+**Phase 4 - CLI**
+- Subcommands: `start`, `stop` (with `--force`/`--all`), `status`,
+  `list` (alias `ls`), `new` (with `--local`), `edit`, `open`,
+  `reconcile`, `doctor`, `plugins`
+- Persistent flags: `--json`, `--state-dir`, `--version`/`-V`
+- Exit codes: 0 ok, 1 general, 2 usage, 3 not found, 4 already
+  exists (matches POSIX conventions for shell scripting)
+- Per-command `--json` for machine-readable output
+
+**Phase 5 - Wails app + Svelte UI**
+- `internal/wailsapp`: 13 methods exposed to the frontend
+  (`ListWorkspaces`, `GetWorkspace`, `StartWorkspace`,
+  `StopInstance`, `StopAll`, `ListInstances`, `Reconcile`,
+  `Plugins`, `Doctor`, `Paths`, `OpenConfigFolder`,
+  `OpenStateFolder`, `NewWorkspace`); wails-bound types use
+  snake_case JSON tags matching the generated TS models
+- Svelte 4 + TS 5 + Vite 5 + Tailwind 3 (upgraded from the wails
+  template defaults of Svelte 3, Vite 3, TS 4.6)
+- Components: App (layout with header/footer/error banner),
+  WorkspaceCard (expandable), InstanceRow, SettingsPanel,
+  NewWorkspaceDialog; Svelte stores for state
+- First-run empty state with inline "Create one" CTA
+- Wails binding generator routes methods under
+  `wailsjs/go/wailsapp/App` (see "Known limitations" below)
+
+**Phase 6 - Polish**
+- `internal/diag` package: shared smoke checks
+  (`RunChecks`, `ScanPlugins`, `PlatformOpenHelper`) used by both
+  CLI and GUI
+- README: status, install, quickstart, app-types table, plugin
+  contract, project layout, known limitations
+- CHANGELOG (this file)
+- `examples/sample-workspace.yaml`: ready-to-start workspace
+- `examples/plugins/dia-fake.sh`: reference plugin implementation
+- `goreleaser check` validates config (no deprecations)
+
+### Known limitations (deferred to v1.1)
+
+- **Cross-process state visibility.** Each dia process keeps its
+  own `*state.Store` in memory. The GUI does not see changes made
+  by the CLI in another process until the user clicks Refresh.
+  Fix path: watch `$XDG_STATE_HOME/dia/state.json` with `fsnotify`
+  and push updates via wails events. Deferred to avoid the
+  `fsnotify` dependency in v1.
+- **Wails binding package path.** The generator routes
+  `*wailsapp.App` under `wailsjs/go/wailsapp/App` in TypeScript,
+  not `wailsjs/go/main/App`. A `main.App` facade was tried first
+  but the generator follows the return type's Go package. The
+  Svelte frontend imports from `wailsjs/go/wailsapp/App`; a
+  comment in `main.go` documents the choice.
+- **GUI keyboard shortcuts** (`/` for search, `Enter` to start,
+  `Ctrl+.` to stop, `Ctrl+N` for new). Deferred; not on the
+  critical path for v1.
+- **Slog output to a log file.** v1 logs to stderr only. A
+  `$XDG_STATE_HOME/dia/dia.log` file is a v1.1 addition.
+- **SBOM in release artifacts.** GoReleaser config does not
+  generate one in v1; can be added in v1.1 by enabling the
+  `sboms` section.
+
+### Notes
+
+- Wails dev hot-reload is supported via `make dev`.
+- `go install github.com/DerekCorniello/dia@latest` works for Go
+  users who do not need the GUI; the CLI surface is full.
+- Prebuilt binaries for linux/amd64, linux/arm64,
+  darwin/universal, and windows/amd64 ship in the GitHub Release
+  attached to the v0.1.0 tag.

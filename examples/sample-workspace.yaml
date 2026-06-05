@@ -1,0 +1,22 @@
+version: 1
+name: sample-workspace
+# A small workspace that exercises every built-in app type. Run
+# `dia start sample-workspace` (or click Start in the GUI) and the
+# four apps come up: an editor, a terminal, a service you can watch,
+# and a browser tab.
+
+apps:
+  - type: editor
+    cmd: echo
+    args: ["opens your editor on the workspace path"]
+
+  - type: terminal
+    cmd: bash
+    args: ["-lc", "echo terminal app; sleep 30"]
+
+  - type: service
+    cmd: bash
+    args: ["-lc", "echo service app; sleep 60"]
+
+  - type: browser
+    url: https://example.com
