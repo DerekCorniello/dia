@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -283,6 +284,9 @@ func TestPlugins_WithFixture(t *testing.T) {
 }
 
 func TestStartStopRoundtrip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sleep command not available on Windows")
+	}
 	stateDir := t.TempDir()
 	cfgDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cfgDir, "dia", "workspaces"), 0o755); err != nil {
@@ -336,6 +340,9 @@ apps:
 }
 
 func TestStartStopRoundtrip_JSON(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sleep command not available on Windows")
+	}
 	stateDir := t.TempDir()
 	cfgDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cfgDir, "dia", "workspaces"), 0o755); err != nil {

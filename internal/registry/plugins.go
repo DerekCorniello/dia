@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 )
@@ -112,9 +113,11 @@ func isExecutable(path string) bool {
 	if info.IsDir() {
 		return false
 	}
-	mode := info.Mode()
-	if mode&0o111 == 0 {
-		return false
+	if runtime.GOOS != "windows" {
+		mode := info.Mode()
+		if mode&0o111 == 0 {
+			return false
+		}
 	}
 	return true
 }
