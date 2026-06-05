@@ -1,0 +1,4 @@
+version: 1
+name: editor-no-cmd
+apps:
+  - type: editor

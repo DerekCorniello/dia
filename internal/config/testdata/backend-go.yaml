@@ -1,0 +1,11 @@
+version: 1
+name: backend-go
+apps:
+  - type: editor
+    cmd: code .
+    cwd: ~/projects/backend
+  - type: terminal
+    cmd: go run ./cmd/server
+    cwd: ~/projects/backend
+  - type: browser
+    url: http://localhost:8080

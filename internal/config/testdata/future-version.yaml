@@ -1,0 +1,5 @@
+version: 99
+name: future
+apps:
+  - type: custom
+    cmd: echo future
