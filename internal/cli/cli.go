@@ -88,8 +88,6 @@ func newRootCmd() *cobra.Command {
 	return cmd
 }
 
-type flagKey struct{}
-
 // flagValues reads the persistent flag values from the command's
 // flag set. Cobra inherits persistent flags to subcommands, so
 // flagsFromCmd works on any command in the tree.

@@ -79,3 +79,5 @@ func isZeroValue(v any) bool {
 	}
 	return false
 }
+
+var _ = isZeroValue

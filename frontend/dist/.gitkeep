@@ -1,0 +1,3 @@
+This file exists so the //go:embed directive in main.go does not fail when the frontend
+has not yet been built (e.g. during `go vet` or `go test` in CI). The real build output
+is written by `wails build` / `npm run build` and is not committed.
