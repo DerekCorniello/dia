@@ -147,6 +147,13 @@ func findProjectLocal(start, stopAt string) string {
 }
 
 func defaultGlobalDir() string {
+	return DefaultGlobalDir()
+}
+
+// DefaultGlobalDir is the exported form of defaultGlobalDir. It
+// returns the absolute path to the global workspace directory,
+// honoring $XDG_CONFIG_HOME and falling back to ~/.config.
+func DefaultGlobalDir() string {
 	base := os.Getenv("XDG_CONFIG_HOME")
 	if base == "" {
 		home, err := os.UserHomeDir()

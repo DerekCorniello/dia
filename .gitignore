@@ -29,3 +29,7 @@ frontend/dist
 # OS
 .DS_Store
 Thumbs.db
+
+# dia: project-local workspace
+.dia.yaml
+
