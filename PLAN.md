@@ -109,7 +109,7 @@ dia/
     apps/                        App-type registry, built-ins, gh wrappers, plugins
     state/                       XDG paths, atomic JSON store
     cli/                         cobra commands
-    wailsapp/                    Bindings exposed to the Svelte frontend
+    wailsapp/                    Implementation behind the wails-bound App; main.App is a thin facade that delegates here
     version/                     Build-time version vars (ldflags)
   frontend/                      Svelte UI (wails-managed)
   examples/                      Sample workspace YAMLs and stub dia-* plugin

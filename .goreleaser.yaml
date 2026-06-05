@@ -1,0 +1,56 @@
+version: 2
+
+project_name: dia
+
+before:
+  hooks:
+    - go mod tidy
+    - wails build -clean -trimpath -platform darwin/universal -o build/bin/dia-darwin-universal
+    - wails build -clean -trimpath -platform linux/amd64 -o build/bin/dia-linux-amd64
+    - wails build -clean -trimpath -platform linux/arm64 -o build/bin/dia-linux-arm64
+    - wails build -clean -trimpath -platform windows/amd64 -o build/bin/dia-windows-amd64.exe
+
+builds:
+  - id: dia
+    skip: true
+
+archives:
+  - id: dia
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- if eq .Os "darwin" }}macos{{ else }}{{ .Os }}{{ end }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+
+release:
+  github:
+    owner: DerekCorniello
+    name: dia
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: 'Bug fixes'
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
