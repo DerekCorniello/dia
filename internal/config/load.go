@@ -187,15 +187,26 @@ func validateApp(a *App, prefix string, errs *ValidationErrors) {
 	}
 }
 
+// ValidateName returns an error if s is not a valid workspace
+// name. Names must be non-empty, lowercase a-z / 0-9, with internal
+// hyphens allowed; must not start with a hyphen.
+func ValidateName(s string) error {
+	if !validName(s) {
+		return fmt.Errorf("invalid workspace name %q: must be lowercase a-z, 0-9, internal hyphens", s)
+	}
+	return nil
+}
+
 func validName(s string) bool {
 	if s == "" {
 		return false
 	}
+	last := len(s) - 1
 	for i, r := range s {
 		switch {
 		case r >= 'a' && r <= 'z':
 		case r >= '0' && r <= '9':
-		case r == '-' && i > 0:
+		case r == '-' && i > 0 && i < last:
 		default:
 			return false
 		}

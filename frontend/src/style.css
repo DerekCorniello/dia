@@ -1,11 +1,10 @@
-:root {
-  background-color: #1b2636;
-  color: #d6deeb;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-body {
-  margin: 0;
-  padding: 0;
-  background-color: #1b2636;
+@layer base {
+  body {
+    @apply bg-bg-800 text-fg font-sans;
+    margin: 0;
+  }
 }
