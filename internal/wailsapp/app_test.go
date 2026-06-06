@@ -80,11 +80,132 @@ func TestStartup_BuildsRuntime(t *testing.T) {
 	if got := a.ListInstances(); len(got) != 0 {
 		t.Errorf("ListInstances = %d, want 0", len(got))
 	}
-	// Plugins is allowed to be nil or an empty slice depending on
-	// whether the OS PATH was parsed to anything; both are valid
-	// for the contract.
-	if got := a.Plugins(); got != nil && len(got) != 0 {
-		t.Errorf("Plugins = %v, want nil or empty", got)
+}
+
+// TestSetCustomTheme_RoundTrip verifies a custom theme is persisted
+// in the state store and shows up in ListCustomThemes.
+func TestSetCustomTheme_RoundTrip(t *testing.T) {
+	withTempXDG(t)
+	a := New()
+	a.Startup(testCtx())
+
+	info := CustomThemeInfo{
+		Name:        "midnight-rose",
+		ColorScheme: "dark",
+		Colors: map[string]string{
+			"primary":      "#bd93f9",
+			"secondary":    "#ff79c6",
+			"accent":       "#50fa7b",
+			"base_100":     "#1a1b26",
+			"base_200":     "#16161e",
+			"base_300":     "#101014",
+			"base_content": "#c0caf5",
+		},
+	}
+	if err := a.SetCustomTheme(info); err != nil {
+		t.Fatalf("SetCustomTheme: %v", err)
+	}
+
+	list := a.ListCustomThemes()
+	if len(list) != 1 {
+		t.Fatalf("ListCustomThemes len = %d, want 1", len(list))
+	}
+	if list[0].Name != info.Name {
+		t.Errorf("Name = %q, want %q", list[0].Name, info.Name)
+	}
+	if list[0].Colors["primary"] != "#bd93f9" {
+		t.Errorf("Colors[primary] = %q, want #bd93f9", list[0].Colors["primary"])
+	}
+	if list[0].ColorScheme != "dark" {
+		t.Errorf("ColorScheme = %q, want dark", list[0].ColorScheme)
+	}
+}
+
+// TestSetCustomTheme_RejectsBadName verifies the name validator
+// catches unsafe names.
+func TestSetCustomTheme_RejectsBadName(t *testing.T) {
+	withTempXDG(t)
+	a := New()
+	a.Startup(testCtx())
+	for _, bad := range []string{"", "has space", "with/slash", "very-long-name-that-is-clearly-beyond-the-sixty-four-character-limit-and-should-fail"} {
+		if err := a.SetCustomTheme(CustomThemeInfo{
+			Name:        bad,
+			ColorScheme: "dark",
+			Colors:      map[string]string{"primary": "#000000"},
+		}); err == nil {
+			t.Errorf("SetCustomTheme(%q) = nil err, want error", bad)
+		}
+	}
+}
+
+// TestSetCustomTheme_RejectsBadColorScheme verifies only the two
+// daisyUI color schemes are accepted.
+func TestSetCustomTheme_RejectsBadColorScheme(t *testing.T) {
+	withTempXDG(t)
+	a := New()
+	a.Startup(testCtx())
+	for _, bad := range []string{"", "auto", "system", "DARK"} {
+		if err := a.SetCustomTheme(CustomThemeInfo{
+			Name:        "ok",
+			ColorScheme: bad,
+			Colors:      map[string]string{"primary": "#000000"},
+		}); err == nil {
+			t.Errorf("SetCustomTheme(color_scheme=%q) = nil err, want error", bad)
+		}
+	}
+}
+
+// TestSetCustomTheme_RejectsBadHexAndSlot verifies malformed hex
+// values and unknown color slots are rejected before persistence.
+func TestSetCustomTheme_RejectsBadHexAndSlot(t *testing.T) {
+	withTempXDG(t)
+	a := New()
+	a.Startup(testCtx())
+	if err := a.SetCustomTheme(CustomThemeInfo{
+		Name:        "ok",
+		ColorScheme: "dark",
+		Colors:      map[string]string{"primary": "not-a-hex"},
+	}); err == nil {
+		t.Error("expected error on bad hex")
+	}
+	if err := a.SetCustomTheme(CustomThemeInfo{
+		Name:        "ok",
+		ColorScheme: "dark",
+		Colors:      map[string]string{"made_up_slot": "#000000"},
+	}); err == nil {
+		t.Error("expected error on unknown slot")
+	}
+	if err := a.SetCustomTheme(CustomThemeInfo{
+		Name:        "ok",
+		ColorScheme: "dark",
+		Colors:      map[string]string{},
+	}); err == nil {
+		t.Error("expected error on empty colors")
+	}
+}
+
+// TestDeleteCustomTheme verifies deletion works and a missing name
+// is a no-op (not an error).
+func TestDeleteCustomTheme(t *testing.T) {
+	withTempXDG(t)
+	a := New()
+	a.Startup(testCtx())
+	if err := a.SetCustomTheme(CustomThemeInfo{
+		Name:        "x",
+		ColorScheme: "dark",
+		Colors:      map[string]string{"primary": "#000000"},
+	}); err != nil {
+		t.Fatalf("SetCustomTheme: %v", err)
+	}
+	if err := a.DeleteCustomTheme("x"); err != nil {
+		t.Fatalf("DeleteCustomTheme: %v", err)
+	}
+	if got := a.ListCustomThemes(); len(got) != 0 {
+		t.Errorf("after delete, len = %d, want 0", len(got))
+	}
+	// Deleting a non-existent name should be a no-op, not an error.
+	if err := a.DeleteCustomTheme("nope"); err != nil {
+		t.Errorf("DeleteCustomTheme missing: %v", err)
 	}
 }
 

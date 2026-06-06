@@ -83,7 +83,6 @@ func newRootCmd() *cobra.Command {
 		newOpenCmd(),
 		newReconcileCmd(),
 		newDoctorCmd(),
-		newPluginsCmd(),
 	)
 	return cmd
 }
@@ -109,16 +108,15 @@ type setup struct {
 	PF       platform.Platform
 	Store    *state.Store
 	Runtime  *runtime.Runtime
-	Plugins  *registry.PluginResolver
 	Reg      *registry.Registry
 	StateDir string
 	Logger   *slog.Logger
 }
 
-// newSetup constructs the runtime, state store, platform, registry,
-// and plugin resolver. The state directory is taken from override
-// (typically the --state-dir flag); if empty, the XDG default is
-// used. The state store is created (or opened) at stateDir/state.json.
+// newSetup constructs the runtime, state store, platform, and
+// registry. The state directory is taken from override (typically
+// the --state-dir flag); if empty, the XDG default is used. The
+// state store is created (or opened) at stateDir/state.json.
 func newSetup(override string, errOut io.Writer) (*setup, error) {
 	dir := override
 	if dir == "" {
@@ -133,7 +131,6 @@ func newSetup(override string, errOut io.Writer) (*setup, error) {
 		return nil, fmt.Errorf("open state: %w", err)
 	}
 	pf := platform.New()
-	plugins := registry.NewPluginResolver()
 	reg := registry.New()
 	var log *slog.Logger
 	if errOut == nil {
@@ -145,11 +142,10 @@ func newSetup(override string, errOut io.Writer) (*setup, error) {
 		Platform: pf,
 		Store:    st,
 		Registry: reg,
-		Plugins:  plugins,
 		Logger:   log,
 	})
 	return &setup{
-		PF: pf, Store: st, Runtime: rt, Plugins: plugins, Reg: reg,
+		PF: pf, Store: st, Runtime: rt, Reg: reg,
 		StateDir: dir, Logger: log,
 	}, nil
 }

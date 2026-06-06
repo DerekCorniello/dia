@@ -22,7 +22,6 @@ is intentionally deferred to v1.1.
   (all spawn a command), `open` and `browser` (open a URL), `gh` and
   `gh:pr`/`gh:issue`/`gh:checkout`/`gh:repo-clone` (wrappers around
   the `gh` CLI)
-- Third-party app types via `dia-*` executables on `PATH`
 - Both global and project-local configs with discovery
 - Cross-platform: Linux, macOS, Windows
 - Scriptable CLI alongside the GUI
@@ -97,8 +96,6 @@ More examples live in `examples/`.
 | `gh:issue`      | -                        | Runs `gh issue <args...>`.                                |
 | `gh:checkout`   | -                        | Runs `gh checkout <args...>`.                             |
 | `gh:repo-clone` | `url`                    | Runs `gh repo clone <url> [cwd]`.                         |
-| `plugin`        | `plugin` (name)          | Runs `dia-<name>` from `$PATH`.                           |
-| `<unknown>`     | -                        | Implicit: runs `dia-<type>` from `$PATH` if it exists.    |
 
 All launch types accept `cwd` (path, `~` and `$VAR` expanded) and `env`
 (map of string to string).
@@ -121,47 +118,11 @@ dia edit <name>         # open the config in $EDITOR
 dia open <name>         # reveal the workspace in the file manager
 dia reconcile           # drop PIDs from state that are no longer running
 dia doctor              # smoke checks
-dia plugins             # list discovered dia-* plugins
 dia --version           # print version and exit
 ```
 
-All list/status/doctor/plugins commands support `--json` for
-machine-readable output.
-
-## Plugins
-
-Third-party app types are executables on your `PATH` named `dia-<name>`.
-dia discovers them at startup and registers each as either:
-
-- `type: <name>` (implicit; the type string is the plugin name)
-- `type: plugin` with `plugin: <name>` (explicit)
-
-For example, `dia-foo` on `PATH` is invoked from a workspace as:
-
-```yaml
-- type: foo            # implicit
-  args: ["--some", "flag"]
-  cwd: ~/projects/foo
-  env:
-    FOO: bar
-```
-
-Or explicitly:
-
-```yaml
-- type: plugin
-  plugin: foo
-  args: ["--some", "flag"]
-```
-
-dia runs the plugin exactly like a `local` app: detached in its own
-session/process group, with the given `args`, `cwd`, and `env`. There
-is no JSON-RPC or stdin protocol in v1. dia tracks the plugin's PID
-and cleans up the whole process tree when you stop the workspace.
-
-A reference implementation is provided at
-`examples/plugins/dia-fake.sh`. The plugin protocol is intentionally
-minimal in v1; richer IPC is a v1.1 candidate (see PLAN.md).
+All list/status/doctor commands support `--json` for machine-readable
+output.
 
 ## Build from source
 
@@ -188,13 +149,13 @@ main.go                Wails entrypoint; routes GUI vs CLI
 internal/config        YAML, validation, discovery
 internal/runtime       instance lifecycle, PID tracking
 internal/platform      OS-specific process launching
-internal/registry      app-type registry, built-ins, plugin resolution
+internal/registry      app-type registry and built-ins
 internal/state         XDG paths, JSON state store
-internal/diag          shared smoke checks (doctor, plugin scan)
+internal/diag          shared smoke checks (doctor)
 internal/cli           cobra commands
 internal/wailsapp      bindings exposed to the Svelte UI
 frontend/              Svelte + TypeScript + Vite + Tailwind
-examples/              sample workspaces and a stub plugin
+examples/              sample workspaces
 ```
 
 ## Known limitations (deferred to v1.1)

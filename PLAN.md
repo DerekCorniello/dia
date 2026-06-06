@@ -7,7 +7,7 @@ Confirmed during planning; referenced throughout this doc.
 - Module path: `github.com/DerekCorniello/dia` (matches the remote `git@github.com:DerekCorniello/dia.git`)
 - Binary name: `dia`
 - UI: Wails v2 desktop app (Svelte 4 + TypeScript 5 + Vite 5 + Tailwind 3)
-- Plugin model: built-in app-type registry + external `dia-*` executables on `PATH`; in v1 plugins are exec-only (no JSON-RPC/stdin protocol); upgrade is a v1.1 candidate, not a v1 must-have
+- App-type model: built-in registry only (local aliases, browser/open, gh wrappers). No external plugin mechanism in v0.2.0.
 - GitHub integration: thin wrapper around the `gh` CLI (no separate auth in dia)
 - Config locations: global (`~/.config/dia/workspaces/*.yaml`) and project-local (`.dia.yaml`), with discovery; project-local shadows global on name collision
 - State store: JSON file in XDG state dir (`~/.local/state/dia/state.json`)
@@ -87,14 +87,14 @@ dia/
     config/                      YAML loader, types, validator, discovery
     runtime/                     Instance, AppInstance, lifecycle, PID tracking
     platform/                    Platform interface + linux/darwin/windows impls
-    registry/                    App-type registry, built-ins, gh wrappers, plugins
+    registry/                    App-type registry, built-ins, gh wrappers
     state/                       XDG paths, atomic JSON store
-    diag/                        Shared smoke checks (doctor, plugin scan)
+    diag/                        Shared smoke checks (doctor)
     cli/                         cobra commands
     wailsapp/                    Methods exposed to the Svelte UI; bound directly by main.go
     version/                     Build-time version vars (ldflags)
   frontend/                      Svelte UI (wails-managed)
-  examples/                      Sample workspace YAMLs and stub dia-* plugin
+  examples/                      Sample workspace YAMLs
   .goreleaser.yaml
   wails.json
   go.mod / go.sum
@@ -129,7 +129,7 @@ apps:
 
 ```go
 type App struct {
-    Type   string            // editor, terminal, browser, service, custom, plugin name
+    Type   string            // editor, terminal, browser, service, custom
     Cmd    string            // command to run
     Args   []string          // optional argv
     Cwd    string            // working directory (tilde and env vars expanded)
@@ -137,7 +137,6 @@ type App struct {
     Url    string            // for browser apps
     Open   bool              // for editor apps: open the project, not a file
     Wait   bool              // if true, dia waits for this app to exit before starting the next
-    Plugin string            // explicit plugin name (rare; type is usually enough)
 }
 ```
 
@@ -159,16 +158,6 @@ Built-in launchers (best match per platform, all optional with warnings if missi
 - service: any `cmd` (e.g. `docker compose up`)
 - custom: any `cmd` the user wants
 
-Third-party plugin launchers:
-
-- Discovered at startup by scanning `PATH` for executables matching `dia-*`
-- Registered as `type: <name-without-dia-prefix>` (e.g. `dia-foo` registers as `type: foo`)
-- Contract: dia invokes the plugin with the app spec as JSON on stdin
-  - Exit code 0 means success
-  - Non-zero exit means error
-  - Plugin stderr is surfaced in dia's log
-- Reference implementation: `examples/plugins/dia-fake.sh`
-
 GitHub wrappers (thin shells around `gh`):
 
 - `type: gh:pr` -- open current branch's PR in browser
@@ -183,7 +172,7 @@ No auth in dia; the user logs into `gh` once and dia inherits the credentials.
 1. Load config (global + project-local, merged)
 2. Validate schema
 3. Resolve paths, env vars, tildes
-4. Resolve each app to a launcher (built-in, plugin, or custom)
+4. Resolve each app to a launcher (built-in or custom)
 5. Spawn processes concurrently (or sequentially for `wait: true`)
 6. Track PIDs in state
 7. Allow stop / restart / status
@@ -308,7 +297,7 @@ dia WILL:
 - Workspace card with apps, start/stop, status pills, edit/open folder buttons
 - Top bar: search input, refresh, new workspace, settings
 - New workspace dialog with inline validation
-- Settings panel with paths, doctor, plugins, theme selector, keybind editor
+- Settings panel with paths, doctor, theme selector, keybind editor
 
 ### Workspace actions
 
@@ -357,7 +346,6 @@ dia new <name> --local  # create project-local .dia.yaml
 dia edit <name>         # open config in $EDITOR
 dia open <name>         # open workspace dir in OS file manager
 dia doctor              # smoke checks
-dia plugins             # list discovered plugins
 dia reconcile           # clean dead PIDs
 dia completion bash     # generate shell completion script
 dia --version
@@ -429,7 +417,7 @@ Goal: Professional CLI experience with completions and fixed rough edges.
 Goal: Prevent regressions in the UI surface.
 
 - Enable `svelte-check` in CI (already in devDeps)
-- Add Vitest + Svelte Testing Library: component tests for WorkspaceCard (collapsed/expanded/running/stopped), NewWorkspaceDialog (validation inline), SettingsPanel (doctor/paths/plugins rendering)
+- Add Vitest + Svelte Testing Library: component tests for WorkspaceCard (collapsed/expanded/running/stopped), NewWorkspaceDialog (validation inline), SettingsPanel (doctor/paths/theme rendering)
 - Playwright smoke test: launch built binary, verify empty state renders
 - Fix Windows platform tests that currently skip
 
@@ -459,7 +447,7 @@ These are enforced in code review.
 - Log rotation
 - JSON Schema validation file
 - Homebrew/Scoop/apt distribution
-- Lua or Go-plugin plugins (external executables only)
+- External plugin system (third-party `dia-*` executables on PATH)
 - Partial launch (run subset of apps)
 
 ## What dia is NOT
@@ -485,5 +473,4 @@ With:
 
 - Click workspace, everything appears
 - One YAML per project, or curated templates in a global dir
-- Third-party app types via `dia-*` executables on PATH
 - A desktop UI plus a scriptable CLI

@@ -92,27 +92,6 @@ func resolveGHRepoClone(app config.App) (Action, error) {
 	return Action{Kind: ActionLaunch, Launch: &opts}, nil
 }
 
-func resolvePlugin(p *PluginResolver) func(app config.App) (Action, error) {
-	return func(app config.App) (Action, error) {
-		name := app.Plugin
-		if name == "" {
-			name = app.Type
-		}
-		if name == "" {
-			return Action{}, fmt.Errorf("plugin: name required (set type or plugin field)")
-		}
-		if p == nil {
-			return Action{}, fmt.Errorf("plugin %q: no plugin resolver configured", name)
-		}
-		path, err := p.Resolve(name)
-		if err != nil {
-			return Action{}, err
-		}
-		opts := buildLaunch(app, path)
-		return Action{Kind: ActionLaunch, Launch: &opts}, nil
-	}
-}
-
 func appOrType(app config.App, fallback string) string {
 	if app.Type != "" {
 		return app.Type

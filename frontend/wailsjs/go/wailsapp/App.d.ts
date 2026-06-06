@@ -3,11 +3,15 @@
 import {wailsapp} from '../models';
 import {context} from '../models';
 
+export function DeleteCustomTheme(arg1:string):Promise<void>;
+
 export function Doctor():Promise<Array<wailsapp.CheckInfo>>;
 
 export function GetTheme():Promise<string>;
 
 export function GetWorkspace(arg1:string):Promise<wailsapp.WorkspaceDetail>;
+
+export function ListCustomThemes():Promise<Array<wailsapp.CustomThemeInfo>>;
 
 export function ListInstances():Promise<Array<wailsapp.InstanceInfo>>;
 
@@ -21,9 +25,9 @@ export function OpenStateFolder():Promise<void>;
 
 export function Paths():Promise<wailsapp.PathsInfo>;
 
-export function Plugins():Promise<Array<string>>;
-
 export function Reconcile():Promise<wailsapp.ReconcileInfo>;
+
+export function SetCustomTheme(arg1:wailsapp.CustomThemeInfo):Promise<void>;
 
 export function SetTheme(arg1:string):Promise<void>;
 

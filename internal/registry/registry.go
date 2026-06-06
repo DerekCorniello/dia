@@ -38,7 +38,7 @@ type Handler interface {
 	// "open", "gh"). Used for diagnostics.
 	Type() string
 	// Resolve turns the app config into an Action. A non-nil error
-	// means the app could not be started (e.g. plugin not found).
+	// means the app could not be started.
 	Resolve(app config.App) (Action, error)
 }
 
@@ -59,8 +59,7 @@ type Registry struct {
 }
 
 // New returns a Registry populated with the built-in handlers
-// (local, open, browser, gh, gh:* sugar, plugin via the default
-// PluginResolver, and implicit `dia-<type>` lookup).
+// (local, open, browser, gh, and gh:* sugar).
 func New() *Registry {
 	r := &Registry{handlers: map[string]Handler{}}
 	r.Register(HandlerFunc{Name: "local", Fn: resolveLocal})
@@ -81,20 +80,6 @@ func New() *Registry {
 	return r
 }
 
-// WithPlugins returns a copy of the registry that also handles
-// `plugin` (explicit) and any unknown type (implicit) by looking up
-// `dia-<name>` on PATH via the given resolver.
-func (r *Registry) WithPlugins(p *PluginResolver) *Registry {
-	out := &Registry{handlers: map[string]Handler{}}
-	r.mu.RLock()
-	for k, v := range r.handlers {
-		out.handlers[k] = v
-	}
-	r.mu.RUnlock()
-	out.Register(HandlerFunc{Name: "plugin", Fn: resolvePlugin(p)})
-	return out
-}
-
 // Register adds or replaces a handler for the given type.
 func (r *Registry) Register(h Handler) {
 	r.mu.Lock()
@@ -102,26 +87,16 @@ func (r *Registry) Register(h Handler) {
 	r.mu.Unlock()
 }
 
-// Resolve returns the Action for the given app. It tries, in order:
-// the registered handler for the type, then (if the app declares
-// a plugin) the plugin resolver. A nil app or unknown type with no
-// plugin is an error.
-func (r *Registry) Resolve(app config.App, p *PluginResolver) (Action, error) {
+// Resolve returns the Action for the given app. A nil app or
+// unknown type is an error.
+func (r *Registry) Resolve(app config.App) (Action, error) {
 	r.mu.RLock()
 	h, ok := r.handlers[app.Type]
 	r.mu.RUnlock()
-	if ok {
-		return h.Resolve(app)
+	if !ok {
+		return Action{}, fmt.Errorf("unknown app type %q", app.Type)
 	}
-	if app.Plugin != "" {
-		return resolvePlugin(p)(app)
-	}
-	if p == nil {
-		return Action{}, fmt.Errorf("unknown app type %q (and no plugin resolver configured)", app.Type)
-	}
-	// Last resort: implicit `dia-<type>` lookup. This is the
-	// mechanism the validator mentions in its unknown-type comment.
-	return resolvePlugin(p)(config.App{Type: "", Plugin: app.Type})
+	return h.Resolve(app)
 }
 
 // Types returns the sorted list of registered type names, for

@@ -5,6 +5,33 @@ All notable changes to dia are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - Unreleased
+
+### Breaking changes
+
+- **External plugin system removed.** dia no longer scans `PATH`
+  for `dia-*` executables. Built-in app types are the only way to
+  launch apps. Existing workspaces that used `type: plugin` or
+  `type: <unknown>` (with an implicit `dia-<name>` lookup) will
+  fail to start with `unknown app type "<name>"`. Drop the
+  `plugin` field and use a built-in `type` or a `local` app with
+  an absolute `cmd` instead.
+- **CLI subcommand `dia plugins` removed.** Use `dia doctor` to
+  verify your environment.
+- **Config schema: `plugin` field removed.** The `plugin:` key
+  in workspace apps is no longer accepted; old configs will fail
+  to parse with `unknown field "plugin"`.
+
+### Removed
+
+- `internal/registry/plugins.go` and `PluginResolver` type
+- `dia plugins` subcommand and `Plugins()` wails binding
+- `examples/plugins/dia-fake.sh` (and the empty `examples/plugins/`
+  directory)
+- `case "plugin"` validator and `ScanPlugins` from `internal/diag`
+- "Plugins" tab in the GUI Settings panel
+- Plugin count from the GUI footer
+
 ## [0.1.0] - 2026-06-04
 
 First end-to-end publishable v1 release. All six implementation

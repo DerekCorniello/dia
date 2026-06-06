@@ -10,7 +10,6 @@ import {
   StopAll as _StopAll,
   ListInstances as _ListInstances,
   Reconcile as _Reconcile,
-  Plugins as _Plugins,
   Doctor as _Doctor,
   Paths as _Paths,
   OpenConfigFolder as _OpenConfigFolder,
@@ -18,6 +17,9 @@ import {
   NewWorkspace as _NewWorkspace,
   GetTheme as _GetTheme,
   SetTheme as _SetTheme,
+  ListCustomThemes as _ListCustomThemes,
+  SetCustomTheme as _SetCustomTheme,
+  DeleteCustomTheme as _DeleteCustomTheme,
 } from '../../wailsjs/go/wailsapp/App';
 import { wailsapp } from '../../wailsjs/go/models';
 
@@ -27,6 +29,7 @@ export type InstanceInfo = wailsapp.InstanceInfo;
 export type ReconcileInfo = wailsapp.ReconcileInfo;
 export type CheckInfo = wailsapp.CheckInfo;
 export type PathsInfo = wailsapp.PathsInfo;
+export type CustomThemeInfo = wailsapp.CustomThemeInfo;
 
 const array = <T>(p: Promise<T[]>): Promise<T[]> => p.then((v) => v ?? []);
 
@@ -38,7 +41,6 @@ export const api = {
   stopAll: (): Promise<number> => _StopAll(),
   listInstances: (): Promise<InstanceInfo[]> => array(_ListInstances()),
   reconcile: (): Promise<ReconcileInfo> => _Reconcile(),
-  plugins: (): Promise<string[]> => array(_Plugins()),
   doctor: (): Promise<CheckInfo[]> => array(_Doctor()),
   paths: (): Promise<PathsInfo> => _Paths(),
   openConfigFolder: (): Promise<void> => _OpenConfigFolder(),
@@ -46,6 +48,9 @@ export const api = {
   newWorkspace: (name: string): Promise<string> => _NewWorkspace(name),
   getTheme: (): Promise<string> => _GetTheme(),
   setTheme: (theme: string): Promise<void> => _SetTheme(theme),
+  listCustomThemes: (): Promise<CustomThemeInfo[]> => array(_ListCustomThemes()),
+  setCustomTheme: (info: CustomThemeInfo): Promise<void> => _SetCustomTheme(info),
+  deleteCustomTheme: (name: string): Promise<void> => _DeleteCustomTheme(name),
 };
 
 export function describeError(err: unknown): string {

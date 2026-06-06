@@ -111,7 +111,7 @@ func Validate(w *Workspace) error {
 func validateApp(a *App, prefix string, errs *ValidationErrors) {
 	switch a.Type {
 	case "editor", "terminal":
-		if a.Cmd == "" && a.Plugin == "" {
+		if a.Cmd == "" {
 			*errs = append(*errs, ValidationError{
 				Path: prefix + ".cmd",
 				Msg:  fmt.Sprintf("required for type %q", a.Type),
@@ -134,10 +134,10 @@ func validateApp(a *App, prefix string, errs *ValidationErrors) {
 			})
 		}
 	case "browser":
-		if a.Url == "" && a.Cmd == "" && a.Plugin == "" {
+		if a.Url == "" && a.Cmd == "" {
 			*errs = append(*errs, ValidationError{
 				Path: prefix,
-				Msg:  "browser requires url, cmd, or plugin",
+				Msg:  "browser requires url or cmd",
 			})
 		}
 		if a.Url != "" && !strings.HasPrefix(a.Url, "http://") && !strings.HasPrefix(a.Url, "https://") {
@@ -166,23 +166,17 @@ func validateApp(a *App, prefix string, errs *ValidationErrors) {
 				Msg:  "required for type \"gh:repo-clone\"",
 			})
 		}
-	case "plugin":
-		if a.Plugin == "" {
-			*errs = append(*errs, ValidationError{
-				Path: prefix + ".plugin",
-				Msg:  "required for type \"plugin\" (the suffix after dia-)",
-			})
-		}
 	default:
-		// Unknown type is accepted: the registry will try to
-		// resolve it as `dia-<type>` on PATH. If no executable
-		// matches, the app fails to launch with a clear error.
+		// Unknown types are accepted by the loader but the
+		// runtime will refuse to start them. Validation here
+		// stays lenient so the user can see every other
+		// problem in the workspace at once.
 	}
 
-	if a.Type == "" && a.Cmd == "" && a.Url == "" && a.Plugin == "" {
+	if a.Type == "" && a.Cmd == "" && a.Url == "" {
 		*errs = append(*errs, ValidationError{
 			Path: prefix,
-			Msg:  "must have type, cmd, url, or plugin",
+			Msg:  "must have type, cmd, or url",
 		})
 	}
 }

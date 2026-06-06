@@ -74,3 +74,12 @@ type PathsInfo struct {
 	StateDir        string `json:"state_dir"`
 	StateFile       string `json:"state_file"`
 }
+
+// CustomThemeInfo is the UI-friendly view of a user-defined theme.
+// It mirrors state.CustomTheme but is a separate type so the on-disk
+// shape can evolve without breaking the wails JS bindings.
+type CustomThemeInfo struct {
+	Name        string            `json:"name"`
+	ColorScheme string            `json:"color_scheme"`
+	Colors      map[string]string `json:"colors"`
+}

@@ -66,16 +66,6 @@ func newDoctorCmd() *cobra.Command {
 					}
 				}
 			}
-			if plugins := diag.ScanPlugins(); len(plugins) > 0 {
-				if err := out.Println("\ndiscovered plugins:"); err != nil {
-					return err
-				}
-				for _, p := range plugins {
-					if err := out.Printf("  %s\n", p); err != nil {
-						return err
-					}
-				}
-			}
 			return nil
 		},
 	}

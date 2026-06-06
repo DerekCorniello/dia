@@ -46,14 +46,24 @@ type Instance struct {
 	Status        Status       `json:"status"`
 }
 
+// CustomTheme is a user-defined daisyUI theme. Colors are stored as
+// hex strings; the frontend converts them to the OKLCH CSS variables
+// daisyUI v4 expects. ColorScheme is "light" or "dark" and seeds the
+// `color-scheme` CSS property on the theme block.
+type CustomTheme struct {
+	ColorScheme string            `json:"color_scheme"`
+	Colors      map[string]string `json:"colors"`
+}
+
 // Data is the on-disk representation of dia's state.
 type Data struct {
-	Version     int                 `json:"version"`
-	Instances   map[string]Instance `json:"instances"`
-	Recent      []string            `json:"recent"`
-	Favorites   []string            `json:"favorites"`
-	Theme       string              `json:"theme"`
-	Keybindings map[string]string   `json:"keybindings,omitempty"`
+	Version      int                    `json:"version"`
+	Instances    map[string]Instance    `json:"instances"`
+	Recent       []string               `json:"recent"`
+	Favorites    []string               `json:"favorites"`
+	Theme        string                 `json:"theme"`
+	Keybindings  map[string]string      `json:"keybindings,omitempty"`
+	CustomThemes map[string]CustomTheme `json:"custom_themes,omitempty"`
 }
 
 // Store guards a Data value persisted to a single JSON file. The
@@ -76,7 +86,7 @@ func Open() (*Store, error) {
 // OpenAt opens a Store backed by the file at path. A missing file is
 // treated as an empty state; a corrupt file returns an error.
 func OpenAt(path string) (*Store, error) {
-	s := &Store{path: path, data: Data{Version: 1, Instances: map[string]Instance{}}}
+	s := &Store{path: path, data: Data{Version: 1, Instances: map[string]Instance{}, CustomThemes: map[string]CustomTheme{}}}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -93,6 +103,9 @@ func OpenAt(path string) (*Store, error) {
 	}
 	if loaded.Instances == nil {
 		loaded.Instances = map[string]Instance{}
+	}
+	if loaded.CustomThemes == nil {
+		loaded.CustomThemes = map[string]CustomTheme{}
 	}
 	s.data = loaded
 	return s, nil

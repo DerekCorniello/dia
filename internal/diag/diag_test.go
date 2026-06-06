@@ -1,53 +1,6 @@
 package diag
 
-import (
-	"os"
-	"path/filepath"
-	"runtime"
-	"testing"
-)
-
-func TestScanPlugins_EmptyPath(t *testing.T) {
-	t.Setenv("PATH", "")
-	got := ScanPlugins()
-	if len(got) != 0 {
-		t.Errorf("ScanPlugins() = %v, want []", got)
-	}
-}
-
-func TestScanPlugins_FindsExecutable(t *testing.T) {
-	dir := t.TempDir()
-	for _, name := range []string{"dia-fake", "dia-ok", "not-dia", "dia-noexec"} {
-		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
-			t.Fatalf("write %s: %v", name, err)
-		}
-	}
-	// Non-executable should be skipped on unix.
-	if err := os.Chmod(filepath.Join(dir, "dia-noexec"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir)
-
-	got := ScanPlugins()
-	want := map[string]bool{
-		filepath.Join(dir, "dia-fake"): true,
-		filepath.Join(dir, "dia-ok"):   true,
-	}
-	if runtime.GOOS == "windows" {
-		// On Windows the executable-bit check is skipped, so
-		// dia-noexec is also returned.
-		want[filepath.Join(dir, "dia-noexec")] = true
-	}
-	if len(got) != len(want) {
-		t.Fatalf("ScanPlugins() = %v, want %d entries", got, len(want))
-	}
-	for _, p := range got {
-		if !want[p] {
-			t.Errorf("unexpected plugin path: %s", p)
-		}
-	}
-}
+import "testing"
 
 func TestPlatformOpenHelper(t *testing.T) {
 	got := PlatformOpenHelper()
@@ -67,7 +20,7 @@ func TestRunChecks_AllFieldsPopulated(t *testing.T) {
 			t.Errorf("check %q has bad status %q", c.Name, c.Status)
 		}
 	}
-	for _, want := range []string{"platform", "state dir", "state file", "gh cli", "url handler", "plugins"} {
+	for _, want := range []string{"platform", "state dir", "state file", "gh cli", "url handler"} {
 		if !names[want] {
 			t.Errorf("missing check %q", want)
 		}

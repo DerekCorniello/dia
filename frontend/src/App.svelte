@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { api, describeError } from './lib/api';
   import {
     workspaces,
@@ -9,7 +9,9 @@
     loading,
     lastError,
     theme,
+    customThemes,
   } from './lib/stores';
+  import { buildAllCustomThemesCss } from './lib/colors';
   import WorkspaceCard from './lib/components/WorkspaceCard.svelte';
   import InstanceRow from './lib/components/InstanceRow.svelte';
   import SettingsPanel from './lib/components/SettingsPanel.svelte';
@@ -17,31 +19,50 @@
 
   let showSettings = false;
   let showNew = false;
-  let plugins: string[] = [];
 
-  function logUi(message: string) {
-    console.log(message);
-    const runtime = (window as Window & { runtime?: { LogPrint?: (message: string) => void } })
-      .runtime;
-    runtime?.LogPrint?.(message);
+  let customThemeStyle: HTMLStyleElement | null = null;
+
+  function applyCustomThemes(css: string) {
+    if (typeof document === 'undefined') return;
+    if (!customThemeStyle) {
+      customThemeStyle = document.createElement('style');
+      customThemeStyle.setAttribute('data-custom-themes', '');
+      document.head.appendChild(customThemeStyle);
+    }
+    customThemeStyle.textContent = css;
   }
+
+  $: applyCustomThemes(
+    buildAllCustomThemesCss(
+      $customThemes.map((t) => ({
+        name: t.name,
+        colorScheme: t.color_scheme as 'light' | 'dark',
+        colors: t.colors,
+      })),
+    ),
+  );
+
+  onDestroy(() => {
+    customThemeStyle?.remove();
+    customThemeStyle = null;
+  });
 
   async function refresh() {
     loading.set(true);
     lastError.set(null);
     try {
-      const [ws, inst, doc, p, pl] = await Promise.all([
+      const [ws, inst, doc, p, ct] = await Promise.all([
         api.listWorkspaces(),
         api.listInstances(),
         api.doctor(),
         api.paths(),
-        api.plugins(),
+        api.listCustomThemes(),
       ]);
       workspaces.set(ws);
       instances.set(inst);
       doctor.set(doc);
       paths.set(p);
-      plugins = pl;
+      customThemes.set(ct);
     } catch (e) {
       lastError.set(`refresh: ${describeError(e)}`);
     } finally {
@@ -49,56 +70,38 @@
     }
   }
 
-  async function stopAll() {
-    loading.set(true);
-    lastError.set(null);
+  async function changeTheme(id: string) {
+    theme.set(id);
+    document.documentElement.dataset.theme = id;
     try {
-      await api.stopAll();
-      await refresh();
-    } catch (e) {
-      lastError.set(`stop all: ${describeError(e)}`);
-    } finally {
-      loading.set(false);
-    }
-  }
-
-  async function changeTheme(t: string) {
-    theme.set(t);
-    document.documentElement.dataset.theme = t;
-    try {
-      await api.setTheme(t);
+      await api.setTheme(id);
     } catch (e) {
       lastError.set(`theme: ${describeError(e)}`);
     }
   }
 
   function openNew() {
-    logUi(`[dia] new button clicked, showNew was: ${showNew}`);
     showNew = true;
-    logUi(`[dia] new dialog visible: ${showNew}`);
   }
 
   function closeNew() {
-    logUi('[dia] new dialog closed');
     showNew = false;
   }
 
   function toggleSettings() {
-    logUi(`[dia] settings button clicked, showSettings was: ${showSettings}`);
     showSettings = !showSettings;
-    logUi(`[dia] settings panel visible: ${showSettings}`);
   }
 
   function closeSettings() {
-    logUi('[dia] settings panel closed');
     showSettings = false;
   }
 
   onMount(async () => {
     try {
-      const t = await api.getTheme();
+      const [t, ct] = await Promise.all([api.getTheme(), api.listCustomThemes()]);
       theme.set(t);
       document.documentElement.dataset.theme = t;
+      customThemes.set(ct);
     } catch (e) {
       // fall back to default theme
     }
@@ -122,15 +125,6 @@
       </button>
     </div>
     <div class="flex items-center gap-2 flex-1 justify-end">
-      <button
-        type="button"
-        on:click={refresh}
-        disabled={$loading}
-        class="rounded bg-bg-600 px-3 py-1.5 text-xs hover:bg-bg-600/70 disabled:opacity-50"
-        title="refresh"
-      >
-        {$loading ? '...' : 'Refresh'}
-      </button>
       <button
         type="button"
         on:click={toggleSettings}
@@ -184,7 +178,18 @@
           {#if $instances.some((i) => i.status === 'running')}
             <button
               type="button"
-              on:click={stopAll}
+              on:click={async () => {
+                loading.set(true);
+                lastError.set(null);
+                try {
+                  await api.stopAll();
+                  await refresh();
+                } catch (e) {
+                  lastError.set(`stop all: ${describeError(e)}`);
+                } finally {
+                  loading.set(false);
+                }
+              }}
               disabled={$loading}
               class="text-xs text-accent-err hover:underline disabled:opacity-50"
             >
@@ -210,11 +215,8 @@
           <SettingsPanel
             doctor={$doctor}
             paths={$paths}
-            {plugins}
-            theme={$theme}
-            onThemeChange={changeTheme}
-            onRefresh={refresh}
-            onClose={closeSettings}
+            on:close={closeSettings}
+            on:themeChange={(e) => changeTheme(e.detail.id)}
           />
         </div>
       {/if}
@@ -222,10 +224,7 @@
   </div>
 
   <footer class="flex items-center justify-between border-t border-bg-600 px-5 py-2 text-xs text-fg-mute">
-    <span>
-      {$instances.filter((i) => i.status === 'running').length} running
-      {plugins.length > 0 ? ` | ${plugins.length} plugin${plugins.length === 1 ? '' : 's'}` : ''}
-    </span>
+    <span>{$instances.filter((i) => i.status === 'running').length} running</span>
     <span class="font-mono">{$paths?.state_file ?? ''}</span>
   </footer>
 </div>

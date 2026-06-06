@@ -259,30 +259,6 @@ func TestDoctor(t *testing.T) {
 	}
 }
 
-func TestPlugins_Empty(t *testing.T) {
-	code, out, _ := runWith(t, map[string]string{"PATH": ""}, "plugins")
-	if code != 0 {
-		t.Errorf("exit = %d, want 0", code)
-	}
-	if !strings.Contains(out, "no dia-* plugins") {
-		t.Errorf("expected 'no dia-* plugins', got: %q", out)
-	}
-}
-
-func TestPlugins_WithFixture(t *testing.T) {
-	plugDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(plugDir, "dia-fake"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	code, out, _ := runWith(t, map[string]string{"PATH": plugDir}, "plugins")
-	if code != 0 {
-		t.Errorf("exit = %d, want 0", code)
-	}
-	if !strings.Contains(out, "dia-fake") {
-		t.Errorf("expected 'dia-fake' in output, got: %q", out)
-	}
-}
-
 func TestStartStopRoundtrip(t *testing.T) {
 	stateDir := t.TempDir()
 	cfgDir := t.TempDir()

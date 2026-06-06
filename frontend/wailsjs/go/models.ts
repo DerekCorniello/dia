@@ -34,6 +34,22 @@ export namespace wailsapp {
 	        this.detail = source["detail"];
 	    }
 	}
+	export class CustomThemeInfo {
+	    name: string;
+	    color_scheme: string;
+	    colors: Record<string, string>;
+	
+	    static createFrom(source: any = {}) {
+	        return new CustomThemeInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.color_scheme = source["color_scheme"];
+	        this.colors = source["colors"];
+	    }
+	}
 	export class ProcessInfo {
 	    type: string;
 	    cmd: string;

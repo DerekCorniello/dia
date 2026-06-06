@@ -81,7 +81,7 @@ func TestLoadEditorNoCmd(t *testing.T) {
 func TestLoadUnknownTypeAccepted(t *testing.T) {
 	w, err := Load("testdata/unknown-type.yaml")
 	if err != nil {
-		t.Fatalf("unknown types must be accepted (may be plugins), got: %v", err)
+		t.Fatalf("unknown types must be accepted (runtime reports the error), got: %v", err)
 	}
 	if w.Apps[0].Type != "my-custom-plugin" {
 		t.Fatalf("type not preserved: %q", w.Apps[0].Type)

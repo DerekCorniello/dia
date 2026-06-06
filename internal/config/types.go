@@ -17,17 +17,15 @@ type Workspace struct {
 }
 
 // App is a single component of a workspace. The Type field picks a
-// built-in launcher, a gh CLI wrapper, or a third-party dia-* plugin.
-// Cmd and Url are mutually exclusive entry points; the runtime picks
-// based on Type.
+// built-in launcher or a gh CLI wrapper. Cmd and Url are mutually
+// exclusive entry points; the runtime picks based on Type.
 type App struct {
-	Type   string            `yaml:"type,omitempty"`
-	Cmd    string            `yaml:"cmd,omitempty"`
-	Args   []string          `yaml:"args,omitempty"`
-	Cwd    string            `yaml:"cwd,omitempty"`
-	Env    map[string]string `yaml:"env,omitempty"`
-	Url    string            `yaml:"url,omitempty"`
-	Open   bool              `yaml:"open,omitempty"`
-	Wait   bool              `yaml:"wait,omitempty"`
-	Plugin string            `yaml:"plugin,omitempty"`
+	Type string            `yaml:"type,omitempty"`
+	Cmd  string            `yaml:"cmd,omitempty"`
+	Args []string          `yaml:"args,omitempty"`
+	Cwd  string            `yaml:"cwd,omitempty"`
+	Env  map[string]string `yaml:"env,omitempty"`
+	Url  string            `yaml:"url,omitempty"`
+	Open bool              `yaml:"open,omitempty"`
+	Wait bool              `yaml:"wait,omitempty"`
 }

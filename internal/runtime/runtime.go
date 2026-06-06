@@ -29,11 +29,10 @@ const GracePeriod = 5 * time.Second
 // safe to call Start, Stop, and Reconcile concurrently from different
 // goroutines; the underlying state.Store handles synchronization.
 type Runtime struct {
-	pf      platform.Platform
-	st      *state.Store
-	reg     *registry.Registry
-	plugins *registry.PluginResolver
-	log     *slog.Logger
+	pf  platform.Platform
+	st  *state.Store
+	reg *registry.Registry
+	log *slog.Logger
 }
 
 // Options for constructing a Runtime.
@@ -41,14 +40,11 @@ type Options struct {
 	Platform platform.Platform
 	Store    *state.Store
 	Registry *registry.Registry
-	Plugins  *registry.PluginResolver
 	Logger   *slog.Logger
 }
 
 // New returns a Runtime. Platform and Store are required; Registry
-// and Plugins fall back to registry.New() and an empty
-// PluginResolver (searches the process PATH); Logger falls back to
-// slog.Default().
+// falls back to registry.New(); Logger falls back to slog.Default().
 func New(opts Options) *Runtime {
 	log := opts.Logger
 	if log == nil {
@@ -58,16 +54,11 @@ func New(opts Options) *Runtime {
 	if reg == nil {
 		reg = registry.New()
 	}
-	plugins := opts.Plugins
-	if plugins == nil {
-		plugins = registry.NewPluginResolver()
-	}
 	return &Runtime{
-		pf:      opts.Platform,
-		st:      opts.Store,
-		reg:     reg,
-		plugins: plugins,
-		log:     log,
+		pf:  opts.Platform,
+		st:  opts.Store,
+		reg: reg,
+		log: log,
 	}
 }
 
@@ -149,7 +140,7 @@ func (r *Runtime) Start(w *config.Workspace, src config.Source) (*state.Instance
 func (r *Runtime) launchOne(app config.App, workspaceName, instanceID string) state.AppProcess {
 	out := state.AppProcess{Type: app.Type, Cmd: app.Cmd, Status: state.StatusRunning}
 
-	action, err := r.reg.Resolve(app, r.plugins)
+	action, err := r.reg.Resolve(app)
 	if err != nil {
 		out.Status = state.StatusCrashed
 		out.Err = err.Error()

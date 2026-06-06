@@ -16,7 +16,6 @@ import (
 
 	"github.com/DerekCorniello/dia/internal/config"
 	"github.com/DerekCorniello/dia/internal/platform"
-	"github.com/DerekCorniello/dia/internal/registry"
 	"github.com/DerekCorniello/dia/internal/state"
 )
 
@@ -50,13 +49,6 @@ type killCall struct {
 
 func newMock() *mockPlatform {
 	return &mockPlatform{nextPID: 1000, running: map[int]bool{}, runningSeed: map[int]bool{}}
-}
-
-// registryFromDir returns a PluginResolver that searches only the
-// given directory. Used by tests to avoid polluting the real PATH.
-func registryFromDir(t *testing.T, dir string) *registry.PluginResolver {
-	t.Helper()
-	return registry.NewPluginResolverAt([]string{dir})
 }
 
 func (m *mockPlatform) Launch(opts platform.LaunchOpts) (platform.ProcessHandle, error) {
@@ -254,69 +246,11 @@ func TestStart_GHSugar(t *testing.T) {
 	}
 }
 
-func TestStart_Plugin_Explicit(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "dia-fake"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	rt, pf, st := newTestRuntime(t)
-	rt.plugins = registryFromDir(t, dir)
-	w := &config.Workspace{
-		Name: "plugws",
-		Apps: []config.App{
-			{Type: "plugin", Plugin: "fake", Args: []string{"x"}},
-		},
-	}
-	inst, err := rt.Start(w, config.Source{Path: "/x"})
-	if err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	if inst.Apps[0].Status != state.StatusRunning {
-		t.Errorf("Status = %s, want running", inst.Apps[0].Status)
-	}
-	if inst.Apps[0].PID == 0 {
-		t.Errorf("PID = 0")
-	}
-	if filepath.Base(pf.launched[0].Cmd) != "dia-fake" {
-		t.Errorf("Cmd = %q, want .../dia-fake", pf.launched[0].Cmd)
-	}
-	if got := strings.Join(pf.launched[0].Args, ","); got != "x" {
-		t.Errorf("Args = %q, want x", got)
-	}
-	if !strings.Contains(st.Snapshot().Instances[inst.ID].WorkspaceName, "plugws") {
-		t.Errorf("instance not persisted")
-	}
-}
-
-func TestStart_Plugin_Implicit(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "dia-foo"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	rt, pf, _ := newTestRuntime(t)
-	rt.plugins = registryFromDir(t, dir)
-	w := &config.Workspace{
-		Name: "impl",
-		Apps: []config.App{{Type: "foo"}},
-	}
-	inst, err := rt.Start(w, config.Source{Path: "/x"})
-	if err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	if inst.Apps[0].Status != state.StatusRunning {
-		t.Errorf("Status = %s, want running (got Err=%q)", inst.Apps[0].Status, inst.Apps[0].Err)
-	}
-	if filepath.Base(pf.launched[0].Cmd) != "dia-foo" {
-		t.Errorf("Cmd = %q, want dia-foo", pf.launched[0].Cmd)
-	}
-}
-
-func TestStart_PluginNotFound(t *testing.T) {
+func TestStart_UnknownType(t *testing.T) {
 	rt, _, _ := newTestRuntime(t)
-	rt.plugins = registryFromDir(t, t.TempDir())
 	w := &config.Workspace{
 		Name: "nope",
-		Apps: []config.App{{Type: "plugin", Plugin: "ghost"}},
+		Apps: []config.App{{Type: "nope"}},
 	}
 	inst, err := rt.Start(w, config.Source{Path: "/x"})
 	if err != nil {
@@ -325,8 +259,8 @@ func TestStart_PluginNotFound(t *testing.T) {
 	if inst.Apps[0].Status != state.StatusCrashed {
 		t.Errorf("Status = %s, want crashed", inst.Apps[0].Status)
 	}
-	if !strings.Contains(inst.Apps[0].Err, "ghost") {
-		t.Errorf("Err = %q, want contains 'ghost'", inst.Apps[0].Err)
+	if !strings.Contains(inst.Apps[0].Err, "unknown app type") {
+		t.Errorf("Err = %q, want contains 'unknown app type'", inst.Apps[0].Err)
 	}
 }
 
