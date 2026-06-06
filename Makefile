@@ -14,7 +14,7 @@ dev:
 	wails dev
 
 build:
-	wails build -clean -trimpath -ldflags "$(LDFLAGS)"
+	wails build -clean -trimpath -ldflags "$(LDFLAGS)" -tags webkit2_41
 
 test:
 	go test -count=1 -timeout 60s ./...

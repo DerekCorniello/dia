@@ -32,10 +32,12 @@ jobs:
         run: go mod verify
 
       - name: Check formatting
+        shell: bash
         run: |
-          if [ "$(gofmt -l . | wc -l)" -ne 0 ]; then
+          fmt=$(gofmt -l .)
+          if [ -n "$fmt" ]; then
             echo "gofmt found issues:"
-            gofmt -l .
+            echo "$fmt"
             exit 1
           fi
 
@@ -68,7 +70,7 @@ jobs:
       - name: Install Linux deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
 
       - name: Build with Wails
-        run: wails build -clean
+        run: wails build -clean -tags webkit2_41

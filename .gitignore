@@ -19,7 +19,8 @@ frontend/package.json.md5
 
 # Frontend
 node_modules
-frontend/dist
+frontend/dist/*
+!frontend/dist/.gitkeep
 
 # Env / IDE
 .env

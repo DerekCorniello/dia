@@ -3,6 +3,7 @@ package diag
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -32,6 +33,11 @@ func TestScanPlugins_FindsExecutable(t *testing.T) {
 	want := map[string]bool{
 		filepath.Join(dir, "dia-fake"): true,
 		filepath.Join(dir, "dia-ok"):   true,
+	}
+	if runtime.GOOS == "windows" {
+		// On Windows the executable-bit check is skipped, so
+		// dia-noexec is also returned.
+		want[filepath.Join(dir, "dia-noexec")] = true
 	}
 	if len(got) != len(want) {
 		t.Fatalf("ScanPlugins() = %v, want %d entries", got, len(want))

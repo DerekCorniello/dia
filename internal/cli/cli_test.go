@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -288,13 +289,12 @@ func TestStartStopRoundtrip(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(cfgDir, "dia", "workspaces"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	keepAlive := "sleep 30"
+	if runtime.GOOS == "windows" {
+		keepAlive = "cmd /c \"timeout /t 30 /nobreak\""
+	}
 	yamlPath := filepath.Join(cfgDir, "dia", "workspaces", "rt.yaml")
-	if err := os.WriteFile(yamlPath, []byte(`version: 1
-name: rt
-apps:
-  - type: local
-    cmd: sleep 30
-`), 0o644); err != nil {
+	if err := os.WriteFile(yamlPath, []byte("version: 1\nname: rt\napps:\n  - type: local\n    cmd: "+keepAlive+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	env := map[string]string{
@@ -341,13 +341,12 @@ func TestStartStopRoundtrip_JSON(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(cfgDir, "dia", "workspaces"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	keepAlive := "sleep 30"
+	if runtime.GOOS == "windows" {
+		keepAlive = "cmd /c \"timeout /t 30 /nobreak\""
+	}
 	yamlPath := filepath.Join(cfgDir, "dia", "workspaces", "rt2.yaml")
-	if err := os.WriteFile(yamlPath, []byte(`version: 1
-name: rt2
-apps:
-  - type: local
-    cmd: sleep 30
-`), 0o644); err != nil {
+	if err := os.WriteFile(yamlPath, []byte("version: 1\nname: rt2\napps:\n  - type: local\n    cmd: "+keepAlive+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	env := map[string]string{
