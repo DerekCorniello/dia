@@ -14,6 +14,9 @@ import (
 	"time"
 )
 
+// DefaultTheme is the theme name used when none is persisted.
+const DefaultTheme = "dia"
+
 // Status is the lifecycle state of an app or instance.
 type Status string
 
@@ -45,10 +48,12 @@ type Instance struct {
 
 // Data is the on-disk representation of dia's state.
 type Data struct {
-	Version   int                 `json:"version"`
-	Instances map[string]Instance `json:"instances"`
-	Recent    []string            `json:"recent"`
-	Favorites []string            `json:"favorites"`
+	Version     int                 `json:"version"`
+	Instances   map[string]Instance `json:"instances"`
+	Recent      []string            `json:"recent"`
+	Favorites   []string            `json:"favorites"`
+	Theme       string              `json:"theme"`
+	Keybindings map[string]string   `json:"keybindings,omitempty"`
 }
 
 // Store guards a Data value persisted to a single JSON file. The

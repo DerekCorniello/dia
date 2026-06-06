@@ -6,6 +6,10 @@ export function Doctor() {
   return window['go']['wailsapp']['App']['Doctor']();
 }
 
+export function GetTheme() {
+  return window['go']['wailsapp']['App']['GetTheme']();
+}
+
 export function GetWorkspace(arg1) {
   return window['go']['wailsapp']['App']['GetWorkspace'](arg1);
 }
@@ -40,6 +44,10 @@ export function Plugins() {
 
 export function Reconcile() {
   return window['go']['wailsapp']['App']['Reconcile']();
+}
+
+export function SetTheme(arg1) {
+  return window['go']['wailsapp']['App']['SetTheme'](arg1);
 }
 
 export function StartWorkspace(arg1) {

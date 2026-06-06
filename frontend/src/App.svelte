@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { api, describeError } from './lib/api';
   import {
     workspaces,
@@ -7,6 +8,7 @@
     paths,
     loading,
     lastError,
+    theme,
   } from './lib/stores';
   import WorkspaceCard from './lib/components/WorkspaceCard.svelte';
   import InstanceRow from './lib/components/InstanceRow.svelte';
@@ -16,6 +18,13 @@
   let showSettings = false;
   let showNew = false;
   let plugins: string[] = [];
+
+  function logUi(message: string) {
+    console.log(message);
+    const runtime = (window as Window & { runtime?: { LogPrint?: (message: string) => void } })
+      .runtime;
+    runtime?.LogPrint?.(message);
+  }
 
   async function refresh() {
     loading.set(true);
@@ -53,19 +62,66 @@
     }
   }
 
-  $: $lastError;
+  async function changeTheme(t: string) {
+    theme.set(t);
+    document.documentElement.dataset.theme = t;
+    try {
+      await api.setTheme(t);
+    } catch (e) {
+      lastError.set(`theme: ${describeError(e)}`);
+    }
+  }
 
-  import { onMount } from 'svelte';
-  onMount(refresh);
+  function openNew() {
+    logUi(`[dia] new button clicked, showNew was: ${showNew}`);
+    showNew = true;
+    logUi(`[dia] new dialog visible: ${showNew}`);
+  }
+
+  function closeNew() {
+    logUi('[dia] new dialog closed');
+    showNew = false;
+  }
+
+  function toggleSettings() {
+    logUi(`[dia] settings button clicked, showSettings was: ${showSettings}`);
+    showSettings = !showSettings;
+    logUi(`[dia] settings panel visible: ${showSettings}`);
+  }
+
+  function closeSettings() {
+    logUi('[dia] settings panel closed');
+    showSettings = false;
+  }
+
+  onMount(async () => {
+    try {
+      const t = await api.getTheme();
+      theme.set(t);
+      document.documentElement.dataset.theme = t;
+    } catch (e) {
+      // fall back to default theme
+    }
+    await refresh();
+  });
 </script>
 
 <div class="flex h-screen flex-col">
-  <header class="flex items-center justify-between border-b border-bg-600 px-5 py-3">
-    <div class="flex items-baseline gap-3">
+  <header class="flex items-center border-b border-bg-600 px-5 py-3">
+    <div class="flex items-baseline gap-3 flex-1">
       <h1 class="text-xl font-semibold">dia</h1>
-      <span class="text-xs text-fg-mute uppercase tracking-wide">dev workspace launcher</span>
+      <span class="text-xs text-fg-mute uppercase tracking-wide">the do-it-all app</span>
     </div>
-    <div class="flex items-center gap-2">
+    <div class="flex-1 flex justify-center">
+      <button
+        type="button"
+        on:click={openNew}
+        class="rounded bg-accent/20 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/30"
+      >
+        + New
+      </button>
+    </div>
+    <div class="flex items-center gap-2 flex-1 justify-end">
       <button
         type="button"
         on:click={refresh}
@@ -77,14 +133,7 @@
       </button>
       <button
         type="button"
-        on:click={() => (showNew = true)}
-        class="rounded bg-accent/20 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/30"
-      >
-        + New
-      </button>
-      <button
-        type="button"
-        on:click={() => (showSettings = !showSettings)}
+        on:click={toggleSettings}
         class="rounded bg-bg-600 px-3 py-1.5 text-xs hover:bg-bg-600/70"
       >
         {showSettings ? 'Hide' : 'Settings'}
@@ -111,7 +160,7 @@
             No workspaces yet.
             <button
               type="button"
-              on:click={() => (showNew = true)}
+              on:click={openNew}
               class="ml-1 text-accent hover:underline"
             >
               Create one
@@ -162,8 +211,10 @@
             doctor={$doctor}
             paths={$paths}
             {plugins}
+            theme={$theme}
+            onThemeChange={changeTheme}
             onRefresh={refresh}
-            onClose={() => (showSettings = false)}
+            onClose={closeSettings}
           />
         </div>
       {/if}
@@ -180,5 +231,5 @@
 </div>
 
 {#if showNew}
-  <NewWorkspaceDialog onClose={() => (showNew = false)} />
+  <NewWorkspaceDialog onClose={closeNew} />
 {/if}

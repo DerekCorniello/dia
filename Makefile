@@ -3,6 +3,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 PKG := github.com/DerekCorniello/dia
+WAILS := $(shell go env GOPATH)/bin/wails
 LDFLAGS := -s -w \
 	-X $(PKG)/internal/version.Version=$(VERSION) \
 	-X $(PKG)/internal/version.Commit=$(COMMIT) \
@@ -11,10 +12,10 @@ LDFLAGS := -s -w \
 .PHONY: dev build test vet fmt tidy release clean install-tools
 
 dev:
-	wails dev
+	$(WAILS) dev
 
 build:
-	wails build -clean -trimpath -ldflags "$(LDFLAGS)" -tags webkit2_41
+	$(WAILS) build -clean -trimpath -ldflags "$(LDFLAGS)" -tags webkit2_41
 
 test:
 	go test -count=1 -timeout 60s ./...

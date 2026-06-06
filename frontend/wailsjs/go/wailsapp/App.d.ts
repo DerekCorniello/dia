@@ -5,6 +5,8 @@ import {context} from '../models';
 
 export function Doctor():Promise<Array<wailsapp.CheckInfo>>;
 
+export function GetTheme():Promise<string>;
+
 export function GetWorkspace(arg1:string):Promise<wailsapp.WorkspaceDetail>;
 
 export function ListInstances():Promise<Array<wailsapp.InstanceInfo>>;
@@ -22,6 +24,8 @@ export function Paths():Promise<wailsapp.PathsInfo>;
 export function Plugins():Promise<Array<string>>;
 
 export function Reconcile():Promise<wailsapp.ReconcileInfo>;
+
+export function SetTheme(arg1:string):Promise<void>;
 
 export function StartWorkspace(arg1:string):Promise<wailsapp.InstanceInfo>;
 

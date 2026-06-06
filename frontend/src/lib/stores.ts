@@ -10,3 +10,4 @@ export const doctor: Writable<CheckInfo[]> = writable([]);
 export const paths: Writable<PathsInfo | null> = writable(null);
 export const loading: Writable<boolean> = writable(false);
 export const lastError: Writable<string | null> = writable(null);
+export const theme: Writable<string> = writable('dia');

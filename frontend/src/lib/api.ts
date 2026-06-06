@@ -16,6 +16,8 @@ import {
   OpenConfigFolder as _OpenConfigFolder,
   OpenStateFolder as _OpenStateFolder,
   NewWorkspace as _NewWorkspace,
+  GetTheme as _GetTheme,
+  SetTheme as _SetTheme,
 } from '../../wailsjs/go/wailsapp/App';
 import { wailsapp } from '../../wailsjs/go/models';
 
@@ -26,20 +28,24 @@ export type ReconcileInfo = wailsapp.ReconcileInfo;
 export type CheckInfo = wailsapp.CheckInfo;
 export type PathsInfo = wailsapp.PathsInfo;
 
+const array = <T>(p: Promise<T[]>): Promise<T[]> => p.then((v) => v ?? []);
+
 export const api = {
-  listWorkspaces: (): Promise<WorkspaceInfo[]> => _ListWorkspaces(),
+  listWorkspaces: (): Promise<WorkspaceInfo[]> => array(_ListWorkspaces()),
   getWorkspace: (name: string): Promise<WorkspaceDetail> => _GetWorkspace(name),
   startWorkspace: (name: string): Promise<InstanceInfo> => _StartWorkspace(name),
   stopInstance: (id: string): Promise<void> => _StopInstance(id),
   stopAll: (): Promise<number> => _StopAll(),
-  listInstances: (): Promise<InstanceInfo[]> => _ListInstances(),
+  listInstances: (): Promise<InstanceInfo[]> => array(_ListInstances()),
   reconcile: (): Promise<ReconcileInfo> => _Reconcile(),
-  plugins: (): Promise<string[]> => _Plugins(),
-  doctor: (): Promise<CheckInfo[]> => _Doctor(),
+  plugins: (): Promise<string[]> => array(_Plugins()),
+  doctor: (): Promise<CheckInfo[]> => array(_Doctor()),
   paths: (): Promise<PathsInfo> => _Paths(),
   openConfigFolder: (): Promise<void> => _OpenConfigFolder(),
   openStateFolder: (): Promise<void> => _OpenStateFolder(),
   newWorkspace: (name: string): Promise<string> => _NewWorkspace(name),
+  getTheme: (): Promise<string> => _GetTheme(),
+  setTheme: (theme: string): Promise<void> => _SetTheme(theme),
 };
 
 export function describeError(err: unknown): string {

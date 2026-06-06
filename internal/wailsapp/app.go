@@ -266,6 +266,28 @@ func (a *App) Paths() PathsInfo {
 	return out
 }
 
+// GetTheme returns the current UI theme name from persisted state.
+func (a *App) GetTheme() string {
+	if a.store == nil {
+		return state.DefaultTheme
+	}
+	t := a.store.Snapshot().Theme
+	if t == "" {
+		return state.DefaultTheme
+	}
+	return t
+}
+
+// SetTheme persists the UI theme name so it survives restart.
+func (a *App) SetTheme(theme string) error {
+	if a.store == nil {
+		return errors.New("state store not initialized")
+	}
+	return a.store.Mutate(func(d *state.Data) {
+		d.Theme = theme
+	})
+}
+
 // OpenConfigFolder reveals the global config dir in the file
 // manager. No-op if the dir does not exist.
 func (a *App) OpenConfigFolder() error {
