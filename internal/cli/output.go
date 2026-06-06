@@ -50,5 +50,3 @@ func (o *output) Println(args ...any) error {
 // IsJSON reports whether the user requested JSON output. Commands
 // can use it to decide whether to also write a text summary.
 func (o *output) IsJSON() bool { return o.json }
-
-
