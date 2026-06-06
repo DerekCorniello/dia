@@ -5,10 +5,10 @@ project_name: dia
 before:
   hooks:
     - go mod tidy
-    - wails build -clean -trimpath -platform darwin/universal -o build/bin/dia-darwin-universal
-    - wails build -clean -trimpath -platform linux/amd64 -o build/bin/dia-linux-amd64
-    - wails build -clean -trimpath -platform linux/arm64 -o build/bin/dia-linux-arm64
-    - wails build -clean -trimpath -platform windows/amd64 -o build/bin/dia-windows-amd64.exe
+    - wails build -clean -trimpath -tags webkit2_41 -platform darwin/universal -o build/bin/dia-darwin-universal
+    - wails build -clean -trimpath -tags webkit2_41 -platform linux/amd64 -o build/bin/dia-linux-amd64
+    - wails build -clean -trimpath -tags webkit2_41 -platform linux/arm64 -o build/bin/dia-linux-arm64
+    - wails build -clean -trimpath -tags webkit2_41 -platform windows/amd64 -o build/bin/dia-windows-amd64.exe
 
 builds:
   - id: dia
