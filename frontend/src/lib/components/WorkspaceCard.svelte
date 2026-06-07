@@ -1,7 +1,10 @@
 <script lang="ts">
   import { api, describeError } from '../api';
-  import { instances, lastError, loading } from '../stores';
-  import type { WorkspaceInfo, InstanceInfo } from '../api';
+  import { lastError, loading, plugins as pluginsStore } from '../stores';
+  import type { WorkspaceInfo, PluginInfo } from '../api';
+  import WorkspaceEditor from './WorkspaceEditor.svelte';
+  import ConfirmDialog from './ConfirmDialog.svelte';
+  import { slide } from 'svelte/transition';
 
   export let workspace: WorkspaceInfo;
   export let onChanged: () => void = () => {};
@@ -9,16 +12,18 @@
   let busy = false;
   let expanded = false;
   let detail: { app_details: { type: string; cmd: string; args: string; url?: string }[] } | null = null;
+  let showEditor = false;
+  let showDeleteConfirm = false;
 
-  $: instance = $instances.find((i) => i.workspace === workspace.name && i.status === 'running');
-  $: hasRunning = !!instance;
+  $: workspacePlugins = (workspace.plugins ?? [])
+    .map((id) => $pluginsStore.find((p) => p.id === id))
+    .filter((p): p is PluginInfo => p != null);
 
   async function start() {
     busy = true;
     lastError.set(null);
     try {
-      const inst: InstanceInfo = await api.startWorkspace(workspace.name);
-      instances.update((arr) => [inst, ...arr.filter((i) => i.id !== inst.id)]);
+      await api.startWorkspace(workspace.name);
       onChanged();
     } catch (e) {
       lastError.set(`start ${workspace.name}: ${describeError(e)}`);
@@ -28,14 +33,31 @@
   }
 
   async function stop() {
-    if (!instance) return;
     busy = true;
     lastError.set(null);
     try {
-      await api.stopInstance(instance.id);
+      await api.stopWorkspace(workspace.name);
       onChanged();
     } catch (e) {
-      lastError.set(`stop ${instance.id}: ${describeError(e)}`);
+      lastError.set(`stop ${workspace.name}: ${describeError(e)}`);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function deleteWorkspace() {
+    showDeleteConfirm = true;
+  }
+
+  async function confirmDelete() {
+    showDeleteConfirm = false;
+    busy = true;
+    lastError.set(null);
+    try {
+      await api.deleteWorkspace(workspace.name);
+      onChanged();
+    } catch (e) {
+      lastError.set(`delete workspace: ${describeError(e)}`);
     } finally {
       busy = false;
     }
@@ -51,49 +73,105 @@
       }
     }
   }
+
+  function onEditorSaved() {
+    showEditor = false;
+    onChanged();
+  }
+
+  function onEditorDeleted() {
+    showEditor = false;
+    onChanged();
+  }
+
 </script>
 
-<div class="rounded-lg border border-bg-600 bg-bg-700/40 p-4 shadow-sm transition hover:border-bg-600/80">
-  <div class="flex items-center gap-3">
+<section
+  class="relative rounded-lg border border-bg-600 bg-bg-700 p-3 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md shadow-sm {workspace.running ? 'shadow-primary/10' : ''}"
+>
+  <div
+    class="absolute left-0 top-2 bottom-2 w-1 rounded-r {workspace.running
+      ? 'bg-primary'
+      : workspace.source === 'local'
+        ? 'bg-info'
+        : 'bg-accent-secondary'}"
+  ></div>
+  <header class="mb-2 flex items-center justify-between gap-2">
     <button
       type="button"
       on:click={toggleExpand}
-      class="flex-1 text-left"
+      class="min-w-0 flex-1 text-left"
       aria-expanded={expanded}
     >
-      <div class="flex items-baseline gap-2">
-        <span class="text-lg font-medium text-fg">{workspace.name}</span>
-        <span class="text-xs uppercase tracking-wide text-fg-mute">{workspace.source}</span>
-        {#if hasRunning}
-          <span class="ml-1 inline-block h-2 w-2 rounded-full bg-accent" title="running"></span>
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-sm font-semibold text-fg truncate">{workspace.name}</span>
+        <span class="inline-flex items-center rounded-full {workspace.source === 'local' ? 'bg-info/15 text-info' : 'bg-accent-secondary/15 text-accent-secondary'} px-1.5 py-0.5 text-[10px] font-medium">
+          {workspace.source}
+        </span>
+        {#if workspace.running}
+          <span class="inline-flex items-center gap-1 text-[10px] font-medium text-primary">
+            <span class="inline-block h-1.5 w-1.5 rounded-full bg-primary"></span>
+            running
+          </span>
         {/if}
       </div>
-      <div class="text-sm text-fg-dim">{workspace.apps} app{workspace.apps === 1 ? '' : 's'}</div>
+      {#if workspace.description}
+        <p class="mt-0.5 text-xs text-fg-mute line-clamp-2">{workspace.description}</p>
+      {:else}
+        <p class="mt-0.5 text-xs text-fg-mute">
+          {workspace.apps} app{workspace.apps === 1 ? '' : 's'}
+          {#if workspace.plugins && workspace.plugins.length > 0}
+            , {workspace.plugins.length} plugin{workspace.plugins.length === 1 ? '' : 's'}
+          {/if}
+          {#if (workspace.useCount ?? 0) > 0}
+            &middot; used {workspace.useCount}x
+          {/if}
+        </p>
+      {/if}
     </button>
-
-    {#if hasRunning}
+    <div class="flex items-center gap-1 shrink-0">
       <button
         type="button"
-        on:click={stop}
+        on:click={() => (showEditor = true)}
         disabled={busy || $loading}
-        class="rounded bg-accent-err/20 px-3 py-1.5 text-sm font-medium text-accent-err hover:bg-accent-err/30 disabled:opacity-50"
+        class="rounded bg-bg-600 px-2 py-1 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg disabled:opacity-50"
+        title="edit workspace"
       >
-        {busy ? '...' : 'Stop'}
+        edit
       </button>
-    {:else}
       <button
         type="button"
-        on:click={start}
-        disabled={busy || $loading}
-        class="rounded bg-accent/20 px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/30 disabled:opacity-50"
+        on:click={deleteWorkspace}
+        disabled={workspace.running || busy || $loading}
+        class="rounded bg-error/10 px-2 py-1 text-[10px] text-error hover:bg-error/20 disabled:opacity-50"
+        title="delete workspace"
       >
-        {busy ? '...' : 'Start'}
+        delete
       </button>
-    {/if}
-  </div>
+      {#if workspace.running}
+        <button
+          type="button"
+          on:click={stop}
+          disabled={busy || $loading}
+          class="rounded bg-error/20 px-2 py-1 text-[10px] font-medium text-error hover:bg-error/30 disabled:opacity-50"
+        >
+          {busy ? '...' : 'stop'}
+        </button>
+      {:else}
+        <button
+          type="button"
+          on:click={start}
+          disabled={busy || $loading}
+          class="rounded bg-primary/20 px-2 py-1 text-[10px] font-medium text-primary hover:bg-primary/30 disabled:opacity-50"
+        >
+          {busy ? '...' : 'start'}
+        </button>
+      {/if}
+    </div>
+  </header>
 
   {#if expanded && detail}
-    <div class="mt-3 border-t border-bg-600 pt-3">
+    <div class="mt-3 border-t border-primary/15 pt-3" transition:slide={{ duration: 200 }}>
       <div class="text-xs text-fg-mute break-all mb-2 font-mono">{workspace.path}</div>
       <ul class="space-y-1 text-sm">
         {#each detail.app_details as app}
@@ -103,6 +181,39 @@
           </li>
         {/each}
       </ul>
+      {#if workspacePlugins.length > 0}
+        <div class="mt-3 border-t border-primary/15 pt-3">
+          <div class="text-xs font-semibold uppercase tracking-wide text-fg-mute mb-1">Plugins</div>
+          <ul class="space-y-1">
+            {#each workspacePlugins as p (p.id)}
+              <li class="flex items-center gap-2 text-sm">
+                <span class="text-fg-dim">{p.name || p.id}</span>
+                <span class="rounded bg-secondary/15 px-1 py-0.5 text-[10px] font-medium text-secondary">{p.ui.type}</span>
+              </li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
     </div>
   {/if}
-</div>
+</section>
+
+{#if showEditor}
+  <WorkspaceEditor
+    name={workspace.name}
+    plugins={$pluginsStore}
+    onclose={() => (showEditor = false)}
+    onsaved={onEditorSaved}
+    ondeleted={onEditorDeleted}
+  />
+{/if}
+
+{#if showDeleteConfirm}
+  <ConfirmDialog
+    title="Delete workspace"
+    message="Delete workspace &quot;{workspace.name}&quot;? This cannot be undone."
+    confirmLabel="Delete"
+    on:confirm={confirmDelete}
+    on:cancel={() => (showDeleteConfirm = false)}
+  />
+{/if}

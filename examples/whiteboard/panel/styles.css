@@ -1,0 +1,13 @@
+/* whiteboard styles - optional. The host injects these at /styles.css.
+   Anything you put here is scoped to your window (no other window
+   loads the same URL). */
+html, body {
+  background: #ffffff;
+  color: #111;
+}
+button {
+  font-family: inherit;
+}
+button:hover {
+  filter: brightness(1.1);
+}

@@ -44,6 +44,8 @@ type Instance struct {
 	StartedAt     time.Time    `json:"started_at"`
 	Apps          []AppProcess `json:"apps"`
 	Status        Status       `json:"status"`
+	Plugins       []string     `json:"plugins,omitempty"`
+	PluginPIDs    []int        `json:"plugin_pids,omitempty"`
 }
 
 // CustomTheme is a user-defined daisyUI theme. Colors are stored as
@@ -55,15 +57,36 @@ type CustomTheme struct {
 	Colors      map[string]string `json:"colors"`
 }
 
+// PluginState persists a plugin's per-user settings across restarts.
+// Enabled controls whether the host starts the goja runtime; the
+// GrantedCapabilities list is the user-approved subset of the
+// manifest's requested capabilities. A plugin whose manifest changes
+// its requested set will see the stored grants intersect with the
+// new set on next load.
+type PluginState struct {
+	Enabled             bool           `json:"enabled"`
+	GrantedCapabilities []string       `json:"granted_capabilities,omitempty"`
+	Config              map[string]any `json:"config,omitempty"`
+}
+
+// RecentEntry records a workspace's recency and usage. Count is
+// incremented each time a workspace is started; the position in the
+// Recent slice is the most-recent-first order.
+type RecentEntry struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
 // Data is the on-disk representation of dia's state.
 type Data struct {
 	Version      int                    `json:"version"`
 	Instances    map[string]Instance    `json:"instances"`
-	Recent       []string               `json:"recent"`
+	Recent       []RecentEntry          `json:"recent"`
 	Favorites    []string               `json:"favorites"`
 	Theme        string                 `json:"theme"`
 	Keybindings  map[string]string      `json:"keybindings,omitempty"`
 	CustomThemes map[string]CustomTheme `json:"custom_themes,omitempty"`
+	Plugins      map[string]PluginState `json:"plugins,omitempty"`
 }
 
 // Store guards a Data value persisted to a single JSON file. The
@@ -97,9 +120,18 @@ func OpenAt(path string) (*Store, error) {
 	if len(data) == 0 {
 		return s, nil
 	}
-	var loaded Data
-	if err := json.Unmarshal(data, &loaded); err != nil {
+	var raw rawData
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parse state: %w", err)
+	}
+	loaded := Data{
+		Version:      raw.Version,
+		Instances:    raw.Instances,
+		Favorites:    raw.Favorites,
+		Theme:        raw.Theme,
+		Keybindings:  raw.Keybindings,
+		CustomThemes: raw.CustomThemes,
+		Plugins:      raw.Plugins,
 	}
 	if loaded.Instances == nil {
 		loaded.Instances = map[string]Instance{}
@@ -107,8 +139,58 @@ func OpenAt(path string) (*Store, error) {
 	if loaded.CustomThemes == nil {
 		loaded.CustomThemes = map[string]CustomTheme{}
 	}
+	if loaded.Plugins == nil {
+		loaded.Plugins = map[string]PluginState{}
+	}
+	loaded.Recent = migrateRecent(raw.Recent)
 	s.data = loaded
 	return s, nil
+}
+
+// rawData mirrors Data but with the Recent field kept as raw JSON so
+// migration can inspect the on-disk format before decoding it.
+type rawData struct {
+	Version      int                    `json:"version"`
+	Instances    map[string]Instance    `json:"instances"`
+	Recent       []json.RawMessage      `json:"recent"`
+	Favorites    []string               `json:"favorites"`
+	Theme        string                 `json:"theme"`
+	Keybindings  map[string]string      `json:"keybindings,omitempty"`
+	CustomThemes map[string]CustomTheme `json:"custom_themes,omitempty"`
+	Plugins      map[string]PluginState `json:"plugins,omitempty"`
+}
+
+// migrateRecent normalizes a freshly-loaded Recent slice. The legacy
+// on-disk format was []string; we coerce that to []RecentEntry with
+// Count 0 so older state files load without error.
+func migrateRecent(in []json.RawMessage) []RecentEntry {
+	if len(in) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(in)
+	if err != nil {
+		return nil
+	}
+	var first any
+	if err := json.Unmarshal(in[0], &first); err != nil {
+		return nil
+	}
+	if _, ok := first.(string); ok {
+		var legacy []string
+		if err := json.Unmarshal(raw, &legacy); err != nil {
+			return nil
+		}
+		out := make([]RecentEntry, 0, len(legacy))
+		for _, n := range legacy {
+			out = append(out, RecentEntry{Name: n, Count: 0})
+		}
+		return out
+	}
+	var entries []RecentEntry
+	if err := json.Unmarshal(raw, &entries); err != nil {
+		return nil
+	}
+	return entries
 }
 
 // Path returns the absolute path to the backing file.

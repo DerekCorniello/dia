@@ -11,9 +11,20 @@ const SchemaVersion = 1
 // workspace per YAML file. Resolution to launchable apps happens in
 // internal/apps (Phase 3).
 type Workspace struct {
-	Version int    `yaml:"version"`
-	Name    string `yaml:"name"`
-	Apps    []App  `yaml:"apps"`
+	Version     int         `yaml:"version"`
+	Name        string      `yaml:"name"`
+	Description string      `yaml:"description,omitempty"`
+	Apps        []App       `yaml:"apps"`
+	Plugins     []PluginRef `yaml:"plugins,omitempty"`
+}
+
+// PluginRef is a reference to an installed plugin by ID. When the
+// workspace starts, the listed plugins are enabled; when it stops
+// they are disabled. Config is an optional workspace-scoped JSON
+// object the plugin receives via dia.getConfig().
+type PluginRef struct {
+	ID     string         `yaml:"id"`
+	Config map[string]any `yaml:"config,omitempty"`
 }
 
 // App is a single component of a workspace. The Type field picks a
@@ -21,6 +32,7 @@ type Workspace struct {
 // exclusive entry points; the runtime picks based on Type.
 type App struct {
 	Type string            `yaml:"type,omitempty"`
+	Label string           `yaml:"label,omitempty"`
 	Cmd  string            `yaml:"cmd,omitempty"`
 	Args []string          `yaml:"args,omitempty"`
 	Cwd  string            `yaml:"cwd,omitempty"`

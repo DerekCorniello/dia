@@ -1,20 +1,25 @@
 <script lang="ts">
-  import { createEventDispatcher, onDestroy } from 'svelte';
-  import { api, describeError, type CustomThemeInfo } from '../api';
-  import { lastError, customThemes, theme as themeStore } from '../stores';
+  import { createEventDispatcher, onDestroy, onMount } from 'svelte';
+  import { api, describeError, type CustomThemeInfo, type PluginInfo, type PluginPathsInfo } from '../api';
+  import { lastError, customThemes, theme as themeStore, plugins as pluginsStore, pluginPaths as pluginPathsStore, keybinds as keybindsStore } from '../stores';
   import ThemePicker from './ThemePicker.svelte';
   import CustomThemeEditor from './CustomThemeEditor.svelte';
+  import PluginsPanel from './PluginsPanel.svelte';
+  import ConfirmDialog from './ConfirmDialog.svelte';
   import type { CheckInfo, PathsInfo } from '../api';
 
   export let doctor: CheckInfo[];
   export let paths: PathsInfo | null;
+  export let plugins: PluginInfo[] = [];
+  export let pluginPaths: PluginPathsInfo | null = null;
 
   const dispatch = createEventDispatcher<{
     close: void;
     themeChange: { id: string };
+    refresh: void;
   }>();
 
-  type Tab = 'theme' | 'paths' | 'doctor' | 'about';
+  type Tab = 'theme' | 'keybinds' | 'paths' | 'plugins' | 'doctor' | 'about';
   let activeTab: Tab = 'theme';
   let editorOpen = false;
   let editorInitial: CustomThemeInfo | null = null;
@@ -23,6 +28,115 @@
   let busy = false;
   let toast: { kind: 'ok' | 'err'; text: string } | null = null;
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  let showDeleteThemeConfirm = false;
+  let deleteThemeName = '';
+
+  // Keybinds state
+  let recording: string | null = null;
+  let pressedKeys = new Set<string>();
+
+  // Detect platform for modifier display.
+  let modKey = 'Ctrl';
+
+  function buildDefaults(mod: string): Record<string, string> {
+    return {
+      'Focus search': '/',
+      'New workspace': `${mod}+N`,
+      'Toggle settings': `${mod}+,`,
+      'Refresh': `${mod}+R`,
+      'Close dialog': 'Escape',
+      'Zoom in': `${mod}+=`,
+      'Zoom out': `${mod}+-`,
+      'Zoom reset': `${mod}+0`,
+    };
+  }
+
+  $: defaultKeybinds = buildDefaults(modKey);
+  $: userOverrides = (() => {
+    const out: Record<string, string> = {};
+    for (const [action, def] of Object.entries(defaultKeybinds)) {
+      const cur = $keybindsStore[action];
+      if (cur && cur !== def) out[action] = cur;
+    }
+    for (const [action, val] of Object.entries($keybindsStore)) {
+      if (!(action in defaultKeybinds)) out[action] = val;
+    }
+    return out;
+  })();
+  $: keybinds = { ...defaultKeybinds, ...userOverrides };
+
+  onMount(async () => {
+    try {
+      modKey = navigator.platform.includes('Mac') ? 'Cmd' : 'Ctrl';
+    } catch {
+      modKey = 'Ctrl';
+    }
+    try {
+      const overrides = await api.getKeybindings();
+      keybindsStore.set(overrides);
+    } catch {
+      keybindsStore.set({});
+    }
+  });
+
+  function onRecordKeydown(e: KeyboardEvent) {
+    if (!recording) return;
+    e.preventDefault();
+    e.stopPropagation();
+    pressedKeys.add(e.key);
+  }
+
+  function onRecordKeyup(e: KeyboardEvent) {
+    if (!recording) return;
+    e.preventDefault();
+    e.stopPropagation();
+    pressedKeys.delete(e.key);
+
+    const hasNonMod = [...pressedKeys].some((k) => !['Control', 'Meta', 'Alt', 'Shift'].includes(k));
+    if (hasNonMod) return;
+
+    const parts: string[] = [];
+    if (pressedKeys.has('Control')) parts.push('Ctrl');
+    if (pressedKeys.has('Meta')) parts.push('Cmd');
+    if (pressedKeys.has('Alt')) parts.push('Alt');
+    if (pressedKeys.has('Shift')) parts.push('Shift');
+    if (e.key && !['Control', 'Meta', 'Alt', 'Shift'].includes(e.key)) {
+      const display = e.key === ',' ? ',' : e.key === '.' ? '.' : e.key.length === 1 ? e.key.toUpperCase() : e.key;
+      parts.push(display);
+    }
+    if (parts.length === 0) return;
+    const action = recording;
+    recording = null;
+    pressedKeys.clear();
+    saveKeybinding(action, parts.join('+'));
+  }
+
+  async function saveKeybinding(action: string, combo: string) {
+    const def = defaultKeybinds[action];
+    try {
+      const next = { ...$keybindsStore };
+      if (combo === def) {
+        delete next[action];
+        await api.setKeybinding(action, '');
+      } else {
+        next[action] = combo;
+        await api.setKeybinding(action, combo);
+      }
+      keybindsStore.set(next);
+    } catch (e) {
+      showToast('err', `save keybinding: ${describeError(e)}`);
+    }
+  }
+
+  async function resetKeybindings() {
+    try {
+      await api.resetKeybindings();
+      keybindsStore.set({});
+      showToast('ok', 'reset keybindings');
+    } catch (e) {
+      showToast('err', `reset: ${describeError(e)}`);
+    }
+  }
 
   onDestroy(() => {
     if (toastTimer) clearTimeout(toastTimer);
@@ -97,8 +211,13 @@
   }
 
   async function deleteCustom(e: CustomEvent<{ name: string }>) {
-    const name = e.detail.name;
-    if (!confirm(`Delete custom theme "${name}"?`)) return;
+    deleteThemeName = e.detail.name;
+    showDeleteThemeConfirm = true;
+  }
+
+  async function confirmDeleteTheme() {
+    showDeleteThemeConfirm = false;
+    const name = deleteThemeName;
     try {
       await api.deleteCustomTheme(name);
       const list = await api.listCustomThemes();
@@ -151,9 +270,9 @@
   }
 
   function statusClass(s: string): string {
-    if (s === 'ok') return 'bg-accent/20 text-accent';
-    if (s === 'warn') return 'bg-accent-warn/20 text-accent-warn';
-    return 'bg-accent-err/20 text-accent-err';
+    if (s === 'ok') return 'bg-success/20 text-success';
+    if (s === 'warn') return 'bg-warning/20 text-warning';
+    return 'bg-error/20 text-error';
   }
 
   $: doctorSummary = summarize(doctor);
@@ -161,7 +280,9 @@
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: 'about', label: 'About' },
     { id: 'theme', label: 'Theme' },
+    { id: 'keybinds', label: 'Keybinds' },
     { id: 'paths', label: 'Paths' },
+    { id: 'plugins', label: 'Plugins' },
     { id: 'doctor', label: 'Doctor' },
   ];
 
@@ -180,20 +301,20 @@
 
 <svelte:window on:keydown={onKey} />
 
-<div
-  class="fixed inset-0 z-50 flex items-center justify-center bg-bg-900/70 p-4"
-  on:click|self={close}
-  on:keydown|self={(e) => e.key === 'Escape' && close()}
-  role="presentation"
->
   <div
-    class="flex max-h-[calc(100vh-2rem)] w-[min(64rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-bg-600 bg-bg-700 shadow-lg"
-    role="dialog"
-    aria-modal="true"
-    aria-label="settings"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-bg-900/80 p-4"
+    on:click|self={close}
+    on:keydown|self={(e) => e.key === 'Escape' && close()}
+    role="presentation"
   >
-    <div class="flex items-center justify-between border-b border-bg-600 px-4 py-3">
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-fg-dim">Settings</h2>
+    <div
+      class="flex max-h-[calc(100vh-2rem)] w-[min(64rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-primary/15 bg-bg-700 shadow-lg"
+      role="dialog"
+      aria-modal="true"
+      aria-label="settings"
+    >
+      <div class="flex items-center justify-between border-b border-primary/15 px-4 py-3">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-fg-dim">Settings</h2>
       <button
         type="button"
         on:click={close}
@@ -226,8 +347,8 @@
                 type="button"
                 on:click={() => (activeTab = item.id)}
                 class="block w-full rounded px-2 py-1.5 text-left text-sm {activeTab === item.id
-                  ? 'bg-bg-600 text-fg'
-                  : 'text-fg-dim hover:bg-bg-600/50 hover:text-fg'}"
+                  ? 'border-l-2 border-primary bg-primary/15 text-primary font-medium'
+                  : 'text-fg-dim hover:bg-primary/10 hover:text-fg'}"
                 aria-current={activeTab === item.id ? 'page' : undefined}
               >
                 {item.label}
@@ -303,34 +424,144 @@
                 <div class="flex flex-col gap-1 sm:flex-row sm:items-center">
                   <dt class="w-32 shrink-0 text-fg-mute">state file</dt>
                   <dd class="flex-1 break-all font-mono text-xs text-fg-dim">{paths.state_file}</dd>
-                  <button
-                    type="button"
-                    on:click={() => copy(paths.state_file)}
-                    class="shrink-0 rounded bg-bg-600 px-2 py-0.5 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg"
-                  >
-                    copy
-                  </button>
+                  <div class="flex shrink-0 gap-1">
+                    <button
+                      type="button"
+                      on:click={() => api.openStateFile()}
+                      disabled={busy}
+                      class="rounded bg-bg-600 px-2 py-0.5 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg disabled:opacity-50"
+                    >
+                      open
+                    </button>
+                    <button
+                      type="button"
+                      on:click={() => copy(paths.state_file)}
+                      class="rounded bg-bg-600 px-2 py-0.5 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg"
+                    >
+                      copy
+                    </button>
+                  </div>
                 </div>
               </dl>
             {:else}
               <p class="text-xs text-fg-mute">loading...</p>
             {/if}
+            {#if pluginPaths}
+              <div class="mt-4">
+                <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-mute">Plugin directories</h4>
+                <dl class="space-y-2 text-sm">
+                  <div class="flex flex-col gap-1 sm:flex-row sm:items-center">
+                    <dt class="w-32 shrink-0 text-fg-mute">global</dt>
+                    <dd class="flex-1 break-all font-mono text-xs text-fg-dim">{pluginPaths.globalDir}</dd>
+                    <div class="flex shrink-0 gap-1">
+                      <button
+                        type="button"
+                        on:click={() => api.openPluginFolder()}
+                        class="rounded bg-bg-600 px-2 py-0.5 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg"
+                      >
+                        open
+                      </button>
+                      <button
+                        type="button"
+                        on:click={() => copy(pluginPaths.globalDir)}
+                        class="rounded bg-bg-600 px-2 py-0.5 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg"
+                      >
+                        copy
+                      </button>
+                    </div>
+                  </div>
+                  {#if pluginPaths.localDir}
+                    {@const local = pluginPaths.localDir}
+                    <div class="flex flex-col gap-1 sm:flex-row sm:items-center">
+                      <dt class="w-32 shrink-0 text-fg-mute">local</dt>
+                      <dd class="flex-1 break-all font-mono text-xs text-fg-dim">{local}</dd>
+                      <div class="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          on:click={() => api.revealPath(local)}
+                          class="rounded bg-bg-600 px-2 py-0.5 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg"
+                        >
+                          open
+                        </button>
+                        <button
+                          type="button"
+                          on:click={() => copy(local)}
+                          class="rounded bg-bg-600 px-2 py-0.5 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg"
+                        >
+                          copy
+                        </button>
+                      </div>
+                    </div>
+                  {/if}
+                </dl>
+              </div>
+            {/if}
+          </section>
+        {:else if activeTab === 'keybinds'}
+          <section>
+            <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-mute">Keybindings</h3>
+            <!-- svelte-ignore a11y-no-static-element-interactions -->
+            <div class="space-y-1 text-sm" on:keydown={onRecordKeydown} on:keyup={onRecordKeyup}>
+              {#each Object.entries(defaultKeybinds) as [action, def]}
+                {@const current = keybinds[action] || def}
+                <div class="flex items-center gap-2">
+                  <span class="w-40 text-fg-dim">{action}</span>
+                  <button
+                    type="button"
+                    on:click={() => recording = recording === action ? null : action}
+                    class="flex-1 rounded border border-bg-600 bg-bg-800 px-2 py-1 text-xs font-mono text-left text-fg-dim hover:border-accent/50"
+                  >
+                    {#if recording === action}
+                      <span class="text-accent">press keys...</span>
+                    {:else}
+                      {current}
+{/if}
+
+{#if showDeleteThemeConfirm}
+  <ConfirmDialog
+    title="Delete theme"
+    message="Delete custom theme &quot;{deleteThemeName}&quot;? This cannot be undone."
+    confirmLabel="Delete"
+    on:confirm={confirmDeleteTheme}
+    on:cancel={() => (showDeleteThemeConfirm = false)}
+  />
+{/if}
+                  </button>
+                  {#if current !== def}
+                    <button
+                      type="button"
+                      on:click={() => saveKeybinding(action, def)}
+                      class="text-[10px] text-fg-mute hover:text-fg"
+                    >
+                      reset
+                    </button>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+            <button
+              type="button"
+              on:click={resetKeybindings}
+              class="mt-3 rounded bg-bg-600 px-2 py-0.5 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg"
+            >
+              Reset all to defaults
+            </button>
           </section>
         {:else if activeTab === 'doctor'}
           <section>
             <h3 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fg-mute">
               Doctor
               {#if doctor.length > 0}
-                <span class="rounded bg-accent/20 px-1.5 text-[10px] text-accent">
+                <span class="rounded bg-success/20 px-1.5 text-[10px] text-success">
                   {doctorSummary.ok} ok
                 </span>
                 {#if doctorSummary.warn > 0}
-                  <span class="rounded bg-accent-warn/20 px-1.5 text-[10px] text-accent-warn">
+                  <span class="rounded bg-warning/20 px-1.5 text-[10px] text-warning">
                     {doctorSummary.warn} warn
                   </span>
                 {/if}
                 {#if doctorSummary.err > 0}
-                  <span class="rounded bg-accent-err/20 px-1.5 text-[10px] text-accent-err">
+                  <span class="rounded bg-error/20 px-1.5 text-[10px] text-error">
                     {doctorSummary.err} err
                   </span>
                 {/if}
@@ -356,6 +587,11 @@
               </ul>
             {/if}
           </section>
+        {:else if activeTab === 'plugins'}
+          <PluginsPanel
+            plugins={plugins}
+            on:refresh={() => dispatch('refresh')}
+          />
         {:else if activeTab === 'about'}
           <section>
             <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-mute">About</h3>
@@ -392,8 +628,8 @@
   <div
     class="pointer-events-none fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 rounded px-3 py-1.5 text-xs shadow {toast.kind ===
     'ok'
-      ? 'bg-accent/20 text-accent'
-      : 'bg-accent-err/20 text-accent-err'}"
+      ? 'border-l-2 border-success bg-success/15 text-success'
+      : 'border-l-2 border-error bg-error/15 text-error'}"
   >
     {toast.text}
   </div>
@@ -401,12 +637,12 @@
 
 {#if editorOpen}
   <div
-    class="fixed inset-0 z-[55] flex items-center justify-center bg-bg-900/70 p-4"
+    class="fixed inset-0 z-[55] flex items-center justify-center bg-bg-900/80 p-4"
     on:click|self={() => (editorOpen = false)}
     role="presentation"
   >
     <div
-      class="flex max-h-[calc(100vh-2rem)] w-[min(48rem,calc(100vw-2rem))] flex-col overflow-y-auto rounded-lg border border-bg-600 bg-bg-700 p-4 shadow-lg"
+      class="flex max-h-[calc(100vh-2rem)] w-[min(48rem,calc(100vw-2rem))] flex-col overflow-y-auto rounded-lg border border-primary/15 bg-bg-700 p-4 shadow-lg"
       role="dialog"
       aria-modal="true"
       aria-label="custom theme editor"

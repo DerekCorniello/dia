@@ -20,3 +20,9 @@ apps:
 
   - type: browser
     url: https://example.com
+
+# Plugins listed here are enabled when the workspace starts and
+# disabled when it stops. Window-type plugins show an "open" button
+# on the workspace card while the workspace is running.
+# plugins:
+#   - id: whiteboard

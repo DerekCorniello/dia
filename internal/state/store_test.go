@@ -93,7 +93,7 @@ func TestSnapshotIndependentOfMutations(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := s.Mutate(func(d *Data) {
-		d.Recent = append(d.Recent, "alpha")
+		d.Recent = append(d.Recent, RecentEntry{Name: "alpha", Count: 1})
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestFileIsValidJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := s.Mutate(func(d *Data) {
-		d.Recent = []string{"a", "b"}
+		d.Recent = []RecentEntry{{Name: "a", Count: 1}, {Name: "b", Count: 1}}
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -144,6 +144,29 @@ func TestFileIsValidJSON(t *testing.T) {
 	var v map[string]any
 	if err := json.Unmarshal(data, &v); err != nil {
 		t.Fatalf("state file is not valid JSON: %v", err)
+	}
+}
+
+func TestOpenAtMigratesLegacyRecent(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "state.json")
+	legacy := `{"version":1,"recent":["alpha","beta"],"instances":{}}`
+	if err := os.WriteFile(p, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := OpenAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := s.Snapshot()
+	if len(snap.Recent) != 2 {
+		t.Fatalf("Recent len = %d, want 2", len(snap.Recent))
+	}
+	if snap.Recent[0].Name != "alpha" || snap.Recent[0].Count != 0 {
+		t.Errorf("Recent[0] = %+v, want {alpha, 0}", snap.Recent[0])
+	}
+	if snap.Recent[1].Name != "beta" || snap.Recent[1].Count != 0 {
+		t.Errorf("Recent[1] = %+v, want {beta, 0}", snap.Recent[1])
 	}
 }
 

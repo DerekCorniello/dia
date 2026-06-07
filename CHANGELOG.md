@@ -5,6 +5,61 @@ All notable changes to dia are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - Unreleased
+
+### Added
+
+- **In-process JS plugin host (v1).** Plugins are folders with a
+  `plugin.json` manifest and an `index.js` entry script that run
+  in a [goja](https://github.com/dop251/goja) interpreter in the
+  GUI process. The host auto-wraps a panel from the manifest's
+  `ui.type` (`list`/`grid`/`table`/`kv`/`text`/`canvas`); plugin
+  authors ship JS + a UI schema, not a frontend framework.
+- **Window plugins (`ui.type=window`).** A plugin can opt to run
+  in its own OS-level window instead of an embedded panel. The
+  main dia process re-spawns itself with `--plugin-window=<id>`;
+  the second process serves the plugin's `panel/` folder, injects
+  a `window.dia` proxy (read-only host methods + `dia.call()` for
+  arbitrary method dispatch), and loads the plugin's `index.js`
+  in goja so `module.exports` functions are reachable. Plugin
+  authors ship plain HTML/CSS/JS in `panel/`; no Svelte, no
+  build step.
+- **Capability-gated `dia.*` bridge.** Plugins call into the host
+  through a single `dia` object; each method requires a capability
+  the user has explicitly granted. Read-only defaults include
+  `workspaces:read`, `instances:read`, `doctor:read`, `paths:read`,
+  `themes:read`; mutating capabilities (`workspaces:start`,
+  `instances:stop`, `workspaces:create`, `themes:write`) are
+  opt-in and recorded in the persisted state.
+- **Local + global plugin directories.** Global plugins live in
+  `$XDG_STATE_HOME/dia/plugins/<id>/`; project-local plugins live
+  in `<cwd>/.dia/plugins/<id>/`. On id collision the local copy
+  wins. CLI flag `--local` switches between the two for
+  `plugin new` and `plugin list`.
+- **Plugin CLI (`dia plugin ...`).** `new`, `list`, `install`,
+  `uninstall`, `enable`, `disable`, `info` subcommands for
+  authoring, discovery, and toggling persisted state.
+- **Plugin state persistence.** `state.Data.Plugins` records
+  each plugin's `Enabled` flag and the granted capability list
+  so the GUI starts the right goja runtime on launch.
+- **`examples/hello-plugin`** showing the manifest + entry shape
+  for a `list` panel that reads workspaces.
+- **`examples/whiteboard`** showing a `ui.type=window` plugin
+  that opens a new window with a free-draw `<canvas>`.
+- **Workspace plugins.** A workspace YAML can list plugin IDs
+  under `plugins: [{ id: whiteboard }]`. Listed plugins are
+  enabled when the workspace starts and disabled when it stops.
+  Window-type plugins show an "open" button on the workspace card
+  while the workspace is running.
+- **Escape key closes new workspace dialog.** The `+ New` dialog
+  now closes on Escape and on backdrop click, matching the
+  Settings panel behavior.
+
+### Dependencies
+
+- `github.com/dop251/goja` v0.0.0-20260603125802-cfe4039cb6d7
+  (Go 1.20-compatible pseudo-version, pinned to keep CI on Go 1.23)
+
 ## [0.2.0] - Unreleased
 
 ### Breaking changes

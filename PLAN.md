@@ -7,7 +7,7 @@ Confirmed during planning; referenced throughout this doc.
 - Module path: `github.com/DerekCorniello/dia` (matches the remote `git@github.com:DerekCorniello/dia.git`)
 - Binary name: `dia`
 - UI: Wails v2 desktop app (Svelte 4 + TypeScript 5 + Vite 5 + Tailwind 3)
-- App-type model: built-in registry only (local aliases, browser/open, gh wrappers). No external plugin mechanism in v0.2.0.
+- App-type model: built-in registry (local aliases, browser/open, gh wrappers). Plugin system is a separate in-process JS mechanism in `internal/plugins`, scoped to the GUI; workspaces do not invoke plugin code.
 - GitHub integration: thin wrapper around the `gh` CLI (no separate auth in dia)
 - Config locations: global (`~/.config/dia/workspaces/*.yaml`) and project-local (`.dia.yaml`), with discovery; project-local shadows global on name collision
 - State store: JSON file in XDG state dir (`~/.local/state/dia/state.json`)
@@ -38,8 +38,12 @@ environments on demand in a predictable way.
 **v0.1.0 released** (2026-06-04) -- all six original implementation phases (0-6)
 complete. See CHANGELOG for details.
 
-The phases below describe the v0.2.0 roadmap: user-facing polish, theming,
-workspace organization, cross-process state, CLI hardening, and test coverage.
+**v0.2.0 (in progress)** -- theming, UI polish, full removal of the
+external `dia-*` plugin mechanism. See CHANGELOG.
+
+**v0.3.0 (in progress)** -- in-process JS plugin system (goja),
+host auto-wrap UI from manifest, local + global plugin dirs, CLI
+scaffolding. See `PLUGIN_PLAN.md` and CHANGELOG.
 
 ## Stack
 

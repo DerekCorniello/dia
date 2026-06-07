@@ -16,6 +16,10 @@ func revealImpl(path string) error {
 	return runDetached("xdg-open", path)
 }
 
+func openFileImpl(path string) error {
+	return runDetached("xdg-open", path)
+}
+
 func runDetached(prog string, args ...string) error {
 	cmd := exec.Command(prog, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}

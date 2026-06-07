@@ -1,0 +1,10 @@
+version: 1
+name: with-plugins
+apps:
+  - type: editor
+    cmd: code .
+  - type: terminal
+    cmd: bash
+plugins:
+  - id: whiteboard
+  - id: hello

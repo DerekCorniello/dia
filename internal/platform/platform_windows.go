@@ -107,6 +107,10 @@ func (winPlatform) RevealInFileManager(path string) error {
 	return runDetached("explorer", path)
 }
 
+func (winPlatform) OpenFile(path string) error {
+	return runDetached("cmd", "/c", "start", "", path)
+}
+
 func runDetached(prog string, args ...string) error {
 	cmd := exec.Command(prog, args...)
 	if err := cmd.Start(); err != nil {

@@ -6,8 +6,32 @@ export function DeleteCustomTheme(arg1) {
   return window['go']['wailsapp']['App']['DeleteCustomTheme'](arg1);
 }
 
+export function DeleteWorkspace(arg1) {
+  return window['go']['wailsapp']['App']['DeleteWorkspace'](arg1);
+}
+
+export function DetectTools() {
+  return window['go']['wailsapp']['App']['DetectTools']();
+}
+
+export function DisablePlugin(arg1) {
+  return window['go']['wailsapp']['App']['DisablePlugin'](arg1);
+}
+
 export function Doctor() {
   return window['go']['wailsapp']['App']['Doctor']();
+}
+
+export function EnablePlugin(arg1) {
+  return window['go']['wailsapp']['App']['EnablePlugin'](arg1);
+}
+
+export function GetKeybindings() {
+  return window['go']['wailsapp']['App']['GetKeybindings']();
+}
+
+export function GetRecent() {
+  return window['go']['wailsapp']['App']['GetRecent']();
 }
 
 export function GetTheme() {
@@ -18,6 +42,10 @@ export function GetWorkspace(arg1) {
   return window['go']['wailsapp']['App']['GetWorkspace'](arg1);
 }
 
+export function GetWorkspaceEditor(arg1) {
+  return window['go']['wailsapp']['App']['GetWorkspaceEditor'](arg1);
+}
+
 export function ListCustomThemes() {
   return window['go']['wailsapp']['App']['ListCustomThemes']();
 }
@@ -26,16 +54,32 @@ export function ListInstances() {
   return window['go']['wailsapp']['App']['ListInstances']();
 }
 
+export function ListPlugins() {
+  return window['go']['wailsapp']['App']['ListPlugins']();
+}
+
 export function ListWorkspaces() {
   return window['go']['wailsapp']['App']['ListWorkspaces']();
 }
 
-export function NewWorkspace(arg1) {
-  return window['go']['wailsapp']['App']['NewWorkspace'](arg1);
+export function NewWorkspace(arg1, arg2) {
+  return window['go']['wailsapp']['App']['NewWorkspace'](arg1, arg2);
 }
 
 export function OpenConfigFolder() {
   return window['go']['wailsapp']['App']['OpenConfigFolder']();
+}
+
+export function OpenPluginFolder() {
+  return window['go']['wailsapp']['App']['OpenPluginFolder']();
+}
+
+export function OpenPluginWindow(arg1) {
+  return window['go']['wailsapp']['App']['OpenPluginWindow'](arg1);
+}
+
+export function OpenStateFile() {
+  return window['go']['wailsapp']['App']['OpenStateFile']();
 }
 
 export function OpenStateFolder() {
@@ -46,12 +90,40 @@ export function Paths() {
   return window['go']['wailsapp']['App']['Paths']();
 }
 
+export function PluginCall(arg1, arg2, arg3) {
+  return window['go']['wailsapp']['App']['PluginCall'](arg1, arg2, arg3);
+}
+
+export function PluginPaths() {
+  return window['go']['wailsapp']['App']['PluginPaths']();
+}
+
 export function Reconcile() {
   return window['go']['wailsapp']['App']['Reconcile']();
 }
 
+export function ResetKeybindings() {
+  return window['go']['wailsapp']['App']['ResetKeybindings']();
+}
+
+export function RevealPath(arg1) {
+  return window['go']['wailsapp']['App']['RevealPath'](arg1);
+}
+
+export function SaveWorkspaceEditor(arg1) {
+  return window['go']['wailsapp']['App']['SaveWorkspaceEditor'](arg1);
+}
+
 export function SetCustomTheme(arg1) {
   return window['go']['wailsapp']['App']['SetCustomTheme'](arg1);
+}
+
+export function SetKeybinding(arg1, arg2) {
+  return window['go']['wailsapp']['App']['SetKeybinding'](arg1, arg2);
+}
+
+export function SetPluginEnabled(arg1, arg2, arg3) {
+  return window['go']['wailsapp']['App']['SetPluginEnabled'](arg1, arg2, arg3);
 }
 
 export function SetTheme(arg1) {
@@ -72,4 +144,8 @@ export function StopAll() {
 
 export function StopInstance(arg1) {
   return window['go']['wailsapp']['App']['StopInstance'](arg1);
+}
+
+export function StopWorkspace(arg1) {
+  return window['go']['wailsapp']['App']['StopWorkspace'](arg1);
 }

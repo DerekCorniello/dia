@@ -7,4 +7,34 @@
     @apply bg-bg-800 text-fg font-sans;
     margin: 0;
   }
+
+  a, button, input, select, textarea, [role="menuitem"], [role="tab"], summary {
+    @apply transition-colors duration-150 ease-out;
+  }
+
+  ::selection {
+    background-color: oklch(var(--p) / 0.3);
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary/40;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: oklch(var(--b2) / 0.5);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: oklch(var(--p) / 0.35);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: oklch(var(--p) / 0.55);
+  }
 }

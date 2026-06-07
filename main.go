@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -25,6 +27,14 @@ var assets embed.FS
 // type directly is the simpler choice.
 
 func main() {
+	if pluginID, ok := parsePluginWindowFlag(os.Args[1:]); ok {
+		workspaceName := parseWorkspaceFlag(os.Args[1:])
+		if err := wailsapp.RunPluginWindow(pluginID, workspaceName); err != nil {
+			fmt.Fprintln(os.Stderr, "Error:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 {
 		os.Exit(cli.Run(os.Args[1:]))
 	}
@@ -47,4 +57,35 @@ func main() {
 		println("Error:", err.Error())
 		os.Exit(1)
 	}
+}
+
+// parsePluginWindowFlag scans args for "--plugin-window=<id>" or
+// the split "--plugin-window" "<id>". The flag is consumed before
+// cli.Run so the subcommand parser does not see it. The spawn is
+// internal to dia (set by OpenPluginWindow) so users rarely pass
+// it themselves.
+func parsePluginWindowFlag(args []string) (string, bool) {
+	for i, a := range args {
+		if strings.HasPrefix(a, "--plugin-window=") {
+			return strings.TrimPrefix(a, "--plugin-window="), true
+		}
+		if a == "--plugin-window" && i+1 < len(args) {
+			return args[i+1], true
+		}
+	}
+	return "", false
+}
+
+// parseWorkspaceFlag scans args for "--workspace=<name>" or the split
+// "--workspace" "<name>". Returns empty string if not found.
+func parseWorkspaceFlag(args []string) string {
+	for i, a := range args {
+		if strings.HasPrefix(a, "--workspace=") {
+			return strings.TrimPrefix(a, "--workspace=")
+		}
+		if a == "--workspace" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }

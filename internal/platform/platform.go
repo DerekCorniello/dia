@@ -58,4 +58,8 @@ type Platform interface {
 	// path is a file, the file should be selected; if it is a
 	// directory, the directory should be opened.
 	RevealInFileManager(path string) error
+
+	// OpenFile opens path with the OS default application for
+	// that file type (e.g. a text editor for .json files).
+	OpenFile(path string) error
 }

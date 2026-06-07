@@ -31,16 +31,12 @@ func TestLoadValid(t *testing.T) {
 }
 
 func TestLoadMissingApps(t *testing.T) {
-	_, err := Load("testdata/missing-apps.yaml")
-	if err == nil {
-		t.Fatal("expected error for missing apps")
+	w, err := Load("testdata/missing-apps.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if !IsValidationError(err) {
-		t.Fatalf("expected ValidationErrors, got %T: %v", err, err)
-	}
-	ve := err.(ValidationErrors)
-	if len(ve) != 1 || ve[0].Path != "workspace.apps" {
-		t.Fatalf("unexpected errors: %v", ve)
+	if len(w.Apps) != 0 {
+		t.Errorf("apps: got %d want 0 (empty workspace is valid)", len(w.Apps))
 	}
 }
 
@@ -179,5 +175,18 @@ func TestValidName(t *testing.T) {
 		if got := validName(c.in); got != c.want {
 			t.Errorf("validName(%q) = %v, want %v", c.in, got, c.want)
 		}
+	}
+}
+
+func TestLoadWithPlugins(t *testing.T) {
+	w, err := Load("testdata/with-plugins.yaml")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(w.Plugins) != 2 {
+		t.Fatalf("plugins: got %d want 2", len(w.Plugins))
+	}
+	if w.Plugins[0].ID != "whiteboard" || w.Plugins[1].ID != "hello" {
+		t.Errorf("plugins: got %v", w.Plugins)
 	}
 }

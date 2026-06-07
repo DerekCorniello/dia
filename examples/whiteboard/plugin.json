@@ -1,0 +1,22 @@
+{
+  "id": "whiteboard",
+  "name": "Whiteboard",
+  "version": "0.1.0",
+  "description": "A free-draw whiteboard that opens in its own window. Draw with mouse or touch; the strokes are kept in browser memory (no save for v1).",
+  "author": "dia",
+  "entry": "index.js",
+  "capabilities": [],
+  "config_schema": {
+    "color": { "type": "string", "default": "#000000", "label": "Default pen color" },
+    "width": { "type": "number", "default": 2, "label": "Default pen width" },
+    "theme": { "type": "select", "default": "light", "label": "Canvas theme", "options": ["light", "dark"] }
+  },
+  "ui": {
+    "type": "window",
+    "title": "Whiteboard",
+    "entry": "panel/panel.js",
+    "width": 1100,
+    "height": 750,
+    "refreshable": false
+  }
+}

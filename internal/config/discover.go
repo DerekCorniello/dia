@@ -17,6 +17,10 @@ const (
 
 	// ProjectLocalFile is the per-repo config file dia looks for.
 	ProjectLocalFile = ".dia.yaml"
+
+	// LocalDirName is the project-local directory for dia files
+	// (workspace YAMLs, plugins).
+	LocalDirName = ".dia"
 )
 
 // Source describes a discovered workspace and where it came from.
@@ -76,8 +80,27 @@ func Discover(opts DiscoverOptions) ([]Source, error) {
 	}
 
 	// Project-local: walk up from CWD looking for .dia.yaml.
+	localPaths := map[string]bool{}
 	if local := findProjectLocal(opts.CWD, opts.StopAt); local != "" {
 		paths = append(paths, local)
+		localPaths[local] = true
+	}
+
+	// Project-local: glob .dia/*.yaml in CWD.
+	diaDir := filepath.Join(opts.CWD, LocalDirName)
+	if entries, err := os.ReadDir(diaDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
+				continue
+			}
+			p := filepath.Join(diaDir, name)
+			paths = append(paths, p)
+			localPaths[p] = true
+		}
 	}
 
 	// Load and dedupe.
@@ -86,7 +109,7 @@ func Discover(opts DiscoverOptions) ([]Source, error) {
 		if err != nil {
 			return nil, fmt.Errorf("load %s: %w", p, err)
 		}
-		src := Source{Workspace: w, Path: p, Local: p == findProjectLocal(opts.CWD, opts.StopAt)}
+		src := Source{Workspace: w, Path: p, Local: localPaths[p]}
 		if existing, ok := byName[w.Name]; ok {
 			// Project-local wins on collision. Local files
 			// always come after global in the path list, so

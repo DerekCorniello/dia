@@ -1,0 +1,16 @@
+{
+  "id": "hello-plugin",
+  "name": "Hello Plugin",
+  "version": "0.1.0",
+  "description": "A minimal example plugin that lists recent workspaces.",
+  "author": "dia",
+  "entry": "index.js",
+  "capabilities": [
+    "workspaces:read"
+  ],
+  "ui": {
+    "type": "list",
+    "title": "Recent Workspaces",
+    "refreshable": true
+  }
+}

@@ -99,3 +99,7 @@ func (unixPlatform) RevealInFileManager(path string) error {
 	// platform_darwin.go handles the "open" command.
 	return revealImpl(path)
 }
+
+func (unixPlatform) OpenFile(path string) error {
+	return openFileImpl(path)
+}

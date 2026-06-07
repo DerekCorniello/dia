@@ -94,10 +94,6 @@ func Validate(w *Workspace) error {
 		})
 	}
 
-	if len(w.Apps) == 0 {
-		errs = append(errs, ValidationError{Path: "workspace.apps", Msg: "at least one app required"})
-	}
-
 	for i := range w.Apps {
 		validateApp(&w.Apps[i], fmt.Sprintf("workspace.apps[%d]", i), &errs)
 	}

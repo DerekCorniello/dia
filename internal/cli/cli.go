@@ -83,6 +83,7 @@ func newRootCmd() *cobra.Command {
 		newOpenCmd(),
 		newReconcileCmd(),
 		newDoctorCmd(),
+		newPluginCmd(),
 	)
 	return cmd
 }

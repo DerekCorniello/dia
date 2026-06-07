@@ -96,7 +96,7 @@
         <button
           type="button"
           on:click={() => (query = '')}
-          class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-fg-mute hover:text-fg"
+          class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-fg-mute hover:text-primary"
           aria-label="clear filter"
         >
           x
@@ -106,7 +106,7 @@
     <button
       type="button"
       on:click={startNewCustom}
-      class="rounded bg-accent/20 px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/30"
+      class="rounded bg-primary/20 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary/30"
     >
       + New custom
     </button>
@@ -121,7 +121,7 @@
   {#each groupOrder as group (group)}
     {#if groupedBuiltIn[group] && groupedBuiltIn[group].length > 0}
       <section>
-        <h4 class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-fg-mute">
+        <h4 class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-secondary">
           {groupLabels[group]}
         </h4>
         <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -130,9 +130,9 @@
             <button
               type="button"
               on:click={() => selectTheme(t.id)}
-              class="group flex flex-col gap-1.5 rounded-lg border p-2.5 text-left transition focus:outline-none focus:ring-2 focus:ring-accent {selected
-                ? 'border-accent bg-accent/10'
-                : 'border-bg-600 bg-bg-800 hover:border-fg-mute'}"
+              class="group flex flex-col gap-1.5 rounded-lg border p-2.5 text-left transition focus:outline-none focus:ring-2 focus:ring-primary {selected
+                ? 'border-primary bg-primary/5 shadow-glow-sm'
+                : 'border-bg-600 bg-bg-800 hover:border-primary/40'}"
               aria-pressed={selected}
             >
               <div
@@ -163,7 +163,7 @@
 
   {#if filteredCustom.length > 0}
     <section>
-      <h4 class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-fg-mute">
+      <h4 class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-secondary">
         Custom
       </h4>
       <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -171,9 +171,9 @@
           {@const selected = t.name === activeTheme}
           {@const swatch = customSwatch(t)}
           <div
-            class="group relative flex flex-col gap-1.5 rounded-lg border p-2.5 text-left transition focus-within:ring-2 focus-within:ring-accent {selected
-              ? 'border-accent bg-accent/10'
-              : 'border-bg-600 bg-bg-800 hover:border-fg-mute'}"
+            class="group relative flex flex-col gap-1.5 rounded-lg border p-2.5 text-left transition focus-within:ring-2 focus-within:ring-primary {selected
+              ? 'border-primary bg-primary/5 shadow-glow-sm'
+              : 'border-bg-600 bg-bg-800 hover:border-primary/40'}"
           >
             <button
               type="button"
@@ -206,7 +206,7 @@
                 <button
                   type="button"
                   on:click|stopPropagation={() => confirmDelete(t.name)}
-                  class="rounded bg-bg-600/80 px-1.5 py-0.5 text-[10px] text-accent-err hover:bg-accent-err/20"
+                  class="rounded bg-error/10 px-1.5 py-0.5 text-[10px] text-error hover:bg-error/20"
                   aria-label={`delete ${t.name}`}
                 >
                   del

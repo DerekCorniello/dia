@@ -44,3 +44,12 @@ func defaultStateHome() string {
 	}
 	return filepath.Join(home, ".local", "state")
 }
+
+// FilePath returns the absolute path to the state JSON file.
+func FilePath() (string, error) {
+	dir, err := ResolveStateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, StateFile), nil
+}

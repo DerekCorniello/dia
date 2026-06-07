@@ -325,18 +325,26 @@ func (r *Runtime) Reconcile() error {
 }
 
 // pushRecent inserts name at the front of recent, de-duplicates, and
-// caps the slice at limit. Returns a new slice.
-func pushRecent(recent []string, name string, limit int) []string {
+// caps the slice at limit. The entry's Count is incremented if name is
+// already present. Returns a new slice.
+func pushRecent(recent []state.RecentEntry, name string, limit int) []state.RecentEntry {
 	if name == "" {
 		return recent
 	}
-	out := make([]string, 0, limit)
-	out = append(out, name)
-	for _, n := range recent {
-		if n == name {
+	count := 1
+	for _, e := range recent {
+		if e.Name == name {
+			count = e.Count + 1
+			break
+		}
+	}
+	out := make([]state.RecentEntry, 0, limit)
+	out = append(out, state.RecentEntry{Name: name, Count: count})
+	for _, e := range recent {
+		if e.Name == name {
 			continue
 		}
-		out = append(out, n)
+		out = append(out, e)
 		if len(out) == limit {
 			break
 		}

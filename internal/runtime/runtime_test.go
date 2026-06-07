@@ -95,6 +95,8 @@ func (m *mockPlatform) Kill(pid int, force bool) error {
 
 func (m *mockPlatform) RevealInFileManager(path string) error { return nil }
 
+func (m *mockPlatform) OpenFile(path string) error { return nil }
+
 func (m *mockPlatform) MarkDead(pid int) {
 	m.mu.Lock()
 	delete(m.running, pid)
@@ -308,8 +310,14 @@ func TestPushRecent(t *testing.T) {
 	r := pushRecent(nil, "a", 3)
 	r = pushRecent(r, "b", 3)
 	r = pushRecent(r, "a", 3)
-	if got := strings.Join(r, ","); got != "a,b" {
-		t.Errorf("after dedup: %q, want %q", got, "a,b")
+	if len(r) != 2 {
+		t.Fatalf("after dedup: len = %d, want 2", len(r))
+	}
+	if r[0].Name != "a" || r[0].Count != 2 {
+		t.Errorf("r[0] = %+v, want {a, 2}", r[0])
+	}
+	if r[1].Name != "b" || r[1].Count != 1 {
+		t.Errorf("r[1] = %+v, want {b, 1}", r[1])
 	}
 	for i := 0; i < 10; i++ {
 		r = pushRecent(r, fmt.Sprintf("ws%d", i), 3)
@@ -356,8 +364,8 @@ func TestStart_LocalAndCustom(t *testing.T) {
 	if _, ok := snap.Instances[inst.ID]; !ok {
 		t.Errorf("instance not persisted")
 	}
-	if got := strings.Join(snap.Recent, ","); got != "test" {
-		t.Errorf("Recent = %q, want %q", got, "test")
+	if len(snap.Recent) != 1 || snap.Recent[0].Name != "test" {
+		t.Errorf("Recent = %+v, want [{test 1}]", snap.Recent)
 	}
 }
 
@@ -408,6 +416,7 @@ func (failingPlatform) OpenURL(string) error             { return nil }
 func (failingPlatform) IsRunning(int) (bool, error)      { return false, nil }
 func (failingPlatform) Kill(int, bool) error             { return nil }
 func (failingPlatform) RevealInFileManager(string) error { return nil }
+func (failingPlatform) OpenFile(string) error             { return nil }
 
 func TestStart_NilOrEmptyWorkspace(t *testing.T) {
 	rt, _, _ := newTestRuntime(t)

@@ -296,18 +296,19 @@ export default {
         },
         accent: {
           DEFAULT: 'oklch(var(--p) / <alpha-value>)',
+          secondary: 'oklch(var(--s) / <alpha-value>)',
+          brand: 'oklch(var(--a) / <alpha-value>)',
           warn: 'oklch(var(--wa) / <alpha-value>)',
           err: 'oklch(var(--er) / <alpha-value>)',
         },
+        info: 'oklch(var(--in) / <alpha-value>)',
+        success: 'oklch(var(--su) / <alpha-value>)',
+        warning: 'oklch(var(--wa) / <alpha-value>)',
+        error: 'oklch(var(--er) / <alpha-value>)',
       },
       fontFamily: {
-        sans: [
-          '-apple-system',
-          'BlinkMacSystemFont',
-          'Segoe UI',
-          'Roboto',
-          'sans-serif',
-        ],
+        display: ['Outfit', 'sans-serif'],
+        sans: ['Outfit', 'sans-serif'],
         mono: [
           'ui-monospace',
           'SFMono-Regular',
@@ -315,6 +316,11 @@ export default {
           'Consolas',
           'monospace',
         ],
+      },
+      boxShadow: {
+        'glow-sm': '0 0 8px oklch(var(--p) / 0.15)',
+        'glow-md': '0 0 16px oklch(var(--p) / 0.25)',
+        'glow-accent': '0 0 12px oklch(var(--a) / 0.2)',
       },
     },
   },

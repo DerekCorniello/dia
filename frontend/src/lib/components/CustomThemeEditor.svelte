@@ -217,7 +217,7 @@
   <div class="grid gap-4 sm:grid-cols-3">
     {#each Object.entries(groupedSlots) as [groupKey, slots] (groupKey)}
       <div>
-        <h5 class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-fg-mute">
+        <h5 class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-secondary">
           {groupKey}
         </h5>
         <div class="space-y-2">
@@ -255,8 +255,8 @@
     {/each}
   </div>
 
-  <div class="rounded border border-bg-600 bg-bg-800 p-3" data-theme={name.trim() || 'preview-tmp'}>
-    <div class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-fg-mute">
+  <div class="rounded border border-primary/30 bg-bg-800 p-3" data-theme={name.trim() || 'preview-tmp'}>
+    <div class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-primary">
       Preview
     </div>
     <div class="flex flex-wrap items-center gap-2 text-xs">
@@ -283,7 +283,7 @@
     <button
       type="button"
       on:click={save}
-      class="rounded bg-accent/20 px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/30"
+      class="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-content hover:bg-primary/90"
     >
       {initial ? 'Save' : 'Create'}
     </button>
