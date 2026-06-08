@@ -31,13 +31,13 @@ type PluginRef struct {
 // built-in launcher or a gh CLI wrapper. Cmd and Url are mutually
 // exclusive entry points; the runtime picks based on Type.
 type App struct {
-	Type string            `yaml:"type,omitempty"`
-	Label string           `yaml:"label,omitempty"`
-	Cmd  string            `yaml:"cmd,omitempty"`
-	Args []string          `yaml:"args,omitempty"`
-	Cwd  string            `yaml:"cwd,omitempty"`
-	Env  map[string]string `yaml:"env,omitempty"`
-	Url  string            `yaml:"url,omitempty"`
-	Open bool              `yaml:"open,omitempty"`
-	Wait bool              `yaml:"wait,omitempty"`
+	Type  string            `yaml:"type,omitempty"`
+	Label string            `yaml:"label,omitempty"`
+	Cmd   string            `yaml:"cmd,omitempty"`
+	Args  []string          `yaml:"args,omitempty"`
+	Cwd   string            `yaml:"cwd,omitempty"`
+	Env   map[string]string `yaml:"env,omitempty"`
+	Url   string            `yaml:"url,omitempty"`
+	Open  bool              `yaml:"open,omitempty"`
+	Wait  bool              `yaml:"wait,omitempty"`
 }

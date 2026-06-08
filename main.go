@@ -49,7 +49,7 @@ func main() {
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        func(ctx context.Context) { app.Startup(ctx) },
-		Bind: []interface{}{
+		Bind: []any{
 			app,
 		},
 	})
@@ -66,8 +66,8 @@ func main() {
 // it themselves.
 func parsePluginWindowFlag(args []string) (string, bool) {
 	for i, a := range args {
-		if strings.HasPrefix(a, "--plugin-window=") {
-			return strings.TrimPrefix(a, "--plugin-window="), true
+		if after, ok := strings.CutPrefix(a, "--plugin-window="); ok {
+			return after, true
 		}
 		if a == "--plugin-window" && i+1 < len(args) {
 			return args[i+1], true
@@ -80,8 +80,8 @@ func parsePluginWindowFlag(args []string) (string, bool) {
 // "--workspace" "<name>". Returns empty string if not found.
 func parseWorkspaceFlag(args []string) string {
 	for i, a := range args {
-		if strings.HasPrefix(a, "--workspace=") {
-			return strings.TrimPrefix(a, "--workspace=")
+		if after, ok := strings.CutPrefix(a, "--workspace="); ok {
+			return after
 		}
 		if a == "--workspace" && i+1 < len(args) {
 			return args[i+1]

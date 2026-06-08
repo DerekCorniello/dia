@@ -13,16 +13,16 @@ import (
 // Manifest is the parsed contents of a plugin's plugin.json file.
 // Fields are validated by Validate; the zero value is invalid.
 type Manifest struct {
-	ID           string              `json:"id"`
-	Name         string              `json:"name"`
-	Version      string              `json:"version"`
-	Description     string              `json:"description"`
-	LongDescription string            `json:"long_description,omitempty"`
-	Author          string              `json:"author"`
-	Entry        string              `json:"entry"`
-	Capabilities []string            `json:"capabilities"`
-	ConfigSchema map[string]any      `json:"config_schema"`
-	UI           UISpec              `json:"ui"`
+	ID              string         `json:"id"`
+	Name            string         `json:"name"`
+	Version         string         `json:"version"`
+	Description     string         `json:"description"`
+	LongDescription string         `json:"long_description,omitempty"`
+	Author          string         `json:"author"`
+	Entry           string         `json:"entry"`
+	Capabilities    []string       `json:"capabilities"`
+	ConfigSchema    map[string]any `json:"config_schema"`
+	UI              UISpec         `json:"ui"`
 }
 
 // UISpec describes how the host should render a plugin's panel. The

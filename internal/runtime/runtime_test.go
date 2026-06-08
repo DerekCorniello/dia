@@ -416,7 +416,7 @@ func (failingPlatform) OpenURL(string) error             { return nil }
 func (failingPlatform) IsRunning(int) (bool, error)      { return false, nil }
 func (failingPlatform) Kill(int, bool) error             { return nil }
 func (failingPlatform) RevealInFileManager(string) error { return nil }
-func (failingPlatform) OpenFile(string) error             { return nil }
+func (failingPlatform) OpenFile(string) error            { return nil }
 
 func TestStart_NilOrEmptyWorkspace(t *testing.T) {
 	rt, _, _ := newTestRuntime(t)

@@ -98,7 +98,7 @@ type PluginInfo struct {
 	Name                string            `json:"name"`
 	Version             string            `json:"version"`
 	Description         string            `json:"description"`
-	LongDescription    string            `json:"longDescription,omitempty"`
+	LongDescription     string            `json:"longDescription,omitempty"`
 	Author              string            `json:"author"`
 	Source              string            `json:"source"`
 	Dir                 string            `json:"dir"`
