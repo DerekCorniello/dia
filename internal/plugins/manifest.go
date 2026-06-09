@@ -143,7 +143,7 @@ func (m *Manifest) Validate() error {
 	if m.Entry == "" {
 		m.Entry = defaultEntry
 	}
-	if filepath.IsAbs(m.Entry) || strings.HasPrefix(m.Entry, "..") {
+	if filepath.IsAbs(m.Entry) || strings.HasPrefix(m.Entry, "/") || strings.HasPrefix(m.Entry, "..") {
 		return fmt.Errorf("plugin entry %q must be a relative path with no parent references", m.Entry)
 	}
 	for _, c := range m.Capabilities {
@@ -170,7 +170,7 @@ func (m *Manifest) Validate() error {
 		}
 	case "window":
 		if m.UI.Entry != "" {
-			if filepath.IsAbs(m.UI.Entry) || strings.HasPrefix(m.UI.Entry, "..") {
+			if filepath.IsAbs(m.UI.Entry) || strings.HasPrefix(m.UI.Entry, "/") || strings.HasPrefix(m.UI.Entry, "..") {
 				return fmt.Errorf("ui.entry %q must be a relative path with no parent references", m.UI.Entry)
 			}
 		}
