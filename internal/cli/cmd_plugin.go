@@ -102,7 +102,11 @@ func newPluginListCmd() *cobra.Command {
 			}
 			cwd := ""
 			if local {
-				cwd, _ = os.Getwd()
+				var err error
+				cwd, err = os.Getwd()
+				if err != nil {
+					return err
+				}
 			}
 			infos, err := discoverForCLI(plugins.GlobalPluginsDir(s.StateDir), cwd)
 			if err != nil {

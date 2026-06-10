@@ -8,7 +8,10 @@ import (
 	"github.com/dop251/goja"
 	"path/filepath"
 	"sync"
+	"time"
 )
+
+const pluginCallTimeout = 30 * time.Second
 
 type Runtime struct {
 	mu        sync.Mutex
@@ -19,6 +22,8 @@ type Runtime struct {
 	bridge    *Bridge
 	exited    bool
 	exitError error
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 func NewRuntime(manifest *Manifest, pluginDir string, host HostAPI, grants []string, cfg map[string]any) (*Runtime, error) {
@@ -34,12 +39,15 @@ func NewRuntime(manifest *Manifest, pluginDir string, host HostAPI, grants []str
 	rt.Set("dia", bridge.DiaObject())
 	rt.Set("require", bridge.NewRequire(pluginDir))
 	rt.Set("__pluginDir", pluginDir)
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Runtime{
 		rt:       rt,
 		manifest: manifest,
 		entry:    entry,
 		host:     host,
 		bridge:   bridge,
+		ctx:      ctx,
+		cancel:   cancel,
 	}, nil
 }
 func (r *Runtime) Load() error {
@@ -67,7 +75,10 @@ func (r *Runtime) Load() error {
 	if err := r.rt.Set("exports", exports); err != nil {
 		return err
 	}
-	if _, err := r.rt.RunProgram(program); err != nil {
+	if err := r.withInterrupt(func() error {
+		_, err := r.rt.RunProgram(program)
+		return err
+	}); err != nil {
 		return fmt.Errorf("run %s: %w", r.entry, err)
 	}
 	return nil
@@ -77,6 +88,9 @@ func (r *Runtime) Call(ctx context.Context, method string, args []any) (any, err
 	defer r.mu.Unlock()
 	if r.exited {
 		return nil, r.exitError
+	}
+	if ctx == nil {
+		ctx = r.ctx
 	}
 	exports := r.rt.Get("module")
 	if exports == nil || goja.IsUndefined(exports) {
@@ -113,6 +127,28 @@ func (r *Runtime) Call(ctx context.Context, method string, args []any) (any, err
 	}
 	return r.awaitPromise(ctx, promise)
 }
+
+// withInterrupt wraps a goja call with a fixed timeout interrupt guard.
+// If the call does not complete within pluginCallTimeout, the goja runtime
+// is interrupted and the call returns an error.
+func (r *Runtime) withInterrupt(fn func() error) error {
+	rt := r.rt
+	timer := time.AfterFunc(pluginCallTimeout, func() {
+		if rt != nil {
+			rt.Interrupt("plugin call timed out")
+		}
+	})
+	defer timer.Stop()
+
+	execErr := fn()
+
+	if rt := r.rt; rt != nil {
+		rt.ClearInterrupt()
+	}
+
+	return execErr
+}
+
 func (r *Runtime) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -121,6 +157,7 @@ func (r *Runtime) Close() error {
 	}
 	r.exited = true
 	r.rt = nil
+	r.cancel()
 	return nil
 }
 func (r *Runtime) awaitPromise(ctx context.Context, v goja.Value) (any, error) {
@@ -138,9 +175,8 @@ func (r *Runtime) awaitPromise(ctx context.Context, v goja.Value) (any, error) {
 				}{val, nil}
 				return goja.Undefined()
 			})
-			rejectCb := r.rt.ToValue(func(rejected goja.FunctionCall) goja.Value {
-				_ = rejected
-				errVal, _ := r.fromJSValue(rejected.Argument(0))
+			rejectCb := r.rt.ToValue(func(call goja.FunctionCall) goja.Value {
+				errVal, _ := r.fromJSValue(call.Argument(0))
 				errMsg := fmt.Sprintf("plugin rejected: %v", errVal)
 				resultCh <- struct {
 					val any

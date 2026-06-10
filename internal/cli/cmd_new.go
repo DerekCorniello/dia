@@ -21,32 +21,32 @@ func newNewCmd() *cobra.Command {
 			out := newOutput(cmd)
 			name := args[0]
 
-			var path string
+			var wsPath string
 			if local {
 				cwd, err := os.Getwd()
 				if err != nil {
 					return err
 				}
-				path = filepath.Join(cwd, ".dia.yaml")
+				wsPath = filepath.Join(cwd, ".dia.yaml")
 			} else {
 				dir := config.DefaultGlobalDir()
 				if err := os.MkdirAll(dir, 0o755); err != nil {
 					return fmt.Errorf("mkdir %s: %w", dir, err)
 				}
-				path = filepath.Join(dir, name+".yaml")
+				wsPath = filepath.Join(dir, name+".yaml")
 			}
 
-			if _, err := os.Stat(path); err == nil {
-				return fmt.Errorf("%w: %s", errAlreadyExists, path)
+			if _, err := os.Stat(wsPath); err == nil {
+				return fmt.Errorf("%w: %s", errAlreadyExists, wsPath)
 			}
 			content := starterWorkspace(name, local)
-			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-				return fmt.Errorf("write %s: %w", path, err)
+			if err := os.WriteFile(wsPath, []byte(content), 0o644); err != nil {
+				return fmt.Errorf("write %s: %w", wsPath, err)
 			}
 			if out.IsJSON() {
-				return out.JSON(map[string]string{"path": path})
+				return out.JSON(map[string]string{"path": wsPath})
 			}
-			return out.Printf("wrote %s\n", path)
+			return out.Printf("wrote %s\n", wsPath)
 		},
 	}
 	cmd.Flags().BoolVar(&local, "local", false, "write to ./.dia.yaml in the current directory instead of the global config dir")

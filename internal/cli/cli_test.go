@@ -175,8 +175,8 @@ func TestNew_AlreadyExists(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(cfgDir, "dia", "workspaces"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(cfgDir, "dia", "workspaces", "dup.yaml")
-	if err := os.WriteFile(path, []byte("exists"), 0o644); err != nil {
+	dupPath := filepath.Join(cfgDir, "dia", "workspaces", "dup.yaml")
+	if err := os.WriteFile(dupPath, []byte("exists"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	code, _, errOut := runWith(t, map[string]string{"XDG_CONFIG_HOME": cfgDir}, "new", "dup")

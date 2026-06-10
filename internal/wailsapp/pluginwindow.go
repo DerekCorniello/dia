@@ -469,9 +469,10 @@ func pluginWindowListWorkspaces() ([]any, error) {
 			Path:    s.Path,
 			Running: false,
 		}
-		b, _ := json.Marshal(info)
-		var m any
-		_ = json.Unmarshal(b, &m)
+		m, err := marshalAny(info)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, m)
 	}
 	return out, nil

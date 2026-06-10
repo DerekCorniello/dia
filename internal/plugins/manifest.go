@@ -61,8 +61,8 @@ type UIColumn struct {
 
 // LoadManifest reads and validates plugin.json from dir.
 func LoadManifest(dir string) (*Manifest, error) {
-	path := filepath.Join(dir, manifestFile)
-	data, err := os.ReadFile(path)
+	mfPath := filepath.Join(dir, manifestFile)
+	data, err := os.ReadFile(mfPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("plugin.json not found in %s", dir)

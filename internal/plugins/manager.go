@@ -39,7 +39,7 @@ type Loaded struct {
 	LastRefresh time.Time
 }
 type Manager struct {
-	mu        sync.Mutex
+	mu        sync.RWMutex
 	globalDir string
 	localDir  string
 	loaded    map[string]*Loaded
@@ -233,17 +233,19 @@ func (m *Manager) Disable(id string) error {
 	return nil
 }
 func (m *Manager) Call(id, method string, args []any) (any, error) {
-	m.mu.Lock()
+	m.mu.RLock()
 	rt, ok := m.runtimes[id]
-	m.mu.Unlock()
+	m.mu.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("plugin %q is not enabled", id)
 	}
-	return rt.Call(callCtx(), method, args)
+	ctx, cancel := callCtx()
+	defer cancel()
+	return rt.Call(ctx, method, args)
 }
 func (m *Manager) List() []Loaded {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	out := make([]Loaded, 0, len(m.loaded))
 	for _, l := range m.loaded {
 		snap := *l
@@ -258,8 +260,8 @@ func (m *Manager) List() []Loaded {
 	return out
 }
 func (m *Manager) Get(id string) (Loaded, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	l, ok := m.loaded[id]
 	if !ok {
 		return Loaded{}, false
@@ -357,8 +359,8 @@ func SourceOfDir(dir string) Source {
 	}
 	return SourceGlobal
 }
-func callCtx() context.Context {
-	return context.Background()
+func callCtx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), pluginCallTimeout)
 }
 func copyDir(src, dst string) error {
 	if err := os.MkdirAll(dst, 0o755); err != nil {

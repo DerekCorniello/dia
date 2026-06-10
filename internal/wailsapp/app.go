@@ -56,9 +56,10 @@ func (h *wailsHost) ListWorkspaces(ctx context.Context) ([]any, error) {
 	}
 	out := make([]any, 0, len(infos))
 	for _, w := range infos {
-		b, _ := json.Marshal(w)
-		var m any
-		_ = json.Unmarshal(b, &m)
+		m, err := marshalAny(w)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, m)
 	}
 	return out, nil
@@ -69,37 +70,45 @@ func (h *wailsHost) GetWorkspace(ctx context.Context, name string) (any, error) 
 	if err != nil {
 		return nil, err
 	}
-	b, _ := json.Marshal(d)
-	var m any
-	_ = json.Unmarshal(b, &m)
-	return m, nil
+	return marshalAny(d)
 }
 
 func (h *wailsHost) StartWorkspace(ctx context.Context, name string) (any, error) {
 	if err := h.app.StartWorkspace(name); err != nil {
 		return nil, err
 	}
-	// Return workspace info so the plugin gets a useful result.
 	ws, _, err := h.app.findWorkspace(name)
 	if err != nil {
 		return nil, err
 	}
-	b, _ := json.Marshal(ws)
-	var m any
-	_ = json.Unmarshal(b, &m)
-	return m, nil
+	return marshalAny(ws)
 }
 
 func (h *wailsHost) ListInstances(ctx context.Context) ([]any, error) {
 	insts := h.app.ListInstances()
 	out := make([]any, 0, len(insts))
 	for _, i := range insts {
-		b, _ := json.Marshal(i)
-		var m any
-		_ = json.Unmarshal(b, &m)
+		m, err := marshalAny(i)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, m)
 	}
 	return out, nil
+}
+
+// marshalAny round-trips a value through JSON to convert typed structs
+// to map[string]any for the Wails JS bridge.
+func marshalAny(v any) (any, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("marshal: %w", err)
+	}
+	var m any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, fmt.Errorf("unmarshal: %w", err)
+	}
+	return m, nil
 }
 
 func (h *wailsHost) StopInstance(ctx context.Context, id string) error {
@@ -391,11 +400,13 @@ func (a *App) StartWorkspace(name string) error {
 		for _, ref := range ws.Plugins {
 			ids = append(ids, ref.ID)
 		}
-		_ = a.store.Mutate(func(d *state.Data) {
+		if err := a.store.Mutate(func(d *state.Data) {
 			i := d.Instances[inst.ID]
 			i.Plugins = ids
 			d.Instances[inst.ID] = i
-		})
+		}); err != nil {
+			a.logger.Warn("mutate instance plugins", "error", err)
+		}
 	}
 	// Spawn plugin windows for window-type plugins.
 	if a.pmgr != nil {
@@ -406,11 +417,13 @@ func (a *App) StartWorkspace(name string) error {
 					a.logger.Warn("spawn plugin window", "id", ref.ID, "error", err)
 					continue
 				}
-				_ = a.store.Mutate(func(d *state.Data) {
+				if err := a.store.Mutate(func(d *state.Data) {
 					i := d.Instances[inst.ID]
 					i.PluginPIDs = append(i.PluginPIDs, pid)
 					d.Instances[inst.ID] = i
-				})
+				}); err != nil {
+					a.logger.Warn("mutate instance plugin PIDs", "error", err)
+				}
 			}
 		}
 	}
@@ -469,12 +482,14 @@ func (a *App) enableWorkspacePlugin(id string, cfg map[string]any) error {
 	if err := a.pmgr.EnableWithGrants(id, granted); err != nil {
 		return err
 	}
-	_ = a.store.Mutate(func(d *state.Data) {
+	if err := a.store.Mutate(func(d *state.Data) {
 		if d.Plugins == nil {
 			d.Plugins = map[string]state.PluginState{}
 		}
 		d.Plugins[id] = state.PluginState{Enabled: true, GrantedCapabilities: granted, Config: cfg}
-	})
+	}); err != nil {
+		a.logger.Warn("mutate enable plugin state", "error", err)
+	}
 	return nil
 }
 
@@ -494,14 +509,16 @@ func (a *App) StopInstance(id string) error {
 			if err := a.pmgr.Disable(pid); err != nil {
 				a.logger.Warn("disable workspace plugin", "id", pid, "error", err)
 			}
-			_ = a.store.Mutate(func(d *state.Data) {
+			if err := a.store.Mutate(func(d *state.Data) {
 				if d.Plugins == nil {
 					d.Plugins = map[string]state.PluginState{}
 				}
 				ps := d.Plugins[pid]
 				ps.Enabled = false
 				d.Plugins[pid] = ps
-			})
+			}); err != nil {
+				a.logger.Warn("mutate disable plugin state", "error", err)
+			}
 		}
 	}
 	// Kill plugin window processes.
@@ -535,7 +552,9 @@ func (a *App) StopAll() (int, error) {
 		if inst.Status != state.StatusRunning {
 			continue
 		}
-		_ = a.StopInstance(inst.ID)
+		if err := a.StopInstance(inst.ID); err != nil {
+			a.logger.Warn("stop instance during StopAll", "id", inst.ID, "error", err)
+		}
 	}
 	return running, nil
 }
@@ -800,9 +819,11 @@ func (a *App) SelectProjectDir() (string, error) {
 		return "", nil
 	}
 	if a.store != nil {
-		_ = a.store.Mutate(func(d *state.Data) {
+		if err := a.store.Mutate(func(d *state.Data) {
 			d.ProjectDir = dir
-		})
+		}); err != nil {
+			a.logger.Warn("mutate project dir", "error", err)
+		}
 	}
 	return dir, nil
 }
@@ -849,15 +870,15 @@ func (a *App) NewWorkspace(name string, local bool) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, name+".yaml")
-	if _, err := os.Stat(path); err == nil {
-		return path, fmt.Errorf("workspace %q already exists at %s", name, path)
+	yamlPath := filepath.Join(dir, name+".yaml")
+	if _, err := os.Stat(yamlPath); err == nil {
+		return yamlPath, fmt.Errorf("workspace %q already exists at %s", name, yamlPath)
 	}
 	body := fmt.Sprintf("version: %d\nname: %s\n", config.SchemaVersion, name)
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(yamlPath, []byte(body), 0o644); err != nil {
 		return "", err
 	}
-	return path, nil
+	return yamlPath, nil
 }
 
 func (a *App) findWorkspace(name string) (*config.Workspace, config.Source, error) {
@@ -991,8 +1012,8 @@ func (a *App) SaveWorkspaceEditor(editor WorkspaceEditor) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	path := filepath.Join(dir, editor.Name+".yaml")
-	if err := os.WriteFile(path, out, 0o644); err != nil {
+	wsPath := filepath.Join(dir, editor.Name+".yaml")
+	if err := os.WriteFile(wsPath, out, 0o644); err != nil {
 		return err
 	}
 	if editor.OriginalName != "" && editor.OriginalName != editor.Name {

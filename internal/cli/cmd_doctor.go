@@ -31,7 +31,9 @@ func newDoctorCmd() *cobra.Command {
 
 			// Reconcile so the running/stopped/crashed counts we
 			// print reflect the current set of alive PIDs.
-			_ = s.Runtime.Reconcile()
+			if err := s.Runtime.Reconcile(); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "reconcile: %v\n", err)
+		}
 			insts := s.Runtime.Instances()
 			running, stopped, crashed := 0, 0, 0
 			for _, inst := range insts {
