@@ -208,11 +208,9 @@ func (a *App) Startup(ctx context.Context) {
 		a.applyPersistedPluginState(pmgr)
 		a.pmgr = pmgr
 	}
-
-	a.startStateWatcher()
 }
 
-func (a *App) startStateWatcher() {
+func (a *App) StartStateWatcher() {
 	if a.store == nil || a.ctx == nil {
 		return
 	}
