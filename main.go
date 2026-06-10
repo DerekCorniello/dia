@@ -48,7 +48,7 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup: func(ctx context.Context) { app.Startup(ctx); app.StartStateWatcher() },
+		OnStartup:        func(ctx context.Context) { app.Startup(ctx); app.StartStateWatcher() },
 		Bind: []any{
 			app,
 		},
