@@ -87,6 +87,7 @@ type Data struct {
 	Keybindings  map[string]string      `json:"keybindings,omitempty"`
 	CustomThemes map[string]CustomTheme `json:"custom_themes,omitempty"`
 	Plugins      map[string]PluginState `json:"plugins,omitempty"`
+	ProjectDir   string                 `json:"project_dir,omitempty"`
 }
 
 // Store guards a Data value persisted to a single JSON file. The
@@ -132,6 +133,7 @@ func OpenAt(path string) (*Store, error) {
 		Keybindings:  raw.Keybindings,
 		CustomThemes: raw.CustomThemes,
 		Plugins:      raw.Plugins,
+		ProjectDir:   raw.ProjectDir,
 	}
 	if loaded.Instances == nil {
 		loaded.Instances = map[string]Instance{}
@@ -158,6 +160,7 @@ type rawData struct {
 	Keybindings  map[string]string      `json:"keybindings,omitempty"`
 	CustomThemes map[string]CustomTheme `json:"custom_themes,omitempty"`
 	Plugins      map[string]PluginState `json:"plugins,omitempty"`
+	ProjectDir   string                 `json:"project_dir,omitempty"`
 }
 
 // migrateRecent normalizes a freshly-loaded Recent slice. The legacy

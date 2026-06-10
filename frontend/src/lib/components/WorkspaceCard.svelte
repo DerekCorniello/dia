@@ -14,6 +14,7 @@
   let detail: { app_details: { type: string; cmd: string; args: string; url?: string }[] } | null = null;
   let showEditor = false;
   let showDeleteConfirm = false;
+  let showStopConfirm = false;
 
   $: workspacePlugins = (workspace.plugins ?? [])
     .map((id) => $pluginsStore.find((p) => p.id === id))
@@ -151,11 +152,11 @@
       {#if workspace.running}
         <button
           type="button"
-          on:click={stop}
+          on:click={() => (showStopConfirm = true)}
           disabled={busy || $loading}
           class="rounded bg-error/20 px-2 py-1 text-[10px] font-medium text-error hover:bg-error/30 disabled:opacity-50"
         >
-          {busy ? '...' : 'stop'}
+          stop
         </button>
       {:else}
         <button
@@ -215,5 +216,15 @@
     confirmLabel="Delete"
     on:confirm={confirmDelete}
     on:cancel={() => (showDeleteConfirm = false)}
+  />
+{/if}
+
+{#if showStopConfirm}
+  <ConfirmDialog
+    title="Stop workspace"
+    message="Stop workspace &quot;{workspace.name}&quot;? Running apps will be terminated."
+    confirmLabel="Stop"
+    on:confirm={() => { showStopConfirm = false; stop(); }}
+    on:cancel={() => (showStopConfirm = false)}
   />
 {/if}

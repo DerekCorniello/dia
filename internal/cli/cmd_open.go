@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"path/filepath"
+
 	"github.com/spf13/cobra"
 )
 
@@ -22,6 +24,9 @@ func newOpenCmd() *cobra.Command {
 			}
 			if err := s.PF.RevealInFileManager(src.Path); err != nil {
 				return err
+			}
+			if out.IsJSON() {
+				return out.JSON(map[string]string{"path": src.Path, "dir": filepath.Dir(src.Path)})
 			}
 			return out.Printf("revealed %s\n", src.Path)
 		},

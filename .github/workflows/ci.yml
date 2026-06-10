@@ -56,6 +56,14 @@ jobs:
         run: npm run build
         working-directory: frontend
 
+      - name: Svelte check
+        run: npm run check
+        working-directory: frontend
+
+      - name: Frontend tests
+        run: npm test
+        working-directory: frontend
+
       - name: Vet
         run: go vet ./...
 

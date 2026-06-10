@@ -20,6 +20,8 @@ import (
 	"github.com/DerekCorniello/dia/internal/registry"
 	dia "github.com/DerekCorniello/dia/internal/runtime"
 	"github.com/DerekCorniello/dia/internal/state"
+	"github.com/fsnotify/fsnotify"
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"gopkg.in/yaml.v3"
 )
 
@@ -207,18 +209,55 @@ func (a *App) Startup(ctx context.Context) {
 		a.pmgr = pmgr
 	}
 
-	// TODO(cross-process-state): wire a fsnotify watcher on
-	// a.store.Path() and re-Snapshot the runtime when the file
-	// changes outside this process (e.g. `dia start foo` from a
-	// shell). Deferred to v1.1 to avoid the fsnotify dependency in
-	// v1 and to keep this method's contract trivial.
+	a.startStateWatcher()
+}
+
+func (a *App) startStateWatcher() {
+	if a.store == nil || a.ctx == nil {
+		return
+	}
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		a.logger.Warn("create fsnotify watcher", "error", err)
+		return
+	}
+	if err := w.Add(a.store.Path()); err != nil {
+		w.Close()
+		a.logger.Warn("watch state file", "error", err)
+		return
+	}
+	go func() {
+		defer w.Close()
+		var debounce *time.Timer
+		for {
+			select {
+			case <-w.Events:
+				if debounce != nil {
+					debounce.Stop()
+				}
+				debounce = time.AfterFunc(200*time.Millisecond, func() {
+					wailsRuntime.EventsEmit(a.ctx, "workspace:state-changed")
+				})
+			case err, ok := <-w.Errors:
+				if !ok {
+					return
+				}
+				a.logger.Warn("fsnotify error", "error", err)
+			}
+		}
+	}()
 }
 
 // ListWorkspaces returns the discovered workspaces with a running
 // flag attached. Errors during discovery are returned to the UI.
 func (a *App) ListWorkspaces() ([]WorkspaceInfo, error) {
+	cwd, _ := os.Getwd()
+	if pd := a.GetProjectDir(); pd != "" {
+		cwd = pd
+	}
 	sources, err := config.Discover(config.DiscoverOptions{
 		GlobalDir: config.DefaultGlobalDir(),
+		CWD:       cwd,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("discover: %w", err)
@@ -744,6 +783,48 @@ func (a *App) OpenStateFile() error {
 		return err
 	}
 	return platform.New().OpenFile(path)
+}
+
+// SelectProjectDir opens a directory picker dialog and persists the
+// chosen path. Discovery then includes that directory for .dia.yaml
+// and .dia/ workspace lookups.
+func (a *App) SelectProjectDir() (string, error) {
+	if a.ctx == nil {
+		return "", errors.New("not initialized")
+	}
+	dir, err := wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
+		Title: "Select Project Directory",
+	})
+	if err != nil {
+		return "", fmt.Errorf("select directory: %w", err)
+	}
+	if dir == "" {
+		return "", nil
+	}
+	if a.store != nil {
+		_ = a.store.Mutate(func(d *state.Data) {
+			d.ProjectDir = dir
+		})
+	}
+	return dir, nil
+}
+
+// GetProjectDir returns the persisted project directory.
+func (a *App) GetProjectDir() string {
+	if a.store == nil {
+		return ""
+	}
+	return a.store.Snapshot().ProjectDir
+}
+
+// ClearProjectDir removes the persisted project directory.
+func (a *App) ClearProjectDir() error {
+	if a.store == nil {
+		return errors.New("state store not initialized")
+	}
+	return a.store.Mutate(func(d *state.Data) {
+		d.ProjectDir = ""
+	})
 }
 
 // NewWorkspace writes a starter YAML. When local is true the file

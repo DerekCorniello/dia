@@ -291,6 +291,24 @@ func (r *Runtime) StopAll(force bool) error {
 	return errors.Join(errs...)
 }
 
+// StopAllWithIDs stops every running instance and returns the IDs that
+// were stopped, even if some stops failed.
+func (r *Runtime) StopAllWithIDs(force bool) ([]string, error) {
+	snap := r.st.Snapshot()
+	var ids []string
+	var errs []error
+	for id, inst := range snap.Instances {
+		if inst.Status != state.StatusRunning {
+			continue
+		}
+		ids = append(ids, id)
+		if err := r.Stop(id, force); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", id, err))
+		}
+	}
+	return ids, errors.Join(errs...)
+}
+
 // Reconcile walks the persisted state and drops PIDs that are no longer
 // alive. Called on dia startup so stale entries from a crash or unclean
 // shutdown do not accumulate.

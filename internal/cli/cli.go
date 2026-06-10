@@ -84,6 +84,7 @@ func newRootCmd() *cobra.Command {
 		newReconcileCmd(),
 		newDoctorCmd(),
 		newPluginCmd(),
+		newCompletionCmd(),
 	)
 	return cmd
 }
@@ -186,6 +187,9 @@ func (e *NotFoundError) Error() string { return e.What + " not found" }
 func exitCodeFor(err error) int {
 	if err == nil {
 		return ExitOK
+	}
+	if errors.Is(err, errAlreadyExists) {
+		return ExitAlreadyExists
 	}
 	var nf *NotFoundError
 	if errors.As(err, &nf) {

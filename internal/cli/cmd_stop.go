@@ -22,13 +22,14 @@ func newStopCmd() *cobra.Command {
 			stopAll, _ := cmd.Flags().GetBool("all")
 
 			if stopAll {
-				if err := s.Runtime.StopAll(force); err != nil {
+				ids, err := s.Runtime.StopAllWithIDs(force)
+				if err != nil {
 					return err
 				}
-				if !out.IsJSON() {
-					return out.Println("stopped all")
+				if out.IsJSON() {
+					return out.JSON(map[string]any{"stopped": ids})
 				}
-				return out.JSON(map[string]any{"stopped": "all"})
+				return out.Printf("stopped all (%d instances)\n", len(ids))
 			}
 			if len(args) == 0 {
 				return errInvalidArgs

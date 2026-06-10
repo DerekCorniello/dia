@@ -54,11 +54,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Escape key closes new workspace dialog.** The `+ New` dialog
   now closes on Escape and on backdrop click, matching the
   Settings panel behavior.
+- **Open Directory.** The header has an "Open" button that opens
+  a directory picker. The selected directory is persisted in state
+  and used for project-local workspace discovery (`.dia.yaml` and
+  `./.dia/*.yaml`). A "Project:" bar shows the active directory
+  with a clear button. When no project directory is set and no
+  workspaces exist, a launcher view is shown with "Open Project"
+  and "New Workspace" buttons plus a recent workspaces list.
+- **Cross-process state visibility.** The GUI watches `state.json`
+  with fsnotify (200ms debounce) and emits a
+  `workspace:state-changed` Wails event. The frontend subscribes
+  and auto-refreshes when the CLI modifies state. Manual Refresh
+  is still available in the header.
+- **Stop confirmation dialog.** Clicking "stop" on a running
+  workspace card now shows a confirmation dialog before
+  terminating apps.
+- **Inline validation in NewWorkspaceDialog.** The name input
+  validates as you type and shows errors next to the input field.
+  The submit button is disabled when the name is invalid.
+- **Reconcile button in Settings.** The Doctor tab has a
+  "Reconcile" button that drops stale PIDs and shows the result
+  as an inline toast.
+- **Shell completions.** `dia completion [bash|zsh|fish|powershell]`
+  generates shell completion scripts. Tab-completion works for
+  commands, flags, and workspace names.
+- **`start --dry-run`.** The `start` command accepts `--dry-run`
+  to resolve and print what would launch without executing.
+- **`open --json`.** The `open` command now supports `--json` for
+  machine-readable output.
+- **`$VISUAL` support in `edit`.** The `edit` command checks
+  `$VISUAL` before `$EDITOR` when resolving the editor.
+- **Aligned `stop --all` JSON shape.** `stop --all` now returns
+  `{"stopped": ["id1", "id2"]}` (array of IDs), matching the
+  per-workspace `stop <name>` output.
+- **`errAlreadyExists` exit code.** Creating a workspace that
+  already exists returns exit code 4 instead of 1.
+- **Component tests.** Vitest + Svelte Testing Library tests for
+  WorkspaceCard, NewWorkspaceDialog, and SettingsPanel. 11 tests
+  covering rendering, validation, and state transitions.
+- **`svelte-check` in CI.** The CI workflow runs `svelte-check`
+  and `vitest` on every push to main and on pull requests.
+
+### Changed
+
+- **Theming polish.** Workspace cards have left-border accents,
+  source pills with distinct styles for global vs local, running
+  badges, and delete buttons in tinted red.
+- **Plugins section visible when disabled.** All discovered plugins
+  are shown, not just enabled ones. Disabled plugins render with
+  muted styling.
+- **Global keyboard shortcut handler uses a whitelist.** Only
+  recognized app shortcuts prevent default browser behavior.
+  Native shortcuts (Ctrl+C, Ctrl+V, Ctrl+A, etc.) pass through.
+- **Keybindings are reactive and platform-aware.** The modifier
+  key is detected at load time (Cmd on macOS, Ctrl elsewhere).
+  Defaults recompute when the modifier changes.
+
+### Removed
+
+- **Unused Nunito font and logo assets.** The frontend uses Outfit
+  via Google Fonts. The leftover `src/assets/` directory has been
+  removed.
 
 ### Dependencies
 
 - `github.com/dop251/goja` v0.0.0-20260603125802-cfe4039cb6d7
   (Go 1.20-compatible pseudo-version, pinned to keep CI on Go 1.23)
+- `github.com/fsnotify/fsnotify` v1.10.1 added for cross-process
+  state file watching.
 
 ## [0.2.0] - Unreleased
 

@@ -35,6 +35,9 @@ import {
   GetKeybindings as _GetKeybindings,
   SetKeybinding as _SetKeybinding,
   ResetKeybindings as _ResetKeybindings,
+  SelectProjectDir as _SelectProjectDir,
+  GetProjectDir as _GetProjectDir,
+  ClearProjectDir as _ClearProjectDir,
 } from '../../wailsjs/go/wailsapp/App';
 import { wailsapp } from '../../wailsjs/go/models';
 
@@ -129,6 +132,9 @@ export const api = {
   resetKeybindings: (): Promise<void> => _ResetKeybindings(),
   setPluginEnabled: (id: string, enabled: boolean, granted: string[]): Promise<void> =>
     _SetPluginEnabled(id, enabled, granted),
+  selectProjectDir: (): Promise<string> => _SelectProjectDir(),
+  getProjectDir: (): Promise<string> => _GetProjectDir(),
+  clearProjectDir: (): Promise<void> => _ClearProjectDir(),
 };
 
 export function describeError(err: unknown): string {

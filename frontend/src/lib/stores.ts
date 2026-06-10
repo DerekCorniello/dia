@@ -21,3 +21,4 @@ export const customThemes: Writable<CustomThemeInfo[]> = writable([]);
 export const plugins: Writable<PluginInfo[]> = writable([]);
 export const pluginPaths: Writable<PluginPathsInfo | null> = writable(null);
 export const keybinds: Writable<Record<string, string>> = writable({});
+export const projectDir: Writable<string> = writable('');

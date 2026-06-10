@@ -31,6 +31,9 @@
   let showDeleteThemeConfirm = false;
   let deleteThemeName = '';
 
+  // Reconcile state
+  let reconciling = false;
+
   // Keybinds state
   let recording: string | null = null;
   let pressedKeys = new Set<string>();
@@ -276,6 +279,19 @@
   }
 
   $: doctorSummary = summarize(doctor);
+
+  async function doReconcile() {
+    reconciling = true;
+    try {
+      const result = await api.reconcile();
+      showToast('ok', `Reconciled ${result.reconciled} stale instance${result.reconciled === 1 ? '' : 's'}, ${result.remaining} remaining`);
+      dispatch('refresh');
+    } catch (e) {
+      showToast('err', `reconcile: ${describeError(e)}`);
+    } finally {
+      reconciling = false;
+    }
+  }
 
   const tabs: Array<{ id: Tab; label: string }> = [
     { id: 'about', label: 'About' },
@@ -567,9 +583,7 @@
                 {/if}
               {/if}
             </h3>
-            {#if doctor.length === 0}
-              <p class="text-xs text-fg-mute">loading...</p>
-            {:else}
+            {#if doctor.length > 0}
               <ul class="space-y-1 text-sm">
                 {#each doctor as c (c.name)}
                   <li class="flex items-start gap-2">
@@ -586,6 +600,14 @@
                 {/each}
               </ul>
             {/if}
+            <button
+              type="button"
+              on:click={doReconcile}
+              disabled={reconciling}
+              class="mt-4 rounded bg-bg-600 px-3 py-1 text-xs text-fg-dim hover:bg-bg-600/70 hover:text-fg disabled:opacity-50"
+            >
+              {reconciling ? 'reconciling...' : 'Reconcile'}
+            </button>
           </section>
         {:else if activeTab === 'plugins'}
           <PluginsPanel

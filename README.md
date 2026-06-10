@@ -6,14 +6,13 @@ Define a workspace in YAML, click start, and dia brings up the editor,
 terminal, browser, and services for that project. No window manager, no
 process snapshot, just deterministic rebuilds from a config.
 
-See [PLAN.md](./PLAN.md) for the full design and implementation plan.
-
 ## Status
 
-v0.3.0 (unreleased). All v1 phases (0-6) are complete; the v1
-plugin system landed in 0.3.0. See [CHANGELOG.md](./CHANGELOG.md)
-for what shipped, and the "Known limitations" section below for
-what is intentionally deferred to v1.1.
+v0.3.0 (unreleased). All planned phases are complete:
+core engine (v0.1.0), theming + UI polish (v0.2.0), and the
+in-process JS plugin system (v0.3.0). Cross-process state
+visibility (fsnotify), CLI polish, and frontend tests shipped
+in v0.3.0. See [CHANGELOG.md](./CHANGELOG.md) for details.
 
 ## Features
 
@@ -117,14 +116,18 @@ dia                     # opens the GUI
 dia list                # list all workspaces
 dia list --json         # machine-readable output
 dia start <name>        # start a workspace
+dia start <name> --dry-run  # resolve and print without launching
 dia stop <name>         # stop a workspace
 dia stop --all          # stop every running workspace
 dia status              # running instances and PIDs
 dia new <name>          # create a starter workspace
-dia edit <name>         # open the config in $EDITOR
+dia edit <name>         # open the config in $VISUAL or $EDITOR
 dia open <name>         # reveal the workspace in the file manager
+dia open <name> --json  # machine-readable output
 dia reconcile           # drop PIDs from state that are no longer running
 dia doctor              # smoke checks
+dia plugin list         # list installed plugins
+dia completion bash     # generate shell completion (bash/zsh/fish/powershell)
 dia --version           # print version and exit
 ```
 
@@ -395,9 +398,6 @@ go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
 ## Project layout
 
-See [PLAN.md](./PLAN.md) for the full architecture and phased
-implementation plan. The short version:
-
 ```
 main.go                Wails entrypoint; routes GUI vs CLI
 internal/config        YAML, validation, discovery
@@ -413,20 +413,7 @@ frontend/              Svelte + TypeScript + Vite + Tailwind
 examples/              sample workspaces and plugins
 ```
 
-## Known limitations (deferred to v1.1)
-
-These are known gaps in the v1 release. Each is documented in PLAN.md
-and the source has a `TODO` marker where the fix would land.
-
-- **Cross-process state visibility.** Each dia process keeps its
-  own `*state.Store` in memory. If you run `dia start foo` from the
-  CLI while the GUI is open, the GUI will not see the new instance
-  until you click the Refresh button. Fix path: watch
-  `$XDG_STATE_HOME/dia/state.json` with `fsnotify` and re-Snapshot
-  the runtime on change, then push the update to the Svelte UI as
-  a wails event. Deferred because it adds an `fsnotify` dependency
-  and pushes the runtime API toward a multi-reader design we
-  don't need yet.
+## Known limitations
 
 - **Wails binding package path.** The wails binding generator
   routes the Go-side `*wailsapp.App` under `wailsjs/go/wailsapp/App`
@@ -436,13 +423,18 @@ and the source has a `TODO` marker where the fix would land.
   `wailsjs/go/wailsapp/App`. This is documented in `main.go` near
   the binding call.
 
-See [PLAN.md](./PLAN.md#what-dia-is-not) for the full out-of-scope
-list (window positioning, sleep/resume, marketplace, etc.).
+- **Slog output to a log file.** dia logs to stderr only. A
+  `$XDG_STATE_HOME/dia/dia.log` file is a future addition.
+
+- **SBOM in release artifacts.** GoReleaser config does not
+  generate one; can be added by enabling the `sboms` section.
+
+Out of scope: window positioning, sleep/resume, workspace
+templates marketplace, TUI mode, log rotation, JSON Schema
+validation, Homebrew/Scoop/apt distribution, partial
+workspace launch.
 
 ## Contributing
-
-See [PLAN.md](./PLAN.md) for the implementation phases and code
-conventions. The short version:
 
 - No comments unless they explain why
 - ASCII only in code, docs, and commits

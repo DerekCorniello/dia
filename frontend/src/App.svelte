@@ -12,8 +12,10 @@
     plugins as pluginsStore,
     pluginPaths as pluginPathsStore,
     keybinds as keybindsStore,
+    projectDir,
   } from './lib/stores';
   import { buildAllCustomThemesCss } from './lib/colors';
+  import { EventsOn } from '../wailsjs/runtime';
   import WorkspaceCard from './lib/components/WorkspaceCard.svelte';
   import SettingsPanel from './lib/components/SettingsPanel.svelte';
   import NewWorkspaceDialog from './lib/components/NewWorkspaceDialog.svelte';
@@ -44,6 +46,7 @@
   const ZOOM_STEP = 0.1;
 
   let customThemeStyle: HTMLStyleElement | null = null;
+  let unsubStateChanged: (() => void) | null = null;
 
   function applyCustomThemes(css: string) {
     if (typeof document === 'undefined') return;
@@ -146,13 +149,14 @@
   onDestroy(() => {
     customThemeStyle?.remove();
     customThemeStyle = null;
+    unsubStateChanged?.();
   });
 
   async function refresh() {
     loading.set(true);
     lastError.set(null);
     try {
-      const [ws, doc, p, ct, pl, pp, rec] = await Promise.all([
+      const [ws, doc, p, ct, pl, pp, rec, pd] = await Promise.all([
         api.listWorkspaces(),
         api.doctor(),
         api.paths(),
@@ -160,6 +164,7 @@
         api.listPlugins(),
         api.pluginPaths(),
         api.getRecent(),
+        api.getProjectDir(),
       ]);
       workspaces.set(ws);
       doctor.set(doc);
@@ -168,6 +173,7 @@
       pluginsStore.set(pl);
       pluginPathsStore.set(pp);
       recent = rec;
+      projectDir.set(pd);
     } catch (e) {
       lastError.set(`refresh: ${describeError(e)}`);
     } finally {
@@ -206,6 +212,28 @@
 
   function openNew() { showNew = true; }
   function closeNew() { showNew = false; }
+
+  async function openProject() {
+    try {
+      const dir = await api.selectProjectDir();
+      if (dir) {
+        projectDir.set(dir);
+        await refresh();
+      }
+    } catch (e) {
+      lastError.set(`open project: ${describeError(e)}`);
+    }
+  }
+
+  async function closeProject() {
+    try {
+      await api.clearProjectDir();
+      projectDir.set('');
+      await refresh();
+    } catch (e) {
+      lastError.set(`close project: ${describeError(e)}`);
+    }
+  }
 
   function toggleSettings() { showSettings = !showSettings; }
   function closeSettings() { showSettings = false; }
@@ -287,6 +315,14 @@
     } catch (e) {
       // fall back to defaults
     }
+    try {
+      projectDir.set(await api.getProjectDir());
+    } catch {
+      projectDir.set('');
+    }
+    unsubStateChanged = EventsOn("workspace:state-changed", () => {
+      refresh();
+    });
     await refresh();
   });
 </script>
@@ -317,6 +353,14 @@
     <div class="flex items-center gap-2 shrink-0">
       <button
         type="button"
+        on:click={openProject}
+        class="rounded bg-bg-600 px-3 py-1.5 text-xs text-fg-dim hover:bg-bg-600/70 hover:text-fg"
+        title="open project directory"
+      >
+        Open
+      </button>
+      <button
+        type="button"
         on:click={openNew}
         class="rounded bg-primary/20 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/30"
       >
@@ -342,6 +386,22 @@
         aria-label="dismiss error"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+      </button>
+    </div>
+  {/if}
+
+  {#if $projectDir}
+    <div class="flex items-center gap-2 border-b border-primary/15 bg-bg-800/50 px-5 py-1.5 text-xs">
+      <span class="text-fg-mute">Project:</span>
+      <span class="font-mono text-fg-dim truncate flex-1">{$projectDir}</span>
+      <button
+        type="button"
+        on:click={closeProject}
+        class="rounded p-0.5 text-fg-mute hover:text-fg"
+        title="clear project directory"
+        aria-label="clear project directory"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
       </button>
     </div>
   {/if}
@@ -383,15 +443,56 @@
           </div>
         </div>
         {#if filtered.length === 0}
-          <div class="rounded-lg border border-dashed border-bg-600 p-8 text-center text-sm text-fg-mute">
-            {#if search}
+          {#if search}
+            <div class="rounded-lg border border-dashed border-bg-600 p-8 text-center text-sm text-fg-mute">
               No workspaces matching "{search}".
-            {:else}
-              No workspaces yet.
+            </div>
+          {:else if !$projectDir}
+            <div class="flex flex-col items-center justify-center py-16">
+              <div class="text-4xl font-bold text-primary mb-2">dia</div>
+              <p class="text-sm text-fg-mute mb-6">The Do-It-All App</p>
+              <div class="flex items-center gap-3">
+                <button
+                  type="button"
+                  on:click={openProject}
+                  class="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-content hover:bg-primary/90"
+                >
+                  Open Project
+                </button>
+                <button
+                  type="button"
+                  on:click={openNew}
+                  class="rounded border border-primary/30 bg-bg-700 px-4 py-2 text-sm text-primary hover:bg-primary/10"
+                >
+                  New Workspace
+                </button>
+              </div>
+              {#if recent.length > 0}
+                <div class="mt-8 w-full max-w-md">
+                  <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wide text-fg-mute">Recent</h3>
+                  <div class="space-y-1">
+                    {#each recent.slice(0, 5) as r}
+                      <button
+                        type="button"
+                        on:click={async () => { search = r.name; await refresh(); }}
+                        class="block w-full rounded px-3 py-1.5 text-left text-sm text-fg-dim hover:bg-bg-600 hover:text-fg"
+                      >
+                        {r.name}
+                        <span class="ml-2 text-[10px] text-fg-mute">({r.count}x)</span>
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {:else}
+            <div class="rounded-lg border border-dashed border-bg-600 p-8 text-center text-sm text-fg-mute">
+              No workspaces in this directory.
               <button type="button" on:click={openNew} class="ml-1 text-primary hover:underline">Create one</button>
-              to get started.
-            {/if}
-          </div>
+              or
+              <button type="button" on:click={closeProject} class="ml-1 text-primary hover:underline">change directory</button>.
+            </div>
+          {/if}
         {:else}
           <div class="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3 items-start">
             {#each filtered as w (w.path)}

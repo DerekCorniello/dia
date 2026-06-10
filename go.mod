@@ -4,6 +4,7 @@ go 1.23
 
 require (
 	github.com/dop251/goja v0.0.0-20260603125802-cfe4039cb6d7
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/spf13/cobra v1.10.2
 	github.com/wailsapp/wails/v2 v2.12.0
 	gopkg.in/yaml.v3 v3.0.1
