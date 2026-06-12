@@ -84,9 +84,30 @@ func newRootCmd() *cobra.Command {
 		newReconcileCmd(),
 		newDoctorCmd(),
 		newPluginCmd(),
-		newCompletionCmd(),
 	)
 	return cmd
+}
+
+// GenerateCompletions writes shell completion scripts for bash, zsh, fish,
+// and powershell into dir. Intended to be called during release builds so
+// that package managers can bundle the scripts without a user-facing command.
+func GenerateCompletions(dir string) error {
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	cmd := newRootCmd()
+	for shell, gen := range map[string]func(string) error{
+		"bash":       func(p string) error { return cmd.GenBashCompletionFile(p) },
+		"zsh":        func(p string) error { return cmd.GenZshCompletionFile(p) },
+		"fish":       func(p string) error { return cmd.GenFishCompletionFile(p, true) },
+		"powershell": func(p string) error { return cmd.GenPowerShellCompletionFileWithDesc(p) },
+	} {
+		p := filepath.Join(dir, "dia."+shell)
+		if err := gen(p); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // flagValues reads the persistent flag values from the command's

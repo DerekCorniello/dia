@@ -31,6 +31,9 @@ frontend/dist/*
 .DS_Store
 Thumbs.db
 
+# Generated shell completions (built by goreleaser)
+completions/
+
 # dia: project-local workspace
 .dia/
 .dia.yaml

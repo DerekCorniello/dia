@@ -9,6 +9,7 @@ before:
     - wails build -clean -trimpath -tags webkit2_41 -platform linux/amd64 -o build/bin/dia-linux-amd64
     - wails build -clean -trimpath -tags webkit2_41 -platform linux/arm64 -o build/bin/dia-linux-arm64
     - wails build -clean -trimpath -tags webkit2_41 -platform windows/amd64 -o build/bin/dia-windows-amd64.exe
+    - go run ./tools/gen-completions
 
 builds:
   - id: dia
@@ -20,6 +21,7 @@ archives:
       - README.md
       - LICENSE
       - CHANGELOG.md
+      - completions/*
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
