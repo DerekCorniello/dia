@@ -260,11 +260,9 @@
   });
 </script>
 
-<section class="relative rounded-lg border border-bg-600 bg-bg-700 p-3 shadow-sm {plugin.enabled ? '' : 'bg-bg-800/50'}">
+<section class="relative rounded-lg border border-bg-600 bg-bg-700 p-3 shadow-sm">
   <div
-    class="absolute left-0 top-2 bottom-2 w-1 rounded-r {plugin.enabled
-      ? (plugin.source === 'local' ? 'bg-info' : 'bg-accent-secondary')
-      : 'bg-base-300'}"
+    class="absolute left-0 top-2 bottom-2 w-1 rounded-r {plugin.source === 'local' ? 'bg-info' : 'bg-accent-secondary'}"
   ></div>
   <header class="mb-2 flex items-center justify-between gap-2">
     <div class="min-w-0">
@@ -273,9 +271,6 @@
         <span class="inline-flex items-center rounded-full {plugin.source === 'local' ? 'bg-info/15 text-info' : 'bg-accent-secondary/15 text-accent-secondary'} px-1.5 py-0.5 text-[10px] font-medium">
           {plugin.source}
         </span>
-        {#if !plugin.enabled}
-          <span class="inline-flex items-center rounded-full bg-error/10 px-1.5 py-0.5 text-[10px] font-medium text-error">disabled</span>
-        {/if}
       </div>
       {#if plugin.description}
         <p class="mt-0.5 text-xs text-fg-mute">{plugin.description}</p>
@@ -298,7 +293,7 @@
         <button
           type="button"
           on:click={onRefreshClick}
-          disabled={loading || !plugin.enabled}
+          disabled={loading}
           class="rounded bg-bg-600 px-2 py-1 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg disabled:opacity-50"
         >
           {loading ? 'loading...' : 'refresh'}
@@ -308,7 +303,6 @@
         <button
           type="button"
           on:click={() => onAction(a)}
-          disabled={!plugin.enabled}
           class="rounded px-2 py-1 text-[10px] text-fg disabled:opacity-50"
           style="background: {colorForAction(plugin)}33; border: 1px solid {colorForAction(plugin)}66;"
         >
@@ -318,9 +312,7 @@
     </div>
   </header>
 
-  {#if !plugin.enabled}
-    <p class="text-xs text-fg-mute">Plugin is disabled. Enable it in Settings to interact with it.</p>
-  {:else if error}
+  {#if error}
     <p class="text-xs text-error">{error}</p>
   {:else if plugin.ui.type === 'text'}
     <pre class="overflow-x-auto whitespace-pre-wrap rounded bg-bg-800 p-3 text-xs text-fg-dim">{text}</pre>

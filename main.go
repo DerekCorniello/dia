@@ -29,7 +29,8 @@ var assets embed.FS
 func main() {
 	if pluginID, ok := parsePluginWindowFlag(os.Args[1:]); ok {
 		workspaceName := parseWorkspaceFlag(os.Args[1:])
-		if err := wailsapp.RunPluginWindow(pluginID, workspaceName); err != nil {
+		workspacePath := parseWorkspacePathFlag(os.Args[1:])
+		if err := wailsapp.RunPluginWindow(pluginID, workspaceName, workspacePath); err != nil {
 			fmt.Fprintln(os.Stderr, "Error:", err)
 			os.Exit(1)
 		}
@@ -84,6 +85,21 @@ func parseWorkspaceFlag(args []string) string {
 			return after
 		}
 		if a == "--workspace" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
+// parseWorkspacePathFlag scans args for "--workspace-path=<path>" or
+// the split "--workspace-path" "<path>". Returns empty string if not
+// found.
+func parseWorkspacePathFlag(args []string) string {
+	for i, a := range args {
+		if after, ok := strings.CutPrefix(a, "--workspace-path="); ok {
+			return after
+		}
+		if a == "--workspace-path" && i+1 < len(args) {
 			return args[i+1]
 		}
 	}

@@ -167,7 +167,7 @@
         <span class="text-fg-dim">Name</span>
         <input type="text" bind:value={editor.name} disabled={busy} placeholder="my-project"
           class="mt-1 block w-full rounded border border-bg-600 bg-bg-800 px-2 py-1.5 text-sm font-mono focus:border-accent focus:outline-none" />
-        <span class="block text-xs text-fg-mute mt-1">lowercase a-z, 0-9, internal hyphens</span>
+        <span class="block text-xs text-fg-mute mt-1">alphanumeric with hyphens or underscores</span>
       </label>
 
       <label class="block text-sm">

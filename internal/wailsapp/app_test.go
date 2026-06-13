@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/DerekCorniello/dia/internal/state"
 )
 
 // withTempXDG sets XDG_CONFIG_HOME and XDG_STATE_HOME to t.TempDir
@@ -60,9 +58,15 @@ func TestNewWorkspace_RefusesExisting(t *testing.T) {
 func TestNewWorkspace_RejectsBadName(t *testing.T) {
 	withTempXDG(t)
 	a := New()
-	for _, bad := range []string{"", "Has-Caps", "-leading", "trailing-", "has space", "with/slash"} {
+	for _, bad := range []string{"", "has space", "with/slash"} {
 		if _, err := a.NewWorkspace(bad, false); err == nil {
 			t.Errorf("NewWorkspace(%q) = nil err, want error", bad)
+		}
+	}
+	// These should now be valid (uppercase, leading/trailing hyphens allowed)
+	for _, good := range []string{"Has-Caps", "-leading", "trailing-"} {
+		if _, err := a.NewWorkspace(good, false); err != nil {
+			t.Errorf("NewWorkspace(%q) = %v, want nil", good, err)
 		}
 	}
 }
@@ -242,83 +246,6 @@ func TestStartup_DiscoversPlugins(t *testing.T) {
 	}
 }
 
-func TestSetPluginEnabled_RoundTrip(t *testing.T) {
-	withTempXDG(t)
-	a := New()
-	a.Startup(testCtx())
-	stateDir, err := resolveStateDir(t)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pdir := filepath.Join(stateDir, "plugins", "demo")
-	if err := os.MkdirAll(pdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(pdir, "plugin.json"),
-		[]byte(`{"id":"demo","name":"Demo","version":"0.1.0","capabilities":["workspaces:read"],"ui":{"type":"list","title":"T"}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	js := "module.exports = { ping: function() { return 'pong'; } };"
-	if err := os.WriteFile(filepath.Join(pdir, "index.js"), []byte(js), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.pmgr.Discover(); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.SetPluginEnabled("demo", true, []string{"workspaces:read"}); err != nil {
-		t.Fatalf("SetPluginEnabled: %v", err)
-	}
-	all := a.ListPlugins()
-	if len(all) != 1 {
-		t.Fatalf("expected 1 plugin, got %d", len(all))
-	}
-	if !all[0].Enabled {
-		t.Error("plugin should be enabled")
-	}
-	out, err := a.PluginCall("demo", "ping", "[]")
-	if err != nil {
-		t.Fatalf("PluginCall: %v", err)
-	}
-	var v any
-	if err := json.Unmarshal([]byte(out), &v); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if v != "pong" {
-		t.Errorf("ping = %v, want pong", v)
-	}
-	if err := a.SetPluginEnabled("demo", false, nil); err != nil {
-		t.Fatalf("disable: %v", err)
-	}
-	all = a.ListPlugins()
-	if all[0].Enabled {
-		t.Error("plugin should be disabled")
-	}
-}
-
-func TestPluginCall_FailsForNotEnabled(t *testing.T) {
-	withTempXDG(t)
-	a := New()
-	a.Startup(testCtx())
-	stateDir, err := resolveStateDir(t)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pdir := filepath.Join(stateDir, "plugins", "x")
-	if err := os.MkdirAll(pdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(pdir, "plugin.json"),
-		[]byte(`{"id":"x","name":"X","version":"0.1.0","ui":{"type":"list","title":"T"}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.pmgr.Discover(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := a.PluginCall("x", "ping", "[]"); err == nil {
-		t.Error("expected error calling disabled plugin")
-	}
-}
-
 // TestListPlugins_NoActionsMarshalsAsArray guards against a regression
 // where a plugin with no UI.Actions produced "actions": null in JSON,
 // which broke `{#each plugin.actions}` in the Svelte template. Same
@@ -424,44 +351,4 @@ func TestEnableWorkspacePlugin_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestStopInstance_DisablesWorkspacePlugins(t *testing.T) {
-	withTempXDG(t)
-	a := New()
-	a.Startup(testCtx())
-	stateDir, err := resolveStateDir(t)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pdir := filepath.Join(stateDir, "plugins", "stp")
-	if err := os.MkdirAll(pdir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(pdir, "plugin.json"),
-		[]byte(`{"id":"stp","name":"Stp","version":"0.1.0","capabilities":["workspaces:read"],"ui":{"type":"list","title":"T"}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(pdir, "index.js"), []byte("module.exports = {};"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.pmgr.Discover(); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.SetPluginEnabled("stp", true, []string{"workspaces:read"}); err != nil {
-		t.Fatal(err)
-	}
-	instID := "fake-inst"
-	_ = a.store.Mutate(func(d *state.Data) {
-		d.Instances[instID] = state.Instance{
-			ID:      instID,
-			Plugins: []string{"stp"},
-			Status:  state.StatusStopped,
-			Apps:    []state.AppProcess{},
-		}
-	})
-	_ = a.StopInstance(instID)
-	snap := a.store.Snapshot()
-	ps := snap.Plugins["stp"]
-	if ps.Enabled {
-		t.Error("plugin should be disabled after StopInstance")
-	}
-}
+

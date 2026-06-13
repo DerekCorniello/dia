@@ -12,11 +12,7 @@ export function DeleteWorkspace(arg1:string):Promise<void>;
 
 export function DetectTools():Promise<Array<wailsapp.ToolCategory>>;
 
-export function DisablePlugin(arg1:string):Promise<void>;
-
 export function Doctor():Promise<Array<wailsapp.CheckInfo>>;
-
-export function EnablePlugin(arg1:string):Promise<void>;
 
 export function GetKeybindings():Promise<Record<string, string>>;
 
@@ -70,9 +66,9 @@ export function SetCustomTheme(arg1:wailsapp.CustomThemeInfo):Promise<void>;
 
 export function SetKeybinding(arg1:string,arg2:string):Promise<void>;
 
-export function SetPluginEnabled(arg1:string,arg2:boolean,arg3:Array<string>):Promise<void>;
-
 export function SetTheme(arg1:string):Promise<void>;
+
+export function StartStateWatcher():Promise<void>;
 
 export function StartWorkspace(arg1:string):Promise<void>;
 

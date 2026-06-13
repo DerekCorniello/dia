@@ -118,17 +118,8 @@
       </div>
       {#if workspace.description}
         <p class="mt-0.5 text-xs text-fg-mute line-clamp-2">{workspace.description}</p>
-      {:else}
-        <p class="mt-0.5 text-xs text-fg-mute">
-          {workspace.apps} app{workspace.apps === 1 ? '' : 's'}
-          {#if workspace.plugins && workspace.plugins.length > 0}
-            , {workspace.plugins.length} plugin{workspace.plugins.length === 1 ? '' : 's'}
-          {/if}
-          {#if (workspace.useCount ?? 0) > 0}
-            &middot; used {workspace.useCount}x
-          {/if}
-        </p>
       {/if}
+      <p class="mt-0.5 text-xs text-fg-mute">{workspace.apps} app{workspace.apps === 1 ? '' : 's'}{workspace.plugins && workspace.plugins.length > 0 ? ' and ' + workspace.plugins.length + ' plugin' + (workspace.plugins.length === 1 ? '' : 's') : ''}</p>
     </button>
     <div class="flex items-center gap-1 shrink-0">
       <button

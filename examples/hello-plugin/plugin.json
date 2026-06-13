@@ -3,11 +3,24 @@
   "name": "Hello Plugin",
   "version": "0.1.0",
   "description": "A minimal example plugin that lists recent workspaces.",
+  "long_description": "This plugin demonstrates the plugin system. It uses workspaces:read to list workspaces and shows how config_schema drives the workspace editor's config form. Add this plugin to a workspace in the editor to see the config fields.",
   "author": "dia",
   "entry": "index.js",
   "capabilities": [
     "workspaces:read"
   ],
+  "config_schema": {
+    "show_all": {
+      "type": "boolean",
+      "label": "Show all workspaces",
+      "default": false
+    },
+    "max_items": {
+      "type": "number",
+      "label": "Max items",
+      "default": 10
+    }
+  },
   "ui": {
     "type": "list",
     "title": "Recent Workspaces",

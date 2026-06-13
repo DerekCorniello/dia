@@ -13,8 +13,8 @@
 
   function validateName(v: string): string {
     if (!v) return '';
-    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(v)) {
-      return 'must be lowercase a-z, 0-9, internal hyphens';
+    if (!/^[a-zA-Z0-9_-]+$/.test(v)) {
+      return 'must be alphanumeric with hyphens or underscores';
     }
     if (v.length > 64) return 'name too long (max 64)';
     return '';
@@ -76,7 +76,7 @@
           <span class="block text-xs text-error mt-1">{nameError}</span>
         {:else}
           <span class="block text-xs text-fg-mute mt-1">
-            lowercase a-z, 0-9, internal hyphens
+            alphanumeric with hyphens or underscores
           </span>
         {/if}
       </label>

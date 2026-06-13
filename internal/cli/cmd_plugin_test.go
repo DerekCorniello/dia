@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/DerekCorniello/dia/internal/state"
 )
 
 func TestPluginNew_WritesScaffold(t *testing.T) {
@@ -69,39 +67,6 @@ func TestPluginList_Empty(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", tmp)
 	if code := Run([]string{"--json", "plugin", "list"}); code != ExitOK {
 		t.Fatalf("Run returned %d", code)
-	}
-}
-
-func TestPluginEnableDisable_State(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", tmp)
-	if code := Run([]string{"plugin", "new", "demo"}); code != ExitOK {
-		t.Fatal(code)
-	}
-	if code := Run([]string{"plugin", "enable", "demo"}); code != ExitOK {
-		t.Fatalf("enable: %d", code)
-	}
-	st, err := state.OpenAt(filepath.Join(tmp, "dia", state.StateFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	ps := st.Snapshot().Plugins["demo"]
-	if !ps.Enabled {
-		t.Error("should be enabled")
-	}
-	if len(ps.GrantedCapabilities) == 0 {
-		t.Error("expected default grants")
-	}
-	if code := Run([]string{"plugin", "disable", "demo"}); code != ExitOK {
-		t.Fatalf("disable: %d", code)
-	}
-	st2, err := state.OpenAt(filepath.Join(tmp, "dia", state.StateFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	ps = st2.Snapshot().Plugins["demo"]
-	if ps.Enabled {
-		t.Error("should be disabled")
 	}
 }
 

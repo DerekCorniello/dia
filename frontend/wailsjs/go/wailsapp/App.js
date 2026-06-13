@@ -18,16 +18,8 @@ export function DetectTools() {
   return window['go']['wailsapp']['App']['DetectTools']();
 }
 
-export function DisablePlugin(arg1) {
-  return window['go']['wailsapp']['App']['DisablePlugin'](arg1);
-}
-
 export function Doctor() {
   return window['go']['wailsapp']['App']['Doctor']();
-}
-
-export function EnablePlugin(arg1) {
-  return window['go']['wailsapp']['App']['EnablePlugin'](arg1);
 }
 
 export function GetKeybindings() {
@@ -134,12 +126,12 @@ export function SetKeybinding(arg1, arg2) {
   return window['go']['wailsapp']['App']['SetKeybinding'](arg1, arg2);
 }
 
-export function SetPluginEnabled(arg1, arg2, arg3) {
-  return window['go']['wailsapp']['App']['SetPluginEnabled'](arg1, arg2, arg3);
-}
-
 export function SetTheme(arg1) {
   return window['go']['wailsapp']['App']['SetTheme'](arg1);
+}
+
+export function StartStateWatcher() {
+  return window['go']['wailsapp']['App']['StartStateWatcher']();
 }
 
 export function StartWorkspace(arg1) {

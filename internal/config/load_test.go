@@ -163,12 +163,14 @@ func TestValidName(t *testing.T) {
 		{"abc-def", true},
 		{"abc-1", true},
 		{"1abc", true},
-		{"-abc", false},
-		{"abc-", false},
+		{"-abc", true},
+		{"abc-", true},
 		{"a--b", true},
 		{"a---b", true},
-		{"ABC", false},
-		{"abc_def", false},
+		{"ABC", true},
+		{"abc_def", true},
+		{"ABC_DEF", true},
+		{"abc-def_ghi", true},
 		{"abc def", false},
 	}
 	for _, c := range cases {

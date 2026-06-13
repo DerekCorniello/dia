@@ -25,12 +25,9 @@ import {
   SetCustomTheme as _SetCustomTheme,
   DeleteCustomTheme as _DeleteCustomTheme,
   ListPlugins as _ListPlugins,
-  EnablePlugin as _EnablePlugin,
-  DisablePlugin as _DisablePlugin,
   PluginCall as _PluginCall,
   PluginPaths as _PluginPaths,
   OpenPluginFolder as _OpenPluginFolder,
-  SetPluginEnabled as _SetPluginEnabled,
   GetRecent as _GetRecent,
   GetKeybindings as _GetKeybindings,
   SetKeybinding as _SetKeybinding,
@@ -71,12 +68,12 @@ export type PluginRefEditor = {
 
 export type WorkspaceEditor = {
   originalName: string;
+  originalPath: string;
   name: string;
   description: string;
   defaultCwd: string;
   apps: AppEditor[];
   plugins: PluginRefEditor[];
-  convertValues?: (a: any, classs: any, asMap?: boolean) => any;
 };
 
 export type RecentEntry = {
@@ -115,8 +112,6 @@ export const api = {
   setCustomTheme: (info: CustomThemeInfo): Promise<void> => _SetCustomTheme(info),
   deleteCustomTheme: (name: string): Promise<void> => _DeleteCustomTheme(name),
   listPlugins: (): Promise<PluginInfo[]> => array(_ListPlugins()),
-  enablePlugin: (id: string): Promise<void> => _EnablePlugin(id),
-  disablePlugin: (id: string): Promise<void> => _DisablePlugin(id),
   pluginCall: (id: string, method: string, argsJSON: string): Promise<string> =>
     _PluginCall(id, method, argsJSON),
   pluginPaths: (): Promise<PluginPathsInfo> => _PluginPaths(),
@@ -130,8 +125,6 @@ export const api = {
   getKeybindings: (): Promise<Record<string, string>> => _GetKeybindings(),
   setKeybinding: (action: string, keys: string): Promise<void> => _SetKeybinding(action, keys),
   resetKeybindings: (): Promise<void> => _ResetKeybindings(),
-  setPluginEnabled: (id: string, enabled: boolean, granted: string[]): Promise<void> =>
-    _SetPluginEnabled(id, enabled, granted),
   selectProjectDir: (): Promise<string> => _SelectProjectDir(),
   getProjectDir: (): Promise<string> => _GetProjectDir(),
   clearProjectDir: (): Promise<void> => _ClearProjectDir(),

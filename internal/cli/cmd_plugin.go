@@ -17,9 +17,9 @@ import (
 
 // newPluginCmd returns the parent `dia plugin` command and its
 // subcommands. The plugin host is in the GUI; the CLI focuses on
-// authoring and bookkeeping: new/list/install/uninstall/enable/
-// disable/info. Each subcommand uses the global plugins dir from
-// the XDG state dir (or --state-dir).
+// authoring and bookkeeping: new/list/install/uninstall/info. Each
+// subcommand uses the global plugins dir from the XDG state dir (or
+// --state-dir).
 func newPluginCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "plugin",
@@ -31,8 +31,6 @@ func newPluginCmd() *cobra.Command {
 		newPluginListCmd(),
 		newPluginInstallCmd(),
 		newPluginUninstallCmd(),
-		newPluginEnableCmd(),
-		newPluginDisableCmd(),
 		newPluginInfoCmd(),
 	)
 	return cmd
@@ -210,85 +208,6 @@ func newPluginUninstallCmd() *cobra.Command {
 				return out.JSON(map[string]string{"id": args[0]})
 			}
 			return out.Printf("uninstalled %s\n", args[0])
-		},
-	}
-	return cmd
-}
-
-func newPluginEnableCmd() *cobra.Command {
-	var caps string
-	cmd := &cobra.Command{
-		Use:   "enable <id>",
-		Short: "Mark a plugin enabled",
-		Long:  "Persist enabled=true for the plugin and (with --caps) a comma-separated granted capability list. The GUI picks this up on next start.",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := newSetup(flagsFromCmd(cmd).StateDir, cmd.ErrOrStderr())
-			if err != nil {
-				return err
-			}
-			host := &nullHost{}
-			mgr, err := plugins.NewManager(plugins.GlobalPluginsDir(s.StateDir), host)
-			if err != nil {
-				return err
-			}
-			if err := mgr.Discover(); err != nil {
-				return err
-			}
-			loaded, ok := mgr.Loaded(args[0])
-			if !ok {
-				return &NotFoundError{What: "plugin " + args[0]}
-			}
-			grants := parseCaps(caps)
-			if grants == nil {
-				grants = plugins.DefaultReadCapabilities()
-			}
-			grants = plugins.GrantCapabilities(loaded.Manifest.Capabilities, grants)
-			if err := s.Store.Mutate(func(d *state.Data) {
-				if d.Plugins == nil {
-					d.Plugins = map[string]state.PluginState{}
-				}
-				d.Plugins[args[0]] = state.PluginState{Enabled: true, GrantedCapabilities: grants}
-			}); err != nil {
-				return err
-			}
-			out := newOutput(cmd)
-			if out.IsJSON() {
-				return out.JSON(map[string]any{"id": args[0], "grants": grants})
-			}
-			return out.Printf("enabled %s with %d capabilities\n", args[0], len(grants))
-		},
-	}
-	cmd.Flags().StringVar(&caps, "caps", "", "comma-separated granted capabilities (default: all read caps)")
-	return cmd
-}
-
-func newPluginDisableCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "disable <id>",
-		Short: "Mark a plugin disabled",
-		Long:  "Persist enabled=false for the plugin. The GUI will not start its goja runtime on next launch.",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := newSetup(flagsFromCmd(cmd).StateDir, cmd.ErrOrStderr())
-			if err != nil {
-				return err
-			}
-			if err := s.Store.Mutate(func(d *state.Data) {
-				if d.Plugins == nil {
-					d.Plugins = map[string]state.PluginState{}
-				}
-				ps := d.Plugins[args[0]]
-				ps.Enabled = false
-				d.Plugins[args[0]] = ps
-			}); err != nil {
-				return err
-			}
-			out := newOutput(cmd)
-			if out.IsJSON() {
-				return out.JSON(map[string]string{"id": args[0]})
-			}
-			return out.Printf("disabled %s\n", args[0])
 		},
 	}
 	return cmd

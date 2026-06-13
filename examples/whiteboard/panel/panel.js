@@ -1,13 +1,20 @@
 // whiteboard/panel/panel.js
-// Runs inside the plugin's own dia process. The host injects
-// window.dia (see internal/wailsapp/pluginwindow.go -> generatedDiaJS).
-// This file uses no Svelte: it is plain browser JS so plugin authors
-// do not need to learn any framework.
+// Runs inside the plugin's own dia process. Config is embedded
+// directly in the HTML as window.__diaPluginConfig so no Wails
+// bridge call is needed.
 (function () {
-  const root = document.getElementById('root');
+  var root = document.getElementById('root');
   if (!root) return;
 
-  const toolbar = document.createElement('div');
+  // ── read config from HTML (set by Go via generatedPanelHTML) ──
+  var cfg = window.__diaPluginConfig || {};
+
+  var colors = ['#000000', '#1e66f5', '#40a02b', '#df8e1d', '#d20f39', '#8839ef'];
+  var cfgColor = cfg.color || '#000000';
+  var cfgWidth = cfg.width || 3;
+  var cfgTheme = cfg.theme || 'light';
+
+  var toolbar = document.createElement('div');
   toolbar.style.cssText = [
     'display:flex',
     'align-items:center',
@@ -20,54 +27,54 @@
   ].join(';');
   root.appendChild(toolbar);
 
-  const colors = ['#000000', '#1e66f5', '#40a02b', '#df8e1d', '#d20f39', '#8839ef'];
-  let color = colors[0];
-  let width = 3;
-  const colorRow = document.createElement('div');
+  var colorRow = document.createElement('div');
   colorRow.style.cssText = 'display:flex;gap:6px;align-items:center';
-  for (const c of colors) {
-    const sw = document.createElement('button');
-    sw.type = 'button';
-    sw.title = c;
-    sw.style.cssText = [
-      'width:22px',
-      'height:22px',
-      'border-radius:50%',
-      `background:${c}`,
-      `border:2px solid ${c === color ? '#cdd6f4' : 'transparent'}`,
-      'cursor:pointer',
-      'padding:0',
-    ].join(';');
-    sw.addEventListener('click', () => {
-      color = c;
-      for (const sib of colorRow.children) {
-        sib.style.border = `2px solid ${sib.title === c ? '#cdd6f4' : 'transparent'}`;
-      }
-    });
-    colorRow.appendChild(sw);
+  for (var ci = 0; ci < colors.length; ci++) {
+    (function (c) {
+      var sw = document.createElement('button');
+      sw.type = 'button';
+      sw.title = c;
+      sw.style.cssText = [
+        'width:22px',
+        'height:22px',
+        'border-radius:50%',
+        'background:' + c,
+        'border:2px solid ' + (c === cfgColor ? '#cdd6f4' : 'transparent'),
+        'cursor:pointer',
+        'padding:0',
+      ].join(';');
+      sw.addEventListener('click', function () {
+        cfgColor = c;
+        for (var si = 0; si < colorRow.children.length; si++) {
+          colorRow.children[si].style.border = '2px solid ' +
+            (colorRow.children[si].title === c ? '#cdd6f4' : 'transparent');
+        }
+      });
+      colorRow.appendChild(sw);
+    })(colors[ci]);
   }
   toolbar.appendChild(colorRow);
 
-  const widthLabel = document.createElement('span');
-  widthLabel.textContent = 'thickness: 3';
+  var widthLabel = document.createElement('span');
+  widthLabel.textContent = 'thickness: ' + cfgWidth;
   toolbar.appendChild(widthLabel);
-  const slider = document.createElement('input');
+  var slider = document.createElement('input');
   slider.type = 'range';
   slider.min = '1';
   slider.max = '30';
-  slider.value = '3';
+  slider.value = String(cfgWidth);
   slider.style.cssText = 'accent-color:#89b4fa';
-  slider.addEventListener('input', () => {
-    width = Number(slider.value);
-    widthLabel.textContent = `thickness: ${width}`;
+  slider.addEventListener('input', function () {
+    cfgWidth = Number(slider.value);
+    widthLabel.textContent = 'thickness: ' + cfgWidth;
   });
   toolbar.appendChild(slider);
 
-  const spacer = document.createElement('div');
+  var spacer = document.createElement('div');
   spacer.style.flex = '1';
   toolbar.appendChild(spacer);
 
-  const clearBtn = document.createElement('button');
+  var clearBtn = document.createElement('button');
   clearBtn.type = 'button';
   clearBtn.textContent = 'clear';
   clearBtn.style.cssText = [
@@ -81,37 +88,39 @@
   ].join(';');
   toolbar.appendChild(clearBtn);
 
-  const status = document.createElement('span');
+  var status = document.createElement('span');
   status.style.cssText = 'color:#a6adc8;font-size:11px';
   status.textContent = '0 strokes';
   toolbar.appendChild(status);
 
-  const canvas = document.createElement('canvas');
-  canvas.style.cssText = 'flex:1;display:block;background:#ffffff;cursor:crosshair;touch-action:none';
-  root.appendChild(canvas);
-  const ctx = canvas.getContext('2d');
+  function canvasBg() { return cfgTheme === 'dark' ? '#1e1e2e' : '#ffffff'; }
 
-  const strokes = [];
-  let current = null;
+  var canvas = document.createElement('canvas');
+  canvas.style.cssText = 'flex:1;display:block;background:' + canvasBg() + ';cursor:crosshair;touch-action:none';
+  root.appendChild(canvas);
+  var ctx = canvas.getContext('2d');
+
+  var strokes = [];
+  var current = null;
 
   function resize() {
-    const dpr = window.devicePixelRatio || 1;
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight;
     canvas.width = Math.floor(w * dpr);
     canvas.height = Math.floor(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     redraw();
   }
-  const ro = new ResizeObserver(resize);
+  var ro = new ResizeObserver(resize);
   ro.observe(canvas);
 
   function redraw() {
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    ctx.fillStyle = '#ffffff';
+    var w = canvas.clientWidth;
+    var h = canvas.clientHeight;
+    ctx.fillStyle = canvasBg();
     ctx.fillRect(0, 0, w, h);
-    for (const s of strokes) drawStroke(s);
+    for (var si = 0; si < strokes.length; si++) drawStroke(strokes[si]);
   }
 
   function drawStroke(s) {
@@ -121,10 +130,10 @@
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.beginPath();
-    const first = s.points[0];
+    var first = s.points[0];
     ctx.moveTo(first.x, first.y);
-    for (let i = 1; i < s.points.length; i++) {
-      const p = s.points[i];
+    for (var pi = 1; pi < s.points.length; pi++) {
+      var p = s.points[pi];
       ctx.lineTo(p.x, p.y);
     }
     if (s.points.length === 1) ctx.lineTo(first.x + 0.01, first.y + 0.01);
@@ -132,22 +141,21 @@
   }
 
   function pt(ev) {
-    const r = canvas.getBoundingClientRect();
+    var r = canvas.getBoundingClientRect();
     return { x: ev.clientX - r.left, y: ev.clientY - r.top };
   }
 
-  canvas.addEventListener('pointerdown', (ev) => {
+  canvas.addEventListener('pointerdown', function (ev) {
     canvas.setPointerCapture(ev.pointerId);
-    current = { color, width, points: [pt(ev)] };
+    current = { color: cfgColor, width: cfgWidth, points: [pt(ev)] };
     strokes.push(current);
-    status.textContent = `${strokes.length} stroke${strokes.length === 1 ? '' : 's'}`;
+    status.textContent = strokes.length + ' stroke' + (strokes.length === 1 ? '' : 's');
   });
-  canvas.addEventListener('pointermove', (ev) => {
+  canvas.addEventListener('pointermove', function (ev) {
     if (!current) return;
-    const p = pt(ev);
-    const prev = current.points[current.points.length - 1];
+    var p = pt(ev);
     current.points.push(p);
-    drawSegment(prev, p, current.color, current.width);
+    drawSegment(current.points[current.points.length - 2], p, current.color, current.width);
   });
   function drawSegment(a, b, color, width) {
     ctx.strokeStyle = color;
@@ -159,21 +167,18 @@
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
   }
-  canvas.addEventListener('pointerup', (ev) => {
+  canvas.addEventListener('pointerup', function (ev) {
     current = null;
     try { canvas.releasePointerCapture(ev.pointerId); } catch (e) {}
   });
-  canvas.addEventListener('pointercancel', () => { current = null; });
-  canvas.addEventListener('pointerleave', () => { current = null; });
+  canvas.addEventListener('pointercancel', function () { current = null; });
+  canvas.addEventListener('pointerleave', function () { current = null; });
 
-  clearBtn.addEventListener('click', () => {
+  clearBtn.addEventListener('click', function () {
     strokes.length = 0;
     status.textContent = '0 strokes';
     redraw();
   });
 
   resize();
-  if (window.dia && typeof window.dia.capabilities === 'function') {
-    window.dia.capabilities().then(() => { /* dia host reachable */ }).catch(() => {});
-  }
 })();

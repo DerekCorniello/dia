@@ -71,8 +71,8 @@ func (r *Runtime) Start(w *config.Workspace, src config.Source) (*state.Instance
 	if w == nil {
 		return nil, errors.New("runtime: nil workspace")
 	}
-	if len(w.Apps) == 0 {
-		return nil, errors.New("runtime: workspace has no apps")
+	if len(w.Apps) == 0 && len(w.Plugins) == 0 {
+		return nil, errors.New("runtime: workspace has no apps or plugins")
 	}
 
 	inst := state.Instance{
@@ -132,6 +132,10 @@ func (r *Runtime) Start(w *config.Workspace, src config.Source) (*state.Instance
 		d.Recent = pushRecent(d.Recent, w.Name, RecentLimit)
 	}); err != nil {
 		r.log.Warn("save instance after launch", "id", inst.ID, "error", err)
+	}
+
+	if inst.Status == state.StatusRunning {
+		go r.watchInstance(inst.ID)
 	}
 
 	return &inst, nil
@@ -216,6 +220,63 @@ func (r *Runtime) launchOne(app config.App, workspaceName, instanceID string) st
 		"pid", out.PID,
 	)
 	return out
+}
+
+// watchInstance polls the instance's apps and plugin windows until all
+// with PIDs have exited, then marks the instance as stopped. Meant to
+// be called as a goroutine. Returns when the instance is gone or no
+// longer running.
+func (r *Runtime) watchInstance(id string) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		var done bool
+		_ = r.st.Mutate(func(d *state.Data) {
+			inst, ok := d.Instances[id]
+			if !ok || inst.Status != state.StatusRunning {
+				done = true
+				return
+			}
+			anyRunning := false
+			for i, app := range inst.Apps {
+				if app.PID <= 0 || app.Status != state.StatusRunning {
+					continue
+				}
+				running, err := r.pf.IsRunning(app.PID)
+				if err != nil {
+					r.log.Warn("isrunning", "id", id, "pid", app.PID, "error", err)
+					continue
+				}
+				if running {
+					anyRunning = true
+				} else {
+					inst.Apps[i].Status = state.StatusStopped
+				}
+			}
+			for _, ppid := range inst.PluginPIDs {
+				if ppid <= 0 {
+					continue
+				}
+				running, err := r.pf.IsRunning(ppid)
+				if err != nil {
+					r.log.Warn("isrunning plugin", "id", id, "pid", ppid, "error", err)
+					continue
+				}
+				if running {
+					anyRunning = true
+				}
+			}
+			if !anyRunning {
+				inst.Status = state.StatusStopped
+				r.log.Info("instance auto-stopped (all apps and plugins exited)", "id", id, "workspace", inst.WorkspaceName)
+				done = true
+			}
+			d.Instances[id] = inst
+		})
+		if done {
+			return
+		}
+	}
 }
 
 // Stop terminates every running app in the instance. With force=false

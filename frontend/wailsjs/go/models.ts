@@ -438,6 +438,7 @@ export namespace wailsapp {
 	}
 	export class WorkspaceEditor {
 	    originalName: string;
+	    originalPath: string;
 	    name: string;
 	    description: string;
 	    defaultCwd: string;
@@ -451,6 +452,7 @@ export namespace wailsapp {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.originalName = source["originalName"];
+	        this.originalPath = source["originalPath"];
 	        this.name = source["name"];
 	        this.description = source["description"];
 	        this.defaultCwd = source["defaultCwd"];

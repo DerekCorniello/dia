@@ -172,6 +172,7 @@ type AppEditor struct {
 // DefaultCwd is the detected current working directory.
 type WorkspaceEditor struct {
 	OriginalName string            `json:"originalName"`
+	OriginalPath string            `json:"originalPath"`
 	Name         string            `json:"name"`
 	Description  string            `json:"description"`
 	DefaultCwd   string            `json:"defaultCwd"`

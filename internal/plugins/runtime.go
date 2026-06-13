@@ -111,6 +111,15 @@ func (r *Runtime) Call(ctx context.Context, method string, args []any) (any, err
 		}
 	}
 	if fn == nil {
+		if diaVal := r.rt.Get("dia"); diaVal != nil && !goja.IsUndefined(diaVal) {
+			if diaObj, ok := diaVal.(*goja.Object); ok {
+				if f, ok := goja.AssertFunction(diaObj.Get(method)); ok {
+					fn = f
+				}
+			}
+		}
+	}
+	if fn == nil {
 		return nil, fmt.Errorf("plugin does not export %q", method)
 	}
 	jsArgs := make([]goja.Value, 0, len(args))

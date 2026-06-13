@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,6 +20,8 @@ import (
 	"github.com/DerekCorniello/dia/internal/plugins"
 	"github.com/DerekCorniello/dia/internal/state"
 )
+
+var pluginWindowLogger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 // PluginWindowApp is the wails binding for a plugin's new-window
 // process. It exposes a single DiaCall method that the plugin's
@@ -75,10 +78,11 @@ func (a *PluginWindowApp) DiaCall(method string, argsJSON string) (string, error
 // is launched with --plugin-window=<id>. When workspaceName is set
 // the plugin's config from that workspace's PluginRef is loaded and
 // passed to the goja runtime via dia.getConfig().
-func RunPluginWindow(id string, workspaceName string) error {
+func RunPluginWindow(id string, workspaceName string, workspacePath string) error {
 	if id == "" {
 		return errors.New("plugin id is required")
 	}
+	pluginWindowLogger.Debug("run plugin window", "id", id, "workspaceName", workspaceName, "workspacePath", workspacePath)
 	dir, err := state.ResolveStateDir()
 	if err != nil {
 		return fmt.Errorf("resolve state dir: %w", err)
@@ -96,12 +100,15 @@ func RunPluginWindow(id string, workspaceName string) error {
 	}
 	// Load workspace-scoped config if a workspace was specified.
 	var cfg map[string]any
-	if workspaceName != "" {
-		ws, err := loadWorkspacePluginConfig(workspaceName, id)
+	if workspaceName != "" && workspacePath != "" {
+		ws, err := loadWorkspacePluginConfig(workspacePath, id)
 		if err != nil {
 			return fmt.Errorf("load plugin config: %w", err)
 		}
 		cfg = ws
+		pluginWindowLogger.Debug("run plugin window: loaded config", "pluginID", id, "config", cfg)
+	} else {
+		pluginWindowLogger.Debug("run plugin window: no workspace config", "workspaceName", workspaceName, "workspacePath", workspacePath)
 	}
 	host, err := newPluginWindowHost(dir)
 	if err != nil {
@@ -130,7 +137,7 @@ func RunPluginWindow(id string, workspaceName string) error {
 	if height <= 0 {
 		height = 700
 	}
-	handler := &pluginAssetHandler{pluginDir: full, manifest: manifest}
+	handler := &pluginAssetHandler{pluginDir: full, manifest: manifest, config: cfg}
 	return wails.Run(&options.App{
 		Title:  manifest.UI.Title,
 		Width:  width,
@@ -142,6 +149,9 @@ func RunPluginWindow(id string, workspaceName string) error {
 		OnStartup:        func(ctx context.Context) { app.ctx = ctx },
 		Bind: []interface{}{
 			app,
+		},
+		Debug: options.Debug{
+			OpenInspectorOnStartup: true,
 		},
 	})
 }
@@ -169,6 +179,7 @@ func resolvePluginDir(id, stateDir string) (string, error) {
 type pluginAssetHandler struct {
 	pluginDir string
 	manifest  *plugins.Manifest
+	config    map[string]any
 }
 
 func (h *pluginAssetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -199,7 +210,7 @@ func (h *pluginAssetHandler) serveIndex(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(generatedPanelHTML(h.manifest)))
+	_, _ = w.Write([]byte(generatedPanelHTML(h.manifest, h.config)))
 }
 
 func (h *pluginAssetHandler) servePanelJS(w http.ResponseWriter, r *http.Request) {
@@ -244,11 +255,20 @@ func (h *pluginAssetHandler) serveDia(w http.ResponseWriter, r *http.Request) {
 // generatedPanelHTML returns the default HTML the host shows when
 // the plugin does not ship its own panel/index.html. It includes a
 // <div id="root"> mount point, loads /panel.js, and exposes
-// window.dia via /dia.js.
-func generatedPanelHTML(m *plugins.Manifest) string {
+// window.dia via /dia.js. The workspace-scoped config (if any) is
+// embedded directly in a script tag so the panel can read it
+// immediately without needing the Wails bridge.
+func generatedPanelHTML(m *plugins.Manifest, cfg map[string]any) string {
 	title := m.UI.Title
 	if title == "" {
 		title = m.Name
+	}
+	configJS := "window.__diaPluginConfig=null;"
+	if cfg != nil {
+		data, err := json.Marshal(cfg)
+		if err == nil {
+			configJS = "window.__diaPluginConfig=" + string(data) + ";"
+		}
 	}
 	return fmt.Sprintf(`<!doctype html>
 <html lang="en">
@@ -264,11 +284,12 @@ func generatedPanelHTML(m *plugins.Manifest) string {
 </head>
 <body>
   <div id="root"></div>
+  <script>%s</script>
   <script src="/dia.js"></script>
   <script src="/panel.js"></script>
 </body>
 </html>
-`, templateEscape(title))
+`, templateEscape(title), configJS)
 }
 
 // generatedDiaJS returns the JS that creates window.dia from the
@@ -285,6 +306,7 @@ func generatedDiaJS() string {
   function callArgless(method) { return call(method, []); }
   window.dia = {
     call: call,
+    getConfig: function () { return callArgless("getConfig"); },
     capabilities: function () { return callArgless("capabilities"); },
     pluginDir: function () { return callArgless("pluginDir"); },
     listWorkspaces: function () { return callArgless("listWorkspaces"); },
@@ -487,22 +509,20 @@ func workspaceSourceLabel(s config.Source) string {
 
 // loadWorkspacePluginConfig finds the workspace YAML by name, locates
 // the plugin ref with the given ID, and returns its config map.
-func loadWorkspacePluginConfig(workspaceName, pluginID string) (map[string]any, error) {
-	sources, err := config.Discover(config.DiscoverOptions{
-		GlobalDir: config.DefaultGlobalDir(),
-	})
+func loadWorkspacePluginConfig(workspacePath, pluginID string) (map[string]any, error) {
+	pluginWindowLogger.Debug("load workspace plugin config", "workspacePath", workspacePath, "pluginID", pluginID)
+	w, err := config.Load(workspacePath)
 	if err != nil {
-		return nil, err
+		pluginWindowLogger.Debug("load workspace plugin config: load failed", "error", err)
+		return nil, fmt.Errorf("load workspace: %w", err)
 	}
-	for _, s := range sources {
-		if s.Workspace.Name == workspaceName {
-			for _, ref := range s.Workspace.Plugins {
-				if ref.ID == pluginID {
-					return ref.Config, nil
-				}
-			}
-			return nil, fmt.Errorf("plugin %q not found in workspace %q", pluginID, workspaceName)
+	pluginWindowLogger.Debug("load workspace plugin config: workspace loaded", "workspaceName", w.Name, "plugins", w.Plugins)
+	for _, ref := range w.Plugins {
+		if ref.ID == pluginID {
+			pluginWindowLogger.Debug("load workspace plugin config: found plugin ref", "pluginID", pluginID, "config", ref.Config)
+			return ref.Config, nil
 		}
 	}
-	return nil, fmt.Errorf("workspace %q not found", workspaceName)
+	pluginWindowLogger.Debug("load workspace plugin config: plugin not found", "pluginID", pluginID)
+	return nil, fmt.Errorf("plugin %q not found in workspace", pluginID)
 }

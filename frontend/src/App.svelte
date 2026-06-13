@@ -107,14 +107,25 @@
     return parts.join('+');
   }
 
+  function fuzzyMatch(q: string, t: string): boolean {
+    if (!q) return true;
+    const ql = q.toLowerCase();
+    const tl = t.toLowerCase();
+    let qi = 0;
+    for (let ti = 0; ti < tl.length && qi < ql.length; ti++) {
+      if (tl[ti] === ql[qi]) qi++;
+    }
+    return qi === ql.length;
+  }
+
   // Filtered + sorted workspace list.
   $: filtered = $workspaces
-    .filter((w) => !search || w.name.toLowerCase().includes(search.toLowerCase()))
+    .filter((w) => !search || fuzzyMatch(search, w.name))
     .sort((a, b) => sortWorkspaces(a, b, sortKey, recent));
 
   // Filtered plugins list (search matches name/id).
   $: filteredPlugins = $pluginsStore.filter(
-    (p) => !search || (p.name || p.id).toLowerCase().includes(search.toLowerCase()),
+    (p) => !search || fuzzyMatch(search, p.name || p.id),
   );
 
   function sortWorkspaces(
@@ -353,18 +364,18 @@
     <div class="flex items-center gap-2 shrink-0">
       <button
         type="button"
-        on:click={openProject}
-        class="rounded bg-bg-600 px-3 py-1.5 text-xs text-fg-dim hover:bg-bg-600/70 hover:text-fg"
-        title="open project directory"
-      >
-        Open
-      </button>
-      <button
-        type="button"
         on:click={openNew}
         class="rounded bg-primary/20 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/30"
       >
         + New
+      </button>
+      <button
+        type="button"
+        on:click={openProject}
+        class="rounded bg-bg-600 px-3 py-1.5 text-xs text-fg-dim hover:bg-bg-600/70 hover:text-fg"
+        title="open project directory"
+      >
+        Open Folder
       </button>
       <button
         type="button"
@@ -507,11 +518,23 @@
           <h2 class="mb-3 text-[10px] font-semibold uppercase tracking-wide text-fg-dim">
             Plugins ({filteredPlugins.length})
           </h2>
-<div class="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3 items-start">
+          {#if filteredPlugins.length === 0}
+            {#if search}
+              <div class="rounded-lg border border-dashed border-bg-600 p-8 text-center text-sm text-fg-mute">
+                No plugins matching "{search}".
+              </div>
+            {:else}
+              <div class="rounded-lg border border-dashed border-bg-600 p-8 text-center text-sm text-fg-mute">
+                No plugins available.
+              </div>
+            {/if}
+          {:else}
+            <div class="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3 items-start">
               {#each filteredPlugins as p (p.id)}
               <PluginPanel plugin={p} on:refresh={refresh} />
             {/each}
-          </div>
+            </div>
+          {/if}
         </section>
       {/if}
 

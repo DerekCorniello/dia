@@ -180,7 +180,7 @@ func New() *App {
 // Startup also reconciles stale state from a prior crash.
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
-	a.logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	a.logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	dir, err := state.ResolveStateDir()
 	if err != nil {
@@ -228,9 +228,12 @@ func (a *App) StartStateWatcher() {
 		a.logger.Warn("create fsnotify watcher", "error", err)
 		return
 	}
-	if err := w.Add(a.store.Path()); err != nil {
+	statePath := a.store.Path()
+	stateName := filepath.Base(statePath)
+	stateDir := filepath.Dir(statePath)
+	if err := w.Add(stateDir); err != nil {
 		w.Close()
-		a.logger.Warn("watch state file", "error", err)
+		a.logger.Warn("watch state dir", "error", err)
 		return
 	}
 	go func() {
@@ -238,7 +241,10 @@ func (a *App) StartStateWatcher() {
 		var debounce *time.Timer
 		for {
 			select {
-			case <-w.Events:
+			case ev := <-w.Events:
+				if filepath.Base(ev.Name) != stateName {
+					continue
+				}
 				if debounce != nil {
 					debounce.Stop()
 				}
@@ -412,7 +418,7 @@ func (a *App) StartWorkspace(name string) error {
 	if a.pmgr != nil {
 		for _, ref := range ws.Plugins {
 			if loaded, ok := a.pmgr.Loaded(ref.ID); ok && loaded.Manifest != nil && loaded.Manifest.UI.Type == "window" {
-				pid, err := a.spawnPluginWindow(ref.ID, name)
+				pid, err := a.spawnPluginWindow(ref.ID, name, src.Path)
 				if err != nil {
 					a.logger.Warn("spawn plugin window", "id", ref.ID, "error", err)
 					continue
@@ -440,21 +446,23 @@ func (a *App) StopWorkspace(name string) error {
 			return a.StopInstance(inst.ID)
 		}
 	}
-	return fmt.Errorf("workspace %q is not running", name)
+	return nil
 }
 
 // spawnPluginWindow spawns a dia --plugin-window process for the
 // given plugin and workspace. Returns the PID of the spawned process.
-func (a *App) spawnPluginWindow(pluginID, workspaceName string) (int, error) {
+func (a *App) spawnPluginWindow(pluginID, workspaceName, workspacePath string) (int, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return 0, fmt.Errorf("get executable: %w", err)
 	}
-	args := []string{"--plugin-window=" + pluginID, "--workspace=" + workspaceName}
+	args := []string{"--plugin-window=" + pluginID, "--workspace=" + workspaceName, "--workspace-path=" + workspacePath}
+	a.logger.Debug("spawn plugin window", "pluginID", pluginID, "workspaceName", workspaceName, "workspacePath", workspacePath, "args", args)
 	pid, err := a.launchProcess(exe, args)
 	if err != nil {
 		return 0, fmt.Errorf("launch plugin window: %w", err)
 	}
+	a.logger.Debug("spawn plugin window: done", "pid", pid)
 	return pid, nil
 }
 
@@ -493,8 +501,7 @@ func (a *App) enableWorkspacePlugin(id string, cfg map[string]any) error {
 	return nil
 }
 
-// StopInstance terminates one running instance by ID and disables
-// any workspace plugins that were enabled when it started.
+// StopInstance terminates one running instance by ID.
 func (a *App) StopInstance(id string) error {
 	if a.rt == nil {
 		return errors.New("runtime not initialized")
@@ -503,23 +510,6 @@ func (a *App) StopInstance(id string) error {
 	if a.store != nil {
 		snap := a.store.Snapshot()
 		inst = snap.Instances[id]
-	}
-	if a.pmgr != nil {
-		for _, pid := range inst.Plugins {
-			if err := a.pmgr.Disable(pid); err != nil {
-				a.logger.Warn("disable workspace plugin", "id", pid, "error", err)
-			}
-			if err := a.store.Mutate(func(d *state.Data) {
-				if d.Plugins == nil {
-					d.Plugins = map[string]state.PluginState{}
-				}
-				ps := d.Plugins[pid]
-				ps.Enabled = false
-				d.Plugins[pid] = ps
-			}); err != nil {
-				a.logger.Warn("mutate disable plugin state", "error", err)
-			}
-		}
 	}
 	// Kill plugin window processes.
 	pf := platform.New()
@@ -882,8 +872,13 @@ func (a *App) NewWorkspace(name string, local bool) (string, error) {
 }
 
 func (a *App) findWorkspace(name string) (*config.Workspace, config.Source, error) {
+	cwd, _ := os.Getwd()
+	if pd := a.GetProjectDir(); pd != "" {
+		cwd = pd
+	}
 	sources, err := config.Discover(config.DiscoverOptions{
 		GlobalDir: config.DefaultGlobalDir(),
+		CWD:       cwd,
 	})
 	if err != nil {
 		return nil, config.Source{}, fmt.Errorf("discover: %w", err)
@@ -923,13 +918,15 @@ func toInstanceInfo(inst *state.Instance) *InstanceInfo {
 
 // GetWorkspaceEditor returns the editable view of a workspace.
 func (a *App) GetWorkspaceEditor(name string) (*WorkspaceEditor, error) {
-	ws, _, err := a.findWorkspace(name)
+	ws, src, err := a.findWorkspace(name)
 	if err != nil {
 		return nil, err
 	}
+	a.logger.Debug("get workspace editor", "name", name, "srcPath", src.Path, "srcLocal", src.Local)
 	cwd, _ := os.Getwd()
 	editor := &WorkspaceEditor{
 		OriginalName: ws.Name,
+		OriginalPath: src.Path,
 		Name:         ws.Name,
 		Description:  ws.Description,
 		DefaultCwd:   cwd,
@@ -970,9 +967,7 @@ func (a *App) SaveWorkspaceEditor(editor WorkspaceEditor) error {
 	if err := config.ValidateName(editor.Name); err != nil {
 		return err
 	}
-	if len(editor.Apps) == 0 {
-		return errors.New("at least one app is required")
-	}
+	a.logger.Debug("save workspace editor", "originalPath", editor.OriginalPath, "originalName", editor.OriginalName, "name", editor.Name)
 	ws := &config.Workspace{
 		Version:     config.SchemaVersion,
 		Name:        editor.Name,
@@ -1008,11 +1003,18 @@ func (a *App) SaveWorkspaceEditor(editor WorkspaceEditor) error {
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
+	a.logger.Debug("save workspace editor: marshaled", "yaml", string(out), "plugins", ws.Plugins)
+	// Write to the same directory as the original file so that local
+	// workspaces stay local and global workspaces stay global.
 	dir := config.DefaultGlobalDir()
+	if editor.OriginalPath != "" {
+		dir = filepath.Dir(editor.OriginalPath)
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	wsPath := filepath.Join(dir, editor.Name+".yaml")
+	a.logger.Debug("save workspace editor: writing", "path", wsPath, "dir", dir)
 	if err := os.WriteFile(wsPath, out, 0o644); err != nil {
 		return err
 	}
@@ -1045,9 +1047,8 @@ func (a *App) DeleteWorkspace(name string) error {
 	return nil
 }
 
-// ListPlugins returns every discovered plugin, with the host view
-// (manifest summary, status, granted capabilities). Includes both
-// enabled and disabled plugins.
+// ListPlugins returns every discovered plugin with the host view
+// (manifest summary, status, granted capabilities).
 func (a *App) ListPlugins() []PluginInfo {
 	if a.pmgr == nil {
 		return nil
@@ -1058,23 +1059,6 @@ func (a *App) ListPlugins() []PluginInfo {
 		out = append(out, loadedToInfo(l))
 	}
 	return out
-}
-
-// EnablePlugin loads and starts a plugin's goja runtime, then calls
-// its onEnable hook if defined.
-func (a *App) EnablePlugin(id string) error {
-	if a.pmgr == nil {
-		return errors.New("plugin manager not initialized")
-	}
-	return a.pmgr.Enable(id)
-}
-
-// DisablePlugin shuts down a plugin's goja runtime.
-func (a *App) DisablePlugin(id string) error {
-	if a.pmgr == nil {
-		return errors.New("plugin manager not initialized")
-	}
-	return a.pmgr.Disable(id)
 }
 
 // PluginCall invokes an exported method on a plugin's module.exports.
@@ -1233,67 +1217,27 @@ func (a *App) OpenPluginWindow(id string) (int, error) {
 	return handle.PID(), nil
 }
 
-// applyPersistedPluginState re-enables plugins that the user enabled
-// in a previous session and applies the persisted granted capability
-// set (intersected with the manifest's requested set). Plugins that
-// are enabled here will start their goja runtime immediately; a
-// plugin whose entry script fails is left in the errored state and
-// the call site (frontend) will show the LastError.
+// applyPersistedPluginState starts the goja runtime for every
+// discovered plugin so all plugins are immediately usable. A plugin
+// whose entry script fails is left in the errored state and the
+// frontend will show the LastError.
 func (a *App) applyPersistedPluginState(pmgr *plugins.Manager) {
-	snap := a.store.Snapshot()
-	for id, ps := range snap.Plugins {
-		if !ps.Enabled {
-			continue
+	for _, l := range pmgr.List() {
+		granted := plugins.DefaultReadCapabilities()
+		if l.Manifest != nil {
+			granted = plugins.GrantCapabilities(l.Manifest.Capabilities, granted)
 		}
-		loaded, ok := pmgr.Loaded(id)
-		if !ok {
-			continue
-		}
-		granted := ps.GrantedCapabilities
-		if granted == nil {
-			granted = plugins.DefaultReadCapabilities()
-		}
-		granted = plugins.GrantCapabilities(loaded.Manifest.Capabilities, granted)
-		if err := pmgr.EnableWithGrants(id, granted); err != nil {
-			a.logger.Warn("enable persisted plugin", "id", id, "error", err)
+		if err := pmgr.EnableWithGrants(l.Manifest.ID, granted); err != nil {
+			a.logger.Warn("enable plugin", "id", l.Manifest.ID, "error", err)
 		}
 	}
-}
-
-// SetPluginEnabled persists the enabled flag and granted caps so the
-// next startup re-enables the plugin with the same grant set.
-func (a *App) SetPluginEnabled(id string, enabled bool, granted []string) error {
-	if a.pmgr == nil {
-		return errors.New("plugin manager not initialized")
-	}
-	if !enabled {
-		if err := a.pmgr.Disable(id); err != nil {
-			return err
-		}
-	} else {
-		loaded, ok := a.pmgr.Loaded(id)
-		if !ok {
-			return fmt.Errorf("plugin %q not found", id)
-		}
-		final := plugins.GrantCapabilities(loaded.Manifest.Capabilities, granted)
-		if err := a.pmgr.EnableWithGrants(id, final); err != nil {
-			return err
-		}
-		granted = final
-	}
-	return a.store.Mutate(func(d *state.Data) {
-		if d.Plugins == nil {
-			d.Plugins = map[string]state.PluginState{}
-		}
-		d.Plugins[id] = state.PluginState{Enabled: enabled, GrantedCapabilities: granted}
-	})
 }
 
 func loadedToInfo(l plugins.Loaded) PluginInfo {
 	out := PluginInfo{
 		Source:              string(l.Source),
 		Dir:                 l.Dir,
-		Enabled:             l.Enabled,
+		Enabled:             true,
 		Status:              string(l.Status),
 		LastError:           l.LastError,
 		GrantedCapabilities: l.GrantedCaps,
