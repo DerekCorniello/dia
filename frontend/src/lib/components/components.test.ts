@@ -63,7 +63,7 @@ describe('NewWorkspaceDialog', () => {
   it('renders the dialog with name input', () => {
     render(NewWorkspaceDialog, { onClose: vi.fn() });
     expect(screen.getByPlaceholderText('my-project')).toBeTruthy();
-    expect(screen.getByText('lowercase a-z, 0-9, internal hyphens')).toBeTruthy();
+    expect(screen.getByText('alphanumeric with hyphens or underscores')).toBeTruthy();
   });
 
   it('shows validation error for invalid name', async () => {
@@ -72,18 +72,18 @@ describe('NewWorkspaceDialog', () => {
     const input = screen.getByPlaceholderText('my-project');
     await user.type(input, 'Bad Name');
     await user.tab();
-    expect(screen.getByText('must be lowercase a-z, 0-9, internal hyphens')).toBeTruthy();
+    expect(screen.getByText('must be alphanumeric with hyphens or underscores')).toBeTruthy();
   });
 
   it('clears error for valid name', async () => {
     const user = userEvent.setup();
     render(NewWorkspaceDialog, { onClose: vi.fn() });
     const input = screen.getByPlaceholderText('my-project');
-    await user.type(input, 'Bad');
-    expect(screen.getByText('must be lowercase a-z, 0-9, internal hyphens')).toBeTruthy();
+    await user.type(input, 'bad name');
+    expect(screen.getByText('must be alphanumeric with hyphens or underscores')).toBeTruthy();
     await user.clear(input);
     await user.type(input, 'good-name');
-    expect(screen.queryByText('must be lowercase a-z, 0-9, internal hyphens')).toBeNull();
+    expect(screen.queryByText('must be alphanumeric with hyphens or underscores')).toBeNull();
   });
 
   it('disables submit when name is invalid', async () => {

@@ -70,6 +70,10 @@ export function OpenConfigFolder() {
   return window['go']['wailsapp']['App']['OpenConfigFolder']();
 }
 
+export function InstallPluginFromFolder() {
+  return window['go']['wailsapp']['App']['InstallPluginFromFolder']();
+}
+
 export function OpenPluginFolder() {
   return window['go']['wailsapp']['App']['OpenPluginFolder']();
 }

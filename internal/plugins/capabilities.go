@@ -10,6 +10,8 @@ const (
 	CapInstancesStop   = "instances:stop"
 	CapWorkspacesNew   = "workspaces:create"
 	CapThemesWrite     = "themes:write"
+	CapCmdExec         = "cmd:exec"
+	CapFetch           = "fetch"
 )
 
 var defaultReadCaps = []string{
@@ -29,12 +31,15 @@ var knownCapabilities = map[string]struct{}{
 	CapInstancesStop:   {},
 	CapWorkspacesNew:   {},
 	CapThemesWrite:     {},
+	CapCmdExec:         {},
+	CapFetch:           {},
 }
 var mutatingCapabilities = map[string]struct{}{
 	CapWorkspacesStart: {},
 	CapInstancesStop:   {},
 	CapWorkspacesNew:   {},
 	CapThemesWrite:     {},
+	CapCmdExec:         {},
 }
 
 func IsKnownCapability(c string) bool {

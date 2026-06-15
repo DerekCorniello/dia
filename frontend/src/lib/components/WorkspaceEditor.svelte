@@ -8,11 +8,13 @@
   export let onsaved: () => void = () => {};
   export let ondeleted: () => void = () => {};
 
-  let editor: WorkspaceEditor = { name, originalName: name, description: '', defaultCwd: '', apps: [], plugins: [] };
+  let editor: WorkspaceEditor = { name, originalName: name, originalPath: '', description: '', defaultCwd: '', apps: [], plugins: [] };
   let busy = false;
   let error: string | null = null;
   let toolCats: ToolCategory[] = [];
   let openCat: string | null = null;
+  let catSearch = '';
+  let pluginSearch = '';
   let openConfigPlugin: string | null = null;
   let showDeleteConfirm = false;
 
@@ -188,12 +190,22 @@
                 </button>
                 {#if openCat === cat.name}
                   <div class="absolute left-0 top-full z-20 mt-1 w-52 rounded border border-bg-600/80 bg-bg-800 shadow-2xl">
-                    {#each cat.tools as tool}
-                      <button type="button" on:click={() => addTool(tool, cat.name)}
-                        class="block w-full text-left px-3 py-1.5 text-xs text-fg-dim hover:bg-accent/15 hover:text-fg">
-                        {tool.label}
-                      </button>
-                    {/each}
+                    <div class="p-1.5">
+                      <input type="text" placeholder="filter..." bind:value={catSearch}
+                        on:click|stopPropagation
+                        class="block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-[10px] text-fg-dim placeholder:text-fg-mute focus:border-accent focus:outline-none" />
+                    </div>
+                    <div class="max-h-48 overflow-y-auto">
+                      {#each cat.tools.filter((t) => !catSearch || t.label.toLowerCase().includes(catSearch.toLowerCase())) as tool}
+                        <button type="button" on:click={() => addTool(tool, cat.name)}
+                          class="block w-full text-left px-3 py-1.5 text-xs text-fg-dim hover:bg-accent/15 hover:text-fg">
+                          {tool.label}
+                        </button>
+                      {/each}
+                      {#if cat.tools.filter((t) => !catSearch || t.label.toLowerCase().includes(catSearch.toLowerCase())).length === 0}
+                        <p class="px-3 py-2 text-[10px] text-fg-mute">No tools match</p>
+                      {/if}
+                    </div>
                   </div>
                 {/if}
               </div>
@@ -263,13 +275,23 @@
             <button type="button" on:click={() => openConfigPlugin = openConfigPlugin === '__picker__' ? null : '__picker__'}
               class="rounded bg-primary/15 px-2 py-0.5 text-[10px] text-primary hover:bg-primary/25">+ Add plugin</button>
             {#if openConfigPlugin === '__picker__'}
-              <div class="absolute left-0 top-full z-20 mt-1 w-52 rounded border border-bg-600/80 bg-bg-800 shadow-2xl max-h-60 overflow-y-auto">
-                {#each plugins as p (p.id)}
-                  <button type="button" on:click={() => addPlugin(p)}
-                    class="block w-full text-left px-3 py-1.5 text-xs text-fg-dim hover:bg-accent/15 hover:text-fg">
-                    {p.name || p.id} <span class="text-fg-mute">{p.version}</span>
-                  </button>
-                {/each}
+              <div class="absolute left-0 top-full z-20 mt-1 w-52 rounded border border-bg-600/80 bg-bg-800 shadow-2xl">
+                <div class="p-1.5">
+                  <input type="text" placeholder="filter..." bind:value={pluginSearch}
+                    on:click|stopPropagation
+                    class="block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-[10px] text-fg-dim placeholder:text-fg-mute focus:border-accent focus:outline-none" />
+                </div>
+                <div class="max-h-48 overflow-y-auto">
+                  {#each plugins.filter((p) => !pluginSearch || (p.name || p.id).toLowerCase().includes(pluginSearch.toLowerCase())) as pl (pl.id)}
+                    <button type="button" on:click={() => addPlugin(pl)}
+                      class="block w-full text-left px-3 py-1.5 text-xs text-fg-dim hover:bg-accent/15 hover:text-fg">
+                      {pl.name || pl.id} <span class="text-fg-mute">{pl.version}</span>
+                    </button>
+                  {/each}
+                  {#if plugins.filter((p) => !pluginSearch || (p.name || p.id).toLowerCase().includes(pluginSearch.toLowerCase())).length === 0}
+                    <p class="px-3 py-2 text-[10px] text-fg-mute">No plugins match</p>
+                  {/if}
+                </div>
               </div>
             {/if}
           </div>

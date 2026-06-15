@@ -17,4 +17,6 @@ type HostAPI interface {
 	SetCustomTheme(ctx context.Context, info any) error
 	DeleteCustomTheme(ctx context.Context, name string) error
 	NewWorkspace(ctx context.Context, name string) (string, error)
+	Exec(ctx context.Context, cmd string, args []string) (string, error)
+	Fetch(ctx context.Context, url string, opts map[string]any) (any, error)
 }

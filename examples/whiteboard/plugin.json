@@ -2,7 +2,7 @@
   "id": "whiteboard",
   "name": "Whiteboard",
   "version": "0.1.0",
-  "description": "A free-draw whiteboard that opens in its own window. Draw with mouse or touch; the strokes are kept in browser memory (no save for v1).",
+  "description": "A free-draw whiteboard that opens in its own window. Supports undo/redo, eraser mode, and export to PNG.",
   "author": "dia",
   "entry": "index.js",
   "capabilities": [],

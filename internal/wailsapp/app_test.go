@@ -350,5 +350,3 @@ func TestEnableWorkspacePlugin_RoundTrip(t *testing.T) {
 		t.Error("plugin should be enabled in manager")
 	}
 }
-
-

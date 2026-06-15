@@ -77,6 +77,7 @@ func New() *Registry {
 	r.Register(HandlerFunc{Name: "terminal", Fn: resolveLocal})
 	r.Register(HandlerFunc{Name: "service", Fn: resolveLocal})
 	r.Register(HandlerFunc{Name: "custom", Fn: resolveLocal})
+	r.Register(HandlerFunc{Name: "ai", Fn: resolveLocal})
 	return r
 }
 

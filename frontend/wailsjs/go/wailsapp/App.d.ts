@@ -38,6 +38,8 @@ export function NewWorkspace(arg1:string,arg2:boolean):Promise<string>;
 
 export function OpenConfigFolder():Promise<void>;
 
+export function InstallPluginFromFolder():Promise<string>;
+
 export function OpenPluginFolder():Promise<void>;
 
 export function OpenPluginWindow(arg1:string):Promise<number>;

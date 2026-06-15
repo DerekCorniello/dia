@@ -1,13 +1,17 @@
 package wailsapp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -167,6 +171,59 @@ func (h *wailsHost) DeleteCustomTheme(ctx context.Context, name string) error {
 
 func (h *wailsHost) NewWorkspace(ctx context.Context, name string) (string, error) {
 	return h.app.NewWorkspace(name, false)
+}
+
+func (h *wailsHost) Exec(ctx context.Context, cmd string, args []string) (string, error) {
+	out, err := exec.CommandContext(ctx, cmd, args...).CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("%s: %w", string(out), err)
+	}
+	return string(out), nil
+}
+
+func (h *wailsHost) Fetch(ctx context.Context, url string, opts map[string]any) (any, error) {
+	method := "GET"
+	var body io.Reader
+	if m, ok := opts["method"].(string); ok && m != "" {
+		method = m
+	}
+	if b, ok := opts["body"].(string); ok && b != "" {
+		body = bytes.NewBufferString(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	if headers, ok := opts["headers"].(map[string]any); ok {
+		for k, v := range headers {
+			if vs, ok := v.(string); ok {
+				req.Header.Set(k, vs)
+			}
+		}
+	}
+	if timeoutSec, ok := opts["timeout"].(float64); ok && timeoutSec > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
+		defer cancel()
+		req = req.WithContext(ctx)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch: %w", err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return string(data), fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(data))
+	}
+	var parsed any
+	if err := json.Unmarshal(data, &parsed); err == nil {
+		return parsed, nil
+	}
+	return string(data), nil
 }
 
 // New returns an App with no context set; Startup fills it in and
@@ -1095,6 +1152,31 @@ func (a *App) PluginPaths() PluginPathsInfo {
 	out.GlobalDir = a.pmgr.GlobalDir()
 	out.LocalDir = a.pmgr.LocalDir()
 	return out
+}
+
+// InstallPluginFromFolder opens a directory picker and installs the
+// selected plugin globally. Returns the plugin ID on success.
+func (a *App) InstallPluginFromFolder() (string, error) {
+	if a.pmgr == nil {
+		return "", errors.New("plugin manager not initialized")
+	}
+	if a.ctx == nil {
+		return "", errors.New("not initialized")
+	}
+	dir, err := wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
+		Title: "Select Plugin Directory",
+	})
+	if err != nil {
+		return "", fmt.Errorf("select directory: %w", err)
+	}
+	if dir == "" {
+		return "", nil
+	}
+	dst, err := a.pmgr.Install(dir)
+	if err != nil {
+		return "", fmt.Errorf("install plugin: %w", err)
+	}
+	return dst, nil
 }
 
 // OpenPluginFolder reveals the global plugins directory in the file

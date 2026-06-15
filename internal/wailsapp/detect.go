@@ -8,13 +8,14 @@ import (
 )
 
 // DetectTools scans PATH and environment variables for known editors,
-// terminals, and browsers. Returns categorized results for the
-// WorkspaceEditor quick-add UI.
+// terminals, browsers, and AI tools. Returns categorized results for
+// the WorkspaceEditor quick-add UI.
 func (a *App) DetectTools() []ToolCategory {
 	return []ToolCategory{
 		{Name: "Editors", Tools: detectEditors()},
 		{Name: "Terminals", Tools: detectTerminals()},
 		{Name: "Browsers", Tools: detectBrowsers()},
+		{Name: "AI", Tools: detectAITools()},
 	}
 }
 
@@ -178,6 +179,38 @@ func detectBrowsers() []DetectedTool {
 				seen[bin] = true
 			}
 		}
+	}
+	sortTools(tools)
+	return tools
+}
+
+func detectAITools() []DetectedTool {
+	candidates := []struct {
+		label string
+		bin   string
+	}{
+		{"Claude Code", "claude"},
+		{"GitHub Copilot", "copilot"},
+		{"GitHub Copilot App", "github-copilot-app"},
+		{"Cursor", "cursor"},
+		{"Windsurf", "windsurf"},
+		{"T3 Code", "t3code"},
+		{"Codex", "codex"},
+	}
+	var tools []DetectedTool
+	seen := map[string]bool{}
+	for _, c := range candidates {
+		if _, err := exec.LookPath(c.bin); err != nil {
+			continue
+		}
+		if seen[c.bin] {
+			continue
+		}
+		seen[c.bin] = true
+		tools = append(tools, DetectedTool{
+			Label:   c.label,
+			Command: c.bin,
+		})
 	}
 	sortTools(tools)
 	return tools

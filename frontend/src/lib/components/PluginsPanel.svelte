@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { lastError } from '../stores';
+  import { api, describeError } from '../api';
 
   export let plugins: PluginInfo[];
 
@@ -9,6 +10,16 @@
   }>();
 
   let error: string | null = null;
+
+  async function installFromFolder() {
+    error = null;
+    try {
+      await api.installPluginFromFolder();
+      dispatch('refresh');
+    } catch (e) {
+      error = describeError(e);
+    }
+  }
 
   function statusClass(s: string): string {
     if (s === 'active' || s === 'loaded') return 'bg-success/20 text-success';
@@ -24,7 +35,15 @@
 </script>
 
 <section class="space-y-4">
-  <h3 class="text-xs font-semibold uppercase tracking-wide text-fg-mute">Plugins</h3>
+  <div class="flex items-center gap-2">
+    <h3 class="text-xs font-semibold uppercase tracking-wide text-fg-mute">Plugins</h3>
+    <div class="ml-auto flex gap-1.5">
+      <button type="button" on:click={installFromFolder}
+        class="rounded bg-bg-600 px-2 py-0.5 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg">Install from folder</button>
+      <button type="button" on:click={() => dispatch('refresh')}
+        class="rounded bg-bg-600 px-2 py-0.5 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg">Refresh</button>
+    </div>
+  </div>
 
   {#if error}
     <p class="text-xs text-accent-err">{error}</p>

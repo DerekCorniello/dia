@@ -1,16 +1,19 @@
 package wailsapp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -364,8 +367,74 @@ func (h *pluginWindowHost) dispatch(method string, args []any) (any, error) {
 		return t, nil
 	case "listCustomThemes":
 		return pluginWindowListCustomThemes(h.store), nil
+	case "exec":
+		return nil, errHostUnhandled
+	case "fetch":
+		return h.dispatchFetch(args)
 	}
 	return nil, errHostUnhandled
+}
+
+func (h *pluginWindowHost) dispatchFetch(args []any) (any, error) {
+	if len(args) < 1 {
+		return nil, errors.New("fetch requires a url argument")
+	}
+	url, ok := args[0].(string)
+	if !ok || url == "" {
+		return nil, errors.New("fetch requires a string url")
+	}
+	opts := map[string]any{}
+	if len(args) > 1 {
+		if m, ok := args[1].(map[string]any); ok {
+			opts = m
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	method := "GET"
+	var body io.Reader
+	if m, ok := opts["method"].(string); ok && m != "" {
+		method = m
+	}
+	if b, ok := opts["body"].(string); ok && b != "" {
+		body = bytes.NewBufferString(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	if headers, ok := opts["headers"].(map[string]any); ok {
+		for k, v := range headers {
+			if vs, ok := v.(string); ok {
+				req.Header.Set(k, vs)
+			}
+		}
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch: %w", err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(data))
+	}
+	var parsed any
+	if err := json.Unmarshal(data, &parsed); err == nil {
+		return parsed, nil
+	}
+	return string(data), nil
+}
+
+func (h *pluginWindowHost) Exec(ctx context.Context, cmd string, args []string) (string, error) {
+	return "", errHostUnhandled
+}
+
+func (h *pluginWindowHost) Fetch(ctx context.Context, url string, opts map[string]any) (any, error) {
+	return h.dispatchFetch([]any{url, opts})
 }
 
 func (h *pluginWindowHost) ListWorkspaces(ctx context.Context) ([]any, error) {

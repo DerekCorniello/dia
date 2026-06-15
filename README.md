@@ -9,10 +9,9 @@ process snapshot, just deterministic rebuilds from a config.
 ## Status
 
 v0.3.0 (unreleased). All planned phases are complete:
-core engine (v0.1.0), theming + UI polish (v0.2.0), and the
-in-process JS plugin system (v0.3.0). Cross-process state
-visibility (fsnotify), CLI polish, and frontend tests shipped
-in v0.3.0. See [CHANGELOG.md](./CHANGELOG.md) for details.
+core engine (v0.1.0), theming + UI polish (v0.2.0), JS plugin system
+(v0.3.0) with embedded and window-style plugins, AI tool detection,
+frameless window mode, and a custom title bar.
 
 ## Features
 
@@ -22,14 +21,12 @@ in v0.3.0. See [CHANGELOG.md](./CHANGELOG.md) for details.
   (all spawn a command), `open` and `browser` (open a URL), `gh` and
   `gh:pr`/`gh:issue`/`gh:checkout`/`gh:repo-clone` (wrappers around
   the `gh` CLI)
+- AI tool detection: claude, copilot, cursor, windsurf, t3code, codex
 - Both global and project-local configs with discovery
-- In-process JS plugin system: drop a folder with a `plugin.json`
-  and an `index.js` into `$XDG_STATE_HOME/dia/plugins/<id>/` (or
-  `<cwd>/.dia/plugins/<id>/` for project-local). The GUI auto-wraps
-  a panel from the manifest's `ui.type` (`list`/`grid`/`table`/
-  `kv`/`text`); plugins call into dia through a capability-gated
-  `dia.*` bridge.
+- In-process JS plugin system: embedded panels (`list`/`grid`/`table`/
+  `kv`/`text`) and full-window plugins (`window`) with plain HTML/CSS/JS
 - Cross-platform: Linux, macOS, Windows
+- Frameless window with custom title bar (no OS decoration)
 - Scriptable CLI alongside the GUI
 
 ## Install
@@ -138,14 +135,14 @@ output.
 
 dia's plugin system runs in two flavors:
 
-- **Embedded panels** (`ui.type` of `list|grid|table|kv|text|canvas`):
+- **Embedded panels** (`ui.type` of `list|grid|table|kv|text`):
   the GUI loads a plugin's `index.js` in a [goja](https://github.com/dop251/goja)
   interpreter and auto-wraps a panel from the plugin's manifest. The
   plugin author writes JS + a UI schema, not a frontend framework.
 - **Window plugins** (`ui.type=window`): the host spawns a second
   dia process that opens a new OS-level window and serves the
   plugin's `panel/` folder. The plugin author writes plain
-  HTML/CSS/JS - the host injects a `window.dia` proxy that
+  HTML/CSS/JS -- the host injects a `window.dia` proxy that
   dispatches to the host or to the plugin's goja runtime. No
   framework required.
 
@@ -172,8 +169,8 @@ dia plugin new hello --local  # writes to ./.dia/plugins/ in cwd
 This generates a `plugin.json` and a starter `index.js` you can
 edit. To build a window plugin, change `ui.type` to `"window"`
 and add a `panel/` folder with `panel.js` (and optionally
-`index.html` and `styles.css`); the whiteboard example is a
-good starting point.
+`index.html` and `styles.css`); the examples in `examples/` are
+good starting points.
 
 ### Manifest
 
@@ -206,12 +203,12 @@ good starting point.
 | `author`                    | no       | 0-60 chars                                         |
 | `entry`                     | no       | relative path; defaults to `index.js`              |
 | `capabilities`              | no       | subset of the capability list (see below)          |
-| `ui.type`                   | yes      | `list` \| `grid` \| `table` \| `kv` \| `text` \| `canvas` \| `window` |
+| `ui.type`                   | yes      | `list` \| `grid` \| `table` \| `kv` \| `text` \| `window` |
 | `ui.title`                  | yes      | panel title (and window title for `type=window`)   |
-| `ui.entry`                  | window   | path to `panel.js` (default `panel/panel.js`)     |
-| `ui.width`, `ui.height`     | window   | initial window size in px (default 900x700)       |
+| `ui.entry`                  | window   | path to `panel.js` (default `panel/panel.js`)      |
+| `ui.width`, `ui.height`     | window   | initial window size in px (default 900x700)        |
 | `ui.refreshable`            | no       | show a refresh button                              |
-| `ui.columns`                | table    | required when `type=table`; one entry per column  |
+| `ui.columns`                | table    | required when `type=table`; one entry per column   |
 | `ui.column.format`          | no       | `badge` \| `duration` \| `text`                    |
 | `ui.actions[]`              | no       | buttons in the panel header                        |
 | `ui.action.id`              | yes      | passed to `onAction(id, ctx)`                      |
@@ -230,19 +227,17 @@ good starting point.
 | `table`   | `[{ col: value, ... }, ...]`                   | table; columns declared in `ui.columns`     |
 | `kv`      | `{ key: value, ... }`                          | key/value list                              |
 | `text`    | any string                                     | monospace block                             |
-| `canvas`  | `{ strokes?, color, width }`                   | free-draw `<canvas>`. The host captures pointer events and passes `ctx.strokes` to actions |
+| `window`  | n/a (no `getData`)                             | separate OS window with `panel/panel.js`    |
 
 ### Entry
 
 ```js
 module.exports = {
-  // optional: getData is called when the panel mounts and on refresh
   getData: function () {
     return dia.listWorkspaces().map(function (w) {
       return { id: w.name, label: w.name };
     });
   },
-  // optional: invoked when a ui.action is clicked
   onAction: function (id, ctx) {
     if (id === "open") {
       dia.startWorkspace(ctx.item.id);
@@ -267,6 +262,8 @@ Mutating ones are opt-in and recorded in the persisted state.
 | `instances:stop`    | yes      | `dia.stopInstance()`, `dia.stopAll()`  |
 | `workspaces:create` | yes      | `dia.newWorkspace()`                   |
 | `themes:write`      | yes      | `dia.setTheme()`, `dia.setCustomTheme()`, `dia.deleteCustomTheme()` |
+| `cmd:exec`          | yes      | `dia.exec(cmd, args)`                  |
+| `fetch`             | yes      | `dia.fetch(url, opts)`                 |
 
 Calling a method you don't have throws `capability "X" not granted`.
 The host catches the error and surfaces it as a toast; the rest of
@@ -308,61 +305,36 @@ dia plugin disable <id>
 ```
 
 The GUI picks up enabled plugins on the next launch. Open Settings
-> Plugins to toggle, see paths, and view the inline writing guide.
+> Plugins to enable/disable, install from a folder, see paths, and
+view the inline writing guide.
 
-### Example: a black-pen whiteboard
+### `dia.exec(cmd, args)`
 
-`examples/whiteboard/` ships in this repo. It is a window plugin
-that opens in its own OS-level window. The browser side is plain
-HTML/CSS/JS in `panel/`; no Svelte, no build step.
-
-Manifest (`plugin.json`):
-
-```json
-{
-  "id": "whiteboard",
-  "name": "Whiteboard",
-  "version": "0.1.0",
-  "entry": "index.js",
-  "capabilities": [],
-  "ui": {
-    "type": "window",
-    "title": "Whiteboard",
-    "entry": "panel/panel.js",
-    "width": 1100,
-    "height": 750
-  }
-}
-```
-
-Layout:
-
-```
-whiteboard/
-  plugin.json
-  index.js           # loaded in goja (optional for window plugins)
-  panel/
-    panel.js         # browser-side: runs in the new window
-    styles.css       # optional
-```
-
-`panel/panel.js` is plain browser JS. The host injects
-`window.dia` with read-only host methods and a generic
-`dia.call(method, args)` for any other method (including the
-plugin's `module.exports` functions):
+Window plugins can run arbitrary shell commands via the `cmd:exec`
+capability. Returns stdout as a string:
 
 ```js
-(function () {
-  // window.dia is ready before this script runs.
-  window.dia.capabilities().then(function (caps) {
-    console.log("host granted:", caps);
+dia.exec('gh', ['pr', 'list', '--json', 'number,title,state'])
+  .then(function (output) {
+    var prs = JSON.parse(output);
+    // ...
   });
-})();
 ```
 
-The `index.js` entry is loaded in goja by the host. For the
-whiteboard it is a tiny stub; window plugins can omit the file
-when no headless work is needed.
+### `dia.fetch(url, opts)`
+
+Window plugins can make HTTP requests via the `fetch` capability.
+Returns an object with `ok`, `status`, `headers`, `body` (string):
+
+```js
+dia.fetch('https://api.github.com/repos/owner/repo/issues', {
+  headers: { Authorization: 'Bearer ' + token },
+}).then(function (resp) {
+  if (resp.ok) {
+    var data = JSON.parse(resp.body);
+  }
+});
+```
 
 ### Window plugins: how the spawn works
 
@@ -380,6 +352,79 @@ when no headless work is needed.
 - The new window process has no workspace runtime; mutating
   `dia.*` calls return an error. Read-only calls (`listWorkspaces`,
   `getTheme`, etc.) work against the shared state file.
+
+### Example plugins
+
+#### gh-dashboard
+
+A window plugin that provides a GitHub dashboard with four tabs:
+Pull Requests, Issues, Actions, and Projects. Data is fetched via
+`dia.exec('gh', ...)` -- no PAT or API client required.
+
+```
+examples/gh-dashboard/
+  plugin.json
+  index.js
+  panel/
+    panel.js
+```
+
+#### Whiteboard
+
+A window plugin with a free-draw canvas. Supports color/width
+configuration, undo/redo history, eraser mode, and PNG export.
+
+```
+examples/whiteboard/
+  plugin.json
+  index.js
+  panel/
+    panel.js
+    styles.css
+```
+
+#### Pomodoro
+
+A window plugin implementing a pomodoro timer with focus, short
+break, and long break cycles, configurable durations, desktop
+notifications, and start/pause/reset controls.
+
+```
+examples/pomodoro/
+  plugin.json
+  index.js
+  panel/
+    panel.js
+```
+
+#### Quick Notes
+
+A window plugin providing a plain-text scratchpad with
+localStorage persistence, word-wrap toggle, font size
+configuration, export-to-file, and clear.
+
+```
+examples/quick-notes/
+  plugin.json
+  index.js
+  panel/
+    panel.js
+```
+
+## AI tool detection
+
+dia detects AI coding tools installed on the system and makes them
+available in the Quick add panel. Detected tools:
+
+- claude (Anthropic Code)
+- copilot / github-copilot-app (GitHub Copilot CLI)
+- cursor (Cursor editor)
+- windsurf (Windsurf / Codeium)
+- t3code (T3 Chat)
+- codex (Codex CLI)
+
+Detection is automatic on startup. Tools are listed in the GUI's
+Quick add section under the "AI" category.
 
 ## Build from source
 
@@ -422,12 +467,6 @@ examples/              sample workspaces and plugins
   package). The Svelte frontend imports from
   `wailsjs/go/wailsapp/App`. This is documented in `main.go` near
   the binding call.
-
-- **Slog output to a log file.** dia logs to stderr only. A
-  `$XDG_STATE_HOME/dia/dia.log` file is a future addition.
-
-- **SBOM in release artifacts.** GoReleaser config does not
-  generate one; can be added by enabling the `sboms` section.
 
 Out of scope: window positioning, sleep/resume, workspace
 templates marketplace, TUI mode, log rotation, JSON Schema

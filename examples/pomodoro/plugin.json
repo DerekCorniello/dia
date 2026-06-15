@@ -1,0 +1,23 @@
+{
+  "id": "pomodoro",
+  "name": "Pomodoro Timer",
+  "version": "0.1.0",
+  "description": "A pomodoro timer that opens in its own window. Configurable focus and break intervals with desktop notifications.",
+  "author": "dia",
+  "entry": "index.js",
+  "capabilities": [],
+  "config_schema": {
+    "focus_minutes": { "type": "number", "default": 25, "label": "Focus duration (minutes)" },
+    "break_minutes": { "type": "number", "default": 5, "label": "Break duration (minutes)" },
+    "long_break_minutes": { "type": "number", "default": 15, "label": "Long break duration (minutes)" },
+    "sessions_before_long": { "type": "number", "default": 4, "label": "Sessions before long break" }
+  },
+  "ui": {
+    "type": "window",
+    "title": "Pomodoro",
+    "entry": "panel/panel.js",
+    "width": 400,
+    "height": 350,
+    "refreshable": false
+  }
+}

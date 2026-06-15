@@ -42,12 +42,15 @@ func main() {
 
 	app := wailsapp.New()
 	err := wails.Run(&options.App{
-		Title:  "dia",
-		Width:  1024,
-		Height: 768,
+		Title:     "dia",
+		Width:     1024,
+		Height:    768,
+		Frameless: true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
+		CSSDragProperty:  "--wails-draggable",
+		CSSDragValue:     "drag",
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        func(ctx context.Context) { app.Startup(ctx); app.StartStateWatcher() },
 		Bind: []any{

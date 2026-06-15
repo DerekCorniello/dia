@@ -114,6 +114,12 @@ func (f *fakeHost) NewWorkspace(ctx context.Context, name string) (string, error
 	f.newWspath = filepath.Join("/tmp", name+".yaml")
 	return f.newWspath, nil
 }
+func (f *fakeHost) Exec(ctx context.Context, cmd string, args []string) (string, error) {
+	return "", nil
+}
+func (f *fakeHost) Fetch(ctx context.Context, url string, opts map[string]any) (any, error) {
+	return nil, nil
+}
 func setupPlugin(t *testing.T, host HostAPI, id, js string, caps []string) (string, *Manager) {
 	t.Helper()
 	dir := t.TempDir()

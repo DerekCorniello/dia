@@ -9,7 +9,7 @@ import (
 
 func TestNew_HasBuiltins(t *testing.T) {
 	r := New()
-	want := []string{"browser", "custom", "editor", "gh", "gh:checkout", "gh:issue", "gh:pr", "gh:repo-clone", "local", "open", "service", "terminal"}
+	want := []string{"ai", "browser", "custom", "editor", "gh", "gh:checkout", "gh:issue", "gh:pr", "gh:repo-clone", "local", "open", "service", "terminal"}
 	got := r.Types()
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("Types = %v, want %v", got, want)

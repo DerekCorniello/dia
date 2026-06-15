@@ -417,6 +417,12 @@ func (h *nullHost) SetCustomTheme(ctx context.Context, info any) error { return 
 func (h *nullHost) DeleteCustomTheme(ctx context.Context, name string) error {
 	return nil
 }
+func (h *nullHost) Exec(ctx context.Context, cmd string, args []string) (string, error) {
+	return "", nil
+}
+func (h *nullHost) Fetch(ctx context.Context, url string, opts map[string]any) (any, error) {
+	return nil, nil
+}
 func (h *nullHost) NewWorkspace(ctx context.Context, name string) (string, error) {
 	return "", nil
 }

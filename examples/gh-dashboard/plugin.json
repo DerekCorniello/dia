@@ -1,0 +1,23 @@
+{
+  "id": "gh-dashboard",
+  "name": "GitHub Dashboard",
+  "version": "0.1.0",
+  "description": "A unified GitHub dashboard with quick access to PRs, issues, actions, and projects via the gh CLI.",
+  "author": "dia",
+  "entry": "index.js",
+  "capabilities": ["cmd:exec"],
+  "config_schema": {
+    "repo": { "type": "string", "default": "", "label": "Repository (owner/repo, empty = auto-detect from cwd)" },
+    "pr_limit": { "type": "number", "default": 10, "label": "PRs to show" },
+    "issue_limit": { "type": "number", "default": 10, "label": "Issues to show" },
+    "action_limit": { "type": "number", "default": 5, "label": "Actions to show" }
+  },
+  "ui": {
+    "type": "window",
+    "title": "GitHub Dashboard",
+    "entry": "panel/panel.js",
+    "width": 1000,
+    "height": 700,
+    "refreshable": false
+  }
+}

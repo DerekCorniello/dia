@@ -1,0 +1,21 @@
+{
+  "id": "quick-notes",
+  "name": "Quick Notes",
+  "version": "0.1.0",
+  "description": "A scratchpad that opens in its own window. Notes are auto-saved to localStorage and can be exported.",
+  "author": "dia",
+  "entry": "index.js",
+  "capabilities": [],
+  "config_schema": {
+    "font_size": { "type": "number", "default": 14, "label": "Font size (px)" },
+    "wrap": { "type": "boolean", "default": true, "label": "Word wrap" }
+  },
+  "ui": {
+    "type": "window",
+    "title": "Quick Notes",
+    "entry": "panel/panel.js",
+    "width": 600,
+    "height": 500,
+    "refreshable": false
+  }
+}

@@ -15,7 +15,7 @@
     projectDir,
   } from './lib/stores';
   import { buildAllCustomThemesCss } from './lib/colors';
-  import { EventsOn } from '../wailsjs/runtime';
+  import { EventsOn, WindowMinimise, WindowToggleMaximise, Quit } from '../wailsjs/runtime';
   import WorkspaceCard from './lib/components/WorkspaceCard.svelte';
   import SettingsPanel from './lib/components/SettingsPanel.svelte';
   import NewWorkspaceDialog from './lib/components/NewWorkspaceDialog.svelte';
@@ -341,8 +341,8 @@
 <svelte:window on:keydown={onGlobalKey} />
 
 <div class="flex h-screen flex-col">
-  <header class="flex items-center gap-3 border-b border-primary/20 px-5 py-3">
-    <h1 class="shrink-0 flex h-6 items-center gap-2">
+  <header class="flex items-center gap-3 border-b border-primary/20 px-5 py-3" style="--wails-draggable: drag">
+    <h1 class="shrink-0 flex h-6 items-center gap-2" style="--wails-draggable: no-drag">
       <span class="text-xl font-bold text-primary">dia</span>
       <span class="text-fg/30">|</span>
       <span class="text-sm font-semibold tracking-wider text-secondary">The Do-It-All App</span>
@@ -361,7 +361,7 @@
         />
       </div>
     </div>
-    <div class="flex items-center gap-2 shrink-0">
+    <div class="flex items-center gap-2 shrink-0" style="--wails-draggable: no-drag">
       <button
         type="button"
         on:click={openNew}
@@ -383,6 +383,34 @@
         class="rounded px-3 py-1.5 text-xs {showSettings ? 'bg-primary/20 text-primary' : 'bg-bg-600 hover:bg-bg-600/70'}"
       >
         Settings
+      </button>
+      <span class="mx-1 h-4 w-px bg-fg-mute/20"></span>
+      <button
+        type="button"
+        on:click={WindowMinimise}
+        class="rounded p-1 text-fg-mute hover:bg-bg-600 hover:text-fg"
+        title="minimise"
+        aria-label="minimise window"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <button
+        type="button"
+        on:click={WindowToggleMaximise}
+        class="rounded p-1 text-fg-mute hover:bg-bg-600 hover:text-fg"
+        title="maximise"
+        aria-label="maximise window"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
+      </button>
+      <button
+        type="button"
+        on:click={Quit}
+        class="rounded p-1 text-fg-mute hover:bg-error/20 hover:text-error"
+        title="close"
+        aria-label="close window"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
   </header>

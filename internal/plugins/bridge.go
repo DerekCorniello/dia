@@ -50,6 +50,8 @@ func (b *Bridge) DiaObject() map[string]any {
 		"setCustomTheme":    b.setCustomTheme,
 		"deleteCustomTheme": b.deleteCustomTheme,
 		"newWorkspace":      b.newWorkspace,
+		"exec":              b.exec,
+		"fetch":             b.fetch,
 		"pluginDir":         b.getPluginDir,
 		"capabilities":      b.capabilities,
 		"getConfig":         b.getConfig,
@@ -150,6 +152,20 @@ func (b *Bridge) newWorkspace(name string) (string, error) {
 	}
 	return b.host.NewWorkspace(context.Background(), name)
 }
+func (b *Bridge) exec(cmd string, args []string) (string, error) {
+	if err := b.require(CapCmdExec); err != nil {
+		return "", err
+	}
+	return b.host.Exec(context.Background(), cmd, args)
+}
+
+func (b *Bridge) fetch(url string, opts map[string]any) (any, error) {
+	if err := b.require(CapFetch); err != nil {
+		return nil, err
+	}
+	return b.host.Fetch(context.Background(), url, opts)
+}
+
 func (b *Bridge) NewRequire(pluginDir string) func(string) (goja.Value, error) {
 	b.pluginDir = pluginDir
 	return func(spec string) (goja.Value, error) {
