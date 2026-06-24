@@ -1,0 +1,21 @@
+# golangci-lint configuration. Run locally with `make lint` or via
+# the pre-commit hook (`make install-hooks`); enforced in CI.
+run:
+  timeout: 2m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - unconvert
+    - misspell
+    - gocritic
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

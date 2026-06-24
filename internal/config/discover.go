@@ -109,13 +109,10 @@ func Discover(opts DiscoverOptions) ([]Source, error) {
 		if err != nil {
 			return nil, fmt.Errorf("load %s: %w", p, err)
 		}
+		// Project-local wins on collision. Local files always come
+		// after global in the path list, so when both define the
+		// same name, the local one overwrites the global entry.
 		src := Source{Workspace: w, Path: p, Local: localPaths[p]}
-		if _, ok := byName[w.Name]; ok {
-			// Project-local wins on collision. Local files
-			// always come after global in the path list, so
-			// when both define the same name, the local one
-			// overwrites the global entry.
-		}
 		byName[w.Name] = src
 	}
 

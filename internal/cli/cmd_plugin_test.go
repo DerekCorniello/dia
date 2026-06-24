@@ -53,7 +53,7 @@ func TestPluginNew_LocalDir(t *testing.T) {
 	if err := os.Chdir(cwd); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chdir(prev)
+	defer func() { _ = os.Chdir(prev) }()
 	if code := Run([]string{"plugin", "new", "demo", "--local"}); code != ExitOK {
 		t.Fatalf("Run returned %d", code)
 	}

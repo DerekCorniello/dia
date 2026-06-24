@@ -15,13 +15,6 @@ func writeYAML(t *testing.T, dir, name, content string) string {
 	return p
 }
 
-const goodYAML = `version: 1
-name: %s
-apps:
-  - type: custom
-    cmd: echo %s
-`
-
 func TestDiscoverGlobalOnly(t *testing.T) {
 	g := t.TempDir()
 	writeYAML(t, g, "a.yaml", "version: 1\nname: alpha\napps:\n  - type: custom\n    cmd: echo a\n")

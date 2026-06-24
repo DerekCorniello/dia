@@ -305,22 +305,6 @@ func discoverForCLI(globalDir, cwd string) ([]cliPluginInfo, error) {
 	return out, nil
 }
 
-func parseCaps(s string) []string {
-	if s == "" {
-		return nil
-	}
-	parts := strings.Split(s, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		out = append(out, p)
-	}
-	return out
-}
-
 func isValidPluginID(id string) bool {
 	if len(id) < 3 || len(id) > 40 {
 		return false

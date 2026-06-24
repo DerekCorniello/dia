@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dop251/goja"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
+
+	"github.com/dop251/goja"
 )
 
 const pluginCallTimeout = 30 * time.Second
@@ -36,9 +38,15 @@ func NewRuntime(manifest *Manifest, pluginDir string, host HostAPI, grants []str
 	rt := goja.New()
 	entry := filepath.Clean(filepath.Join(pluginDir, manifest.Entry))
 	bridge := NewBridge(rt, manifest.Capabilities, grants, host, cfg)
-	rt.Set("dia", bridge.DiaObject())
-	rt.Set("require", bridge.NewRequire(pluginDir))
-	rt.Set("__pluginDir", pluginDir)
+	for k, v := range map[string]any{
+		"dia":         bridge.DiaObject(),
+		"require":     bridge.NewRequire(pluginDir),
+		"__pluginDir": pluginDir,
+	} {
+		if err := rt.Set(k, v); err != nil {
+			return nil, fmt.Errorf("set %q on plugin runtime: %w", k, err)
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Runtime{
 		rt:       rt,
@@ -193,7 +201,9 @@ func (r *Runtime) awaitPromise(ctx context.Context, v goja.Value) (any, error) {
 				}{nil, errors.New(errMsg)}
 				return goja.Undefined()
 			})
-			then(obj, resolveCb, rejectCb)
+			if _, err := then(obj, resolveCb, rejectCb); err != nil {
+				return nil, err
+			}
 			select {
 			case res := <-resultCh:
 				return res.val, res.err
@@ -225,7 +235,7 @@ func (r *Runtime) toJSValue(v any) (goja.Value, error) {
 			if err != nil {
 				return nil, err
 			}
-			if err := out.Set(strInt(i), jv); err != nil {
+			if err := out.Set(strconv.Itoa(i), jv); err != nil {
 				return nil, err
 			}
 		}
@@ -277,26 +287,4 @@ func (r *Runtime) fromJSValue(v goja.Value) (any, error) {
 		}
 		return out, nil
 	}
-}
-func strInt(i int) string {
-	const digits = "0123456789"
-	if i == 0 {
-		return "0"
-	}
-	neg := i < 0
-	if neg {
-		i = -i
-	}
-	buf := [20]byte{}
-	pos := len(buf)
-	for i > 0 {
-		pos--
-		buf[pos] = digits[i%10]
-		i /= 10
-	}
-	if neg {
-		pos--
-		buf[pos] = '-'
-	}
-	return string(buf[pos:])
 }

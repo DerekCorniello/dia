@@ -37,4 +37,7 @@ completions/
 # dia: project-local workspace
 .dia/
 .dia.yaml
-dia
+
+# Compiled binaries (build artifacts, not source)
+/dia
+/gen-completions

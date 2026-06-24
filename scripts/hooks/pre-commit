@@ -1,0 +1,25 @@
+#!/bin/sh
+# Version-controlled pre-commit hook. Install with `make install-hooks`.
+# Mirrors the fast gates enforced in CI so failures surface locally
+# before a push. Longer-running checks (full build, frontend) stay in CI.
+set -e
+
+echo "pre-commit: gofmt"
+fmt=$(gofmt -l .)
+if [ -n "$fmt" ]; then
+	echo "gofmt found unformatted files:"
+	echo "$fmt"
+	echo "run 'make fmt' to fix"
+	exit 1
+fi
+
+echo "pre-commit: go vet"
+go vet ./...
+
+echo "pre-commit: golangci-lint"
+golangci-lint run ./...
+
+echo "pre-commit: go test"
+go test -count=1 -timeout 60s ./...
+
+echo "pre-commit: ok"

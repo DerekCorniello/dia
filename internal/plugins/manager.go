@@ -389,6 +389,3 @@ func copyDir(src, dst string) error {
 	}
 	return nil
 }
-func isPluginFile(name string) bool {
-	return !strings.HasPrefix(name, ".")
-}

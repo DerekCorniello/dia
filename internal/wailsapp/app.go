@@ -14,7 +14,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/DerekCorniello/dia/internal/config"
@@ -38,7 +37,6 @@ import (
 type App struct {
 	ctx context.Context
 
-	mu     sync.Mutex
 	store  *state.Store
 	rt     *dia.Runtime
 	reg    *registry.Registry

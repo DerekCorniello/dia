@@ -475,11 +475,10 @@ workspace launch.
 
 ## Contributing
 
-- No comments unless they explain why
-- ASCII only in code, docs, and commits
-- Hand-rolled validation with precise error messages
-- Tests for non-trivial logic
-- Prefer stdlib over a new dependency
+See [AGENTS.md](./AGENTS.md) for the layout, build/test/lint commands,
+and conventions. In short: run `make check` before pushing, keep it
+ASCII-only, comment only the *why*, and prefer the stdlib over a new
+dependency.
 
 ## License
 
