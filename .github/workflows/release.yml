@@ -20,18 +20,22 @@ jobs:
             arch: amd64
             ext: ""
             artifact: dia-linux-amd64
+            os_label: linux
           - os: ubuntu-latest
             arch: arm64
             ext: ""
             artifact: dia-linux-arm64
+            os_label: linux
           - os: macos-latest
             arch: universal
             ext: ""
             artifact: dia-darwin-universal
+            os_label: macos
           - os: windows-latest
             arch: amd64
             ext: ".exe"
             artifact: dia-windows-amd64
+            os_label: windows
     steps:
       - uses: actions/checkout@v4
 
@@ -47,6 +51,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install Wails CLI
+        shell: bash
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.1
 
       - name: Install Linux deps
@@ -55,19 +60,74 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
 
+      # github.ref_name is the tag itself (e.g. "v0.3.0") on a
+      # tag-triggered push, so it needs no git history to resolve,
+      # unlike `git describe`.
+      - name: Compute version metadata
+        id: ver
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build
+        shell: bash
         working-directory: ${{ github.workspace }}
         run: |
           mkdir -p build/bin
           wails build -clean -trimpath -tags webkit2_41 \
+            -ldflags "-s -w -X github.com/DerekCorniello/dia/internal/version.Version=v${{ steps.ver.outputs.version }} -X github.com/DerekCorniello/dia/internal/version.Commit=${{ steps.ver.outputs.commit }} -X github.com/DerekCorniello/dia/internal/version.BuildTime=${{ steps.ver.outputs.build_time }}" \
             -platform ${{ runner.os == 'macos' && 'darwin/universal' || (runner.os == 'Windows' && 'windows/amd64' || format('linux/{0}', matrix.arch)) }} \
             -o build/bin/${{ matrix.artifact }}${{ matrix.ext }}
 
-      - name: Upload artifact
+      - name: Generate shell completions
+        shell: bash
+        run: go run ./tools/gen-completions
+
+      # Each archive bundles the binary with the docs a user actually
+      # wants alongside it. Two OS-specific steps rather than one
+      # cross-platform script: Windows runners default to pwsh, and
+      # neither zip nor 7z is guaranteed on the bash bundled with them,
+      # while Compress-Archive always is.
+      - name: Package archive (unix)
+        if: runner.os != 'Windows'
+        id: archive_unix
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="dist-stage"
+          rm -rf "$stage"
+          mkdir -p "$stage" dist
+          cp "build/bin/${{ matrix.artifact }}${{ matrix.ext }}" "$stage/"
+          cp README.md LICENSE CHANGELOG.md "$stage/"
+          cp -r completions "$stage/"
+          name="dia_${{ steps.ver.outputs.version }}_${{ matrix.os_label }}_${{ matrix.arch }}.tar.gz"
+          tar czf "dist/$name" -C "$stage" .
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Package archive (windows)
+        if: runner.os == 'Windows'
+        id: archive_windows
+        shell: pwsh
+        run: |
+          $stage = "dist-stage"
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Copy-Item "build/bin/${{ matrix.artifact }}${{ matrix.ext }}" $stage
+          Copy-Item README.md,LICENSE,CHANGELOG.md $stage
+          Copy-Item -Recurse completions $stage
+          $name = "dia_${{ steps.ver.outputs.version }}_${{ matrix.os_label }}_${{ matrix.arch }}.zip"
+          Compress-Archive -Path "$stage/*" -DestinationPath "dist/$name"
+          echo "name=$name" >> $env:GITHUB_OUTPUT
+
+      - name: Upload archive
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: build/bin/${{ matrix.artifact }}${{ matrix.ext }}
+          name: ${{ steps.archive_unix.outputs.name || steps.archive_windows.outputs.name }}
+          path: dist/${{ steps.archive_unix.outputs.name || steps.archive_windows.outputs.name }}
           if-no-files-found: error
 
   release:
@@ -76,36 +136,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
-          path: build/bin
+          path: dist
           merge-multiple: true
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.23"
-          cache: true
-
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: latest
-          args: release --clean --skip-publish
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum * > checksums.txt
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            build/bin/*
-            dist/*.tar.gz
-            dist/*.zip
-            dist/*.sbom*
-            dist/checksums.txt
+          files: dist/*
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

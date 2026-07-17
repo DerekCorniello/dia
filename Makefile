@@ -51,5 +51,5 @@ install-hooks:
 	@echo "pre-commit hook installed"
 
 release:
-	@echo "release: build the binary per platform first, then run goreleaser with --skip-build"
-	@echo "see .goreleaser.yaml for the matrix"
+	@echo "release: push a tag matching v*, e.g. git tag v0.3.0 && git push origin v0.3.0"
+	@echo "see .github/workflows/release.yml for the build/archive/publish steps"
