@@ -196,7 +196,9 @@
                         class="block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-[10px] text-fg-dim placeholder:text-fg-mute focus:border-accent focus:outline-none" />
                     </div>
                     <div class="max-h-48 overflow-y-auto">
-                      {#each cat.tools.filter((t) => !catSearch || t.label.toLowerCase().includes(catSearch.toLowerCase())) as tool}
+                      <!-- Position-keyed: a detected tool and an $EDITOR
+                           style default can share a command. -->
+                      {#each cat.tools.filter((t) => !catSearch || t.label.toLowerCase().includes(catSearch.toLowerCase())) as tool, i (i)}
                         <button type="button" on:click={() => addTool(tool, cat.name)}
                           class="block w-full text-left px-3 py-1.5 text-xs text-fg-dim hover:bg-accent/15 hover:text-fg">
                           {tool.label}
@@ -316,7 +318,7 @@
                 </div>
                 {#if p && openConfigPlugin === ref._key && pluginConfigSchema(p) && Object.keys(pluginConfigSchema(p)).length > 0}
                   <div class="border-t border-bg-600 px-3 py-2 space-y-2">
-                    {#each schemaEntries(pluginConfigSchema(p)) as [key, field]}
+                    {#each schemaEntries(pluginConfigSchema(p)) as [key, field] (key)}
                       <label class="block text-xs">
                         <span class="text-fg-mute">{field?.label || key}</span>
                         {#if configFieldType(field) === 'checkbox'}
@@ -332,7 +334,7 @@
                             value={pluginConfig(ref)[key] ?? configFieldDefault(field)}
                             on:change={(e) => setPluginConfig(ref.id, key, e.currentTarget.value)}
                             class="mt-0.5 block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-xs font-mono focus:border-accent focus:outline-none">
-                            {#each field.options as opt}
+                            {#each field.options as opt, i (i)}
                               <option value={opt}>{opt}</option>
                             {/each}
                           </select>

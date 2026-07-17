@@ -166,7 +166,9 @@
     <div class="mt-3 border-t border-primary/15 pt-3" transition:slide={{ duration: 200 }}>
       <div class="text-xs text-fg-mute break-all mb-2 font-mono">{workspace.path}</div>
       <ul class="space-y-1 text-sm">
-        {#each detail.app_details as app}
+        <!-- Position-keyed: a workspace may legitimately declare two
+             identical apps, so no field combination is unique. -->
+        {#each detail.app_details as app, i (i)}
           <li class="flex items-baseline gap-2 font-mono">
             <span class="w-20 text-fg-dim">{app.type}</span>
             <span class="flex-1 break-all">{app.url || app.cmd}{app.args ? ' ' + app.args : ''}</span>

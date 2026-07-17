@@ -175,7 +175,7 @@ describe('WorkspaceCard', () => {
 
 describe('SettingsPanel', () => {
   it('renders tabs', () => {
-    const { container } = render(SettingsPanel, {
+    render(SettingsPanel, {
       doctor: [],
       paths: null,
       plugins: [],

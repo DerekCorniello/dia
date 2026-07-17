@@ -34,6 +34,10 @@
 
   // Keybinds state
   let recording: string | null = null;
+  // A plain Set is deliberate: pressedKeys is scratch state for the
+  // keybinding recorder and is never read from the template, so it does
+  // not need to be reactive.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
   let pressedKeys = new Set<string>();
 
   // Detect platform for modifier display.
@@ -500,7 +504,7 @@
             <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-mute">Keybindings</h3>
             <!-- svelte-ignore a11y-no-static-element-interactions -->
             <div class="space-y-1 text-sm" on:keydown={onRecordKeydown} on:keyup={onRecordKeyup}>
-              {#each Object.entries(defaultKeybinds) as [action, def]}
+              {#each Object.entries(defaultKeybinds) as [action, def] (action)}
                 {@const current = keybinds[action] || def}
                 <div class="flex items-center gap-2">
                   <span class="w-40 text-fg-dim">{action}</span>

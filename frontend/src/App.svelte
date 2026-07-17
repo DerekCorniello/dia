@@ -454,7 +454,7 @@
                 class="absolute left-0 top-full z-20 mt-1 w-40 rounded border border-bg-600/80 bg-bg-800 shadow-2xl"
                 role="menu"
               >
-                {#each SORT_KEYS as opt}
+                {#each SORT_KEYS as opt (opt)}
                   <button
                     type="button"
                     on:click={() => { sortKey = opt; showSortMenu = false; }}
@@ -496,7 +496,7 @@
                 <div class="mt-8 w-full max-w-md">
                   <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wide text-fg-mute">Recent</h3>
                   <div class="space-y-1">
-                    {#each recent.slice(0, 5) as r}
+                    {#each recent.slice(0, 5) as r (r.name)}
                       <button
                         type="button"
                         on:click={async () => { search = r.name; await refresh(); }}
