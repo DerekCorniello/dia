@@ -58,6 +58,40 @@ func TestManifestWindow(t *testing.T) {
 	}
 }
 
+// TestManifestRejectsBadEntry covers the top-level entry, which the
+// runtime reads and executes as JS, so an escaping path is worse than a
+// read. The embedded-traversal cases have no leading ".." and only
+// escape once cleaned.
+func TestManifestRejectsBadEntry(t *testing.T) {
+	for _, e := range []string{
+		"/abs/index.js",
+		"../index.js",
+		"..",
+		"lib/../../../../etc/passwd",
+		"a/b/../../../../../../../../etc/shadow",
+	} {
+		m := Manifest{
+			ID: "scratchpad", Name: "Scratchpad", Version: "0.1.0",
+			Entry: e,
+			UI:    UISpec{Type: "list", Title: "T"},
+		}
+		if err := m.Validate(); err == nil {
+			t.Errorf("expected error for entry=%q", e)
+		}
+	}
+}
+
+func TestManifestAcceptsNestedEntry(t *testing.T) {
+	m := Manifest{
+		ID: "scratchpad", Name: "Scratchpad", Version: "0.1.0",
+		Entry: "src/index.js",
+		UI:    UISpec{Type: "list", Title: "T"},
+	}
+	if err := m.Validate(); err != nil {
+		t.Errorf("expected valid nested entry, got %v", err)
+	}
+}
+
 func TestManifestWindowRejectsBadEntry(t *testing.T) {
 	// The embedded-traversal cases have no leading "..", so a prefix
 	// check on the raw string lets them through; they only escape once

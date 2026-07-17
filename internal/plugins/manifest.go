@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // Manifest is the parsed contents of a plugin's plugin.json file.
@@ -143,7 +142,7 @@ func (m *Manifest) Validate() error {
 	if m.Entry == "" {
 		m.Entry = defaultEntry
 	}
-	if filepath.IsAbs(m.Entry) || strings.HasPrefix(m.Entry, "/") || strings.HasPrefix(m.Entry, "..") {
+	if !ContainedRelPath(m.Entry) {
 		return fmt.Errorf("plugin entry %q must be a relative path with no parent references", m.Entry)
 	}
 	for _, c := range m.Capabilities {
