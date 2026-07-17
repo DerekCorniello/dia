@@ -21,7 +21,12 @@ jobs:
             ext: ""
             artifact: dia-linux-amd64
             os_label: linux
-          - os: ubuntu-latest
+          # A native arm64 runner, not cross-compiled from ubuntu-latest
+          # (amd64): wails' binding generator builds and executes a
+          # codegen helper as part of the build, and a cross-compiled
+          # arm64 helper cannot run on an amd64 host --
+          # "exec format error".
+          - os: ubuntu-24.04-arm
             arch: arm64
             ext: ""
             artifact: dia-linux-arm64
@@ -76,11 +81,10 @@ jobs:
         shell: bash
         working-directory: ${{ github.workspace }}
         run: |
-          mkdir -p build/bin
           wails build -clean -trimpath -tags webkit2_41 \
             -ldflags "-s -w -X github.com/DerekCorniello/dia/internal/version.Version=v${{ steps.ver.outputs.version }} -X github.com/DerekCorniello/dia/internal/version.Commit=${{ steps.ver.outputs.commit }} -X github.com/DerekCorniello/dia/internal/version.BuildTime=${{ steps.ver.outputs.build_time }}" \
             -platform ${{ runner.os == 'macos' && 'darwin/universal' || (runner.os == 'Windows' && 'windows/amd64' || format('linux/{0}', matrix.arch)) }} \
-            -o build/bin/${{ matrix.artifact }}${{ matrix.ext }}
+            -o ${{ matrix.artifact }}${{ matrix.ext }}
 
       - name: Generate shell completions
         shell: bash
