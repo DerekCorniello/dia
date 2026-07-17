@@ -91,13 +91,17 @@ jobs:
         run: go run ./tools/gen-completions
 
       # Each archive bundles the binary with the docs a user actually
-      # wants alongside it. Two OS-specific steps rather than one
-      # cross-platform script: Windows runners default to pwsh, and
-      # neither zip nor 7z is guaranteed on the bash bundled with them,
-      # while Compress-Archive always is.
-      - name: Package archive (unix)
-        if: runner.os != 'Windows'
-        id: archive_unix
+      # wants alongside it. Three OS-specific steps rather than one
+      # cross-platform script: a macOS build is a dia.app bundle (in
+      # build/bin/dia.app/Contents/MacOS/<name>, not a bare executable
+      # at build/bin/<name> the way Linux and Windows are -- and a
+      # bundle is what a macOS user actually wants, not the raw Mach-O
+      # inside it), and Windows runners default to pwsh, where neither
+      # zip nor 7z is guaranteed on the bundled bash but
+      # Compress-Archive always is.
+      - name: Package archive (linux)
+        if: runner.os == 'Linux'
+        id: archive_linux
         shell: bash
         run: |
           set -euo pipefail
@@ -105,6 +109,22 @@ jobs:
           rm -rf "$stage"
           mkdir -p "$stage" dist
           cp "build/bin/${{ matrix.artifact }}${{ matrix.ext }}" "$stage/"
+          cp README.md LICENSE CHANGELOG.md "$stage/"
+          cp -r completions "$stage/"
+          name="dia_${{ steps.ver.outputs.version }}_${{ matrix.os_label }}_${{ matrix.arch }}.tar.gz"
+          tar czf "dist/$name" -C "$stage" .
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Package archive (macos)
+        if: runner.os == 'macOS'
+        id: archive_macos
+        shell: bash
+        run: |
+          set -euo pipefail
+          stage="dist-stage"
+          rm -rf "$stage"
+          mkdir -p "$stage" dist
+          cp -r "build/bin/dia.app" "$stage/"
           cp README.md LICENSE CHANGELOG.md "$stage/"
           cp -r completions "$stage/"
           name="dia_${{ steps.ver.outputs.version }}_${{ matrix.os_label }}_${{ matrix.arch }}.tar.gz"
@@ -130,8 +150,8 @@ jobs:
       - name: Upload archive
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.archive_unix.outputs.name || steps.archive_windows.outputs.name }}
-          path: dist/${{ steps.archive_unix.outputs.name || steps.archive_windows.outputs.name }}
+          name: ${{ steps.archive_linux.outputs.name || steps.archive_macos.outputs.name || steps.archive_windows.outputs.name }}
+          path: dist/${{ steps.archive_linux.outputs.name || steps.archive_macos.outputs.name || steps.archive_windows.outputs.name }}
           if-no-files-found: error
 
   release:
