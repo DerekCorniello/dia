@@ -24,7 +24,8 @@ frameless window mode, and a custom title bar.
 - AI tool detection: claude, copilot, cursor, windsurf, t3code, codex
 - Both global and project-local configs with discovery
 - In-process JS plugin system: embedded panels (`list`/`grid`/`table`/
-  `kv`/`text`) and full-window plugins (`window`) with plain HTML/CSS/JS
+  `kv`/`text`/`canvas`) and full-window plugins (`window`) with plain
+  HTML/CSS/JS
 - Cross-platform: Linux, macOS, Windows
 - Frameless window with custom title bar (no OS decoration)
 - Scriptable CLI alongside the GUI
@@ -135,7 +136,7 @@ output.
 
 dia's plugin system runs in two flavors:
 
-- **Embedded panels** (`ui.type` of `list|grid|table|kv|text`):
+- **Embedded panels** (`ui.type` of `list|grid|table|kv|text|canvas`):
   the GUI loads a plugin's `index.js` in a [goja](https://github.com/dop251/goja)
   interpreter and auto-wraps a panel from the plugin's manifest. The
   plugin author writes JS + a UI schema, not a frontend framework.
@@ -203,7 +204,7 @@ good starting points.
 | `author`                    | no       | 0-60 chars                                         |
 | `entry`                     | no       | relative path; defaults to `index.js`              |
 | `capabilities`              | no       | subset of the capability list (see below)          |
-| `ui.type`                   | yes      | `list` \| `grid` \| `table` \| `kv` \| `text` \| `window` |
+| `ui.type`                   | yes      | `list` \| `grid` \| `table` \| `kv` \| `text` \| `canvas` \| `window` |
 | `ui.title`                  | yes      | panel title (and window title for `type=window`)   |
 | `ui.entry`                  | window   | path to `panel.js` (default `panel/panel.js`)      |
 | `ui.width`, `ui.height`     | window   | initial window size in px (default 900x700)        |
@@ -227,7 +228,40 @@ good starting points.
 | `table`   | `[{ col: value, ... }, ...]`                   | table; columns declared in `ui.columns`     |
 | `kv`      | `{ key: value, ... }`                          | key/value list                              |
 | `text`    | any string                                     | monospace block                             |
+| `canvas`  | n/a (strokes come from drawing)                | free-draw canvas; see below                 |
 | `window`  | n/a (no `getData`)                             | separate OS window with `panel/panel.js`    |
+
+### `canvas` panels
+
+A `canvas` panel renders a free-draw surface with a built-in clear
+button and a stroke counter. Strokes are produced by the user drawing,
+not by `getData`, so the panel owns the drawing state and the plugin
+observes it through actions.
+
+Each action's `ctx` carries the current strokes:
+
+```js
+type Stroke = { color: string, width: number, points: [{ x, y }, ...] }
+```
+
+`onAction(id, ctx)` receives `ctx.strokes`. To replace what is on the
+canvas (undo, clear, load a saved sketch), return an object with a
+`strokes` array; the host swaps it in and repaints. Return nothing to
+leave the canvas untouched.
+
+```js
+module.exports = {
+  getData: function () { return null; },
+  onAction: function (id, ctx) {
+    if (id === "undo") {
+      return { strokes: ctx.strokes.slice(0, -1) };
+    }
+    if (id === "save") {
+      dia.exec("sh", ["-c", "echo saved"]);
+    }
+  }
+};
+```
 
 ### Entry
 
