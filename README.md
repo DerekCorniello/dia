@@ -228,7 +228,7 @@ good starting points.
 | `table`   | `[{ col: value, ... }, ...]`                   | table; columns declared in `ui.columns`     |
 | `kv`      | `{ key: value, ... }`                          | key/value list                              |
 | `text`    | any string                                     | monospace block                             |
-| `canvas`  | required, but the value is ignored             | free-draw canvas; see below                 |
+| `canvas`  | `{ color?, width? }`, not drawn                | free-draw canvas; see below                 |
 | `window`  | n/a (`getData` is never called)                | separate OS window with `panel/panel.js`    |
 
 ### `canvas` panels
@@ -236,9 +236,13 @@ good starting points.
 A `canvas` panel renders a free-draw surface with a built-in clear
 button and a stroke counter. The panel still calls `getData` on load
 and on refresh, so the entry must export it or the panel shows
-`plugin does not export "getData"`; the returned value is not drawn.
-Strokes are produced by the user drawing, so the panel owns the drawing
-state and the plugin observes it through actions.
+`plugin does not export "getData"`. The returned value is not drawn,
+but its optional `color` and `width` fields set the pen used for the
+*next* stroke the user draws -- a plugin typically sources these from
+`config_schema` (via `dia.getConfig()`) so they are configurable per
+workspace. Strokes themselves are produced by the user drawing, so the
+panel owns the drawing state and the plugin observes it through
+actions.
 
 Each action's `ctx` carries the current strokes:
 
@@ -393,6 +397,19 @@ dia.fetch('https://api.github.com/repos/owner/repo/issues', {
   `getTheme`, etc.) work against the shared state file.
 
 ### Example plugins
+
+#### Sketch Pad
+
+The simplest example of the embedded `canvas` panel type: a free-draw
+surface with a config-driven default pen color/width and an Undo
+action. Unlike the other examples below, this one is not a window
+plugin -- no `panel/` folder, just a manifest and an entry script.
+
+```
+examples/sketch-pad/
+  plugin.json
+  index.js
+```
 
 #### gh-dashboard
 

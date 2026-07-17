@@ -1,0 +1,30 @@
+{
+  "id": "sketch-pad",
+  "name": "Sketch Pad",
+  "version": "0.1.0",
+  "description": "A minimal example of the canvas panel type.",
+  "long_description": "Demonstrates the canvas ui.type. getData()'s return value is not drawn -- strokes come from the user drawing -- but its color/width fields set the pen used for the next stroke; this plugin sources those from config_schema so they are configurable per workspace. onAction can replace the canvas contents by returning a new strokes array; the Undo button uses that to drop the most recent stroke.",
+  "author": "dia",
+  "entry": "index.js",
+  "capabilities": [],
+  "config_schema": {
+    "color": {
+      "type": "string",
+      "label": "Pen color",
+      "default": "#1b2636"
+    },
+    "width": {
+      "type": "number",
+      "label": "Pen width",
+      "default": 3
+    }
+  },
+  "ui": {
+    "type": "canvas",
+    "title": "Sketch Pad",
+    "refreshable": true,
+    "actions": [
+      { "id": "undo", "label": "Undo", "capability": "" }
+    ]
+  }
+}
