@@ -169,10 +169,8 @@ func (m *Manifest) Validate() error {
 			}
 		}
 	case "window":
-		if m.UI.Entry != "" {
-			if filepath.IsAbs(m.UI.Entry) || strings.HasPrefix(m.UI.Entry, "/") || strings.HasPrefix(m.UI.Entry, "..") {
-				return fmt.Errorf("ui.entry %q must be a relative path with no parent references", m.UI.Entry)
-			}
+		if m.UI.Entry != "" && !ContainedRelPath(m.UI.Entry) {
+			return fmt.Errorf("ui.entry %q must be a relative path with no parent references", m.UI.Entry)
 		}
 	default:
 		return fmt.Errorf("ui.type %q must be one of list|grid|table|kv|text|canvas|window", m.UI.Type)

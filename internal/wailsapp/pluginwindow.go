@@ -222,6 +222,13 @@ func (h *pluginAssetHandler) servePanelJS(w http.ResponseWriter, r *http.Request
 		rel = plugins.DefaultPanelJS
 	}
 	full := filepath.Join(h.pluginDir, filepath.Clean(rel))
+	// Defense in depth: the manifest validator already rejects an
+	// escaping ui.entry, but this server hands the bytes to the plugin
+	// window, so never read outside the plugin dir regardless.
+	if !underDir(h.pluginDir, full) {
+		http.Error(w, "panel entry escapes the plugin dir: "+rel, http.StatusForbidden)
+		return
+	}
 	data, err := os.ReadFile(full)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -322,6 +329,15 @@ func generatedDiaJS() string {
   };
 })();
 `
+}
+
+// underDir reports whether path resolves to a location inside dir.
+func underDir(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func templateEscape(s string) string {

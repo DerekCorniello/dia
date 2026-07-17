@@ -188,3 +188,36 @@ func TestPluginWindowHost_PathsIncludesStateFile(t *testing.T) {
 func errIs(err, target error) bool {
 	return err != nil && (err == target || (err.Error() == target.Error()))
 }
+
+// TestPluginAssetHandler_RejectsEscapingPanelEntry pins the serve-time
+// guard. The manifest validator rejects an escaping ui.entry, but this
+// handler feeds bytes straight to the plugin window, where the panel
+// could read them back with a same-origin fetch("/panel.js") and no
+// capability, so it must refuse to read outside the plugin dir on its
+// own.
+func TestPluginAssetHandler_RejectsEscapingPanelEntry(t *testing.T) {
+	dir := t.TempDir()
+	pluginDir := writeWhiteboardPlugin(t, dir)
+
+	secret := filepath.Join(dir, "secret.txt")
+	if err := os.WriteFile(secret, []byte("TOP-SECRET"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &plugins.Manifest{
+		ID: "whiteboard", Name: "Whiteboard", Version: "0.1.0",
+		UI: plugins.UISpec{Type: "window", Title: "W", Entry: "panel/../../secret.txt"},
+	}
+	h := &pluginAssetHandler{pluginDir: pluginDir, manifest: m}
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/panel.js", nil))
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", rr.Code)
+	}
+	body, _ := io.ReadAll(rr.Result().Body)
+	if strings.Contains(string(body), "TOP-SECRET") {
+		t.Errorf("served a file outside the plugin dir: %q", body)
+	}
+}

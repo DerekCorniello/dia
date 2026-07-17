@@ -3,9 +3,9 @@ package plugins
 import (
 	"context"
 	"fmt"
-	"github.com/dop251/goja"
 	"path/filepath"
-	"strings"
+
+	"github.com/dop251/goja"
 )
 
 type Bridge struct {
@@ -176,11 +176,10 @@ func (b *Bridge) NewRequire(pluginDir string) func(string) (goja.Value, error) {
 	b.pluginDir = pluginDir
 	var requireFn func(string) (goja.Value, error)
 	requireFn = func(spec string) (goja.Value, error) {
-		clean := filepath.Clean(spec)
-		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		if !ContainedRelPath(spec) {
 			return nil, fmt.Errorf("require %q: must be a relative path inside the plugin", spec)
 		}
-		full := resolveRequire(filepath.Join(pluginDir, clean))
+		full := resolveRequire(filepath.Join(pluginDir, filepath.Clean(spec)))
 		if cached, ok := b.moduleCache[full]; ok {
 			return cached, nil
 		}

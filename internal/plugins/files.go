@@ -7,9 +7,25 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const maxPluginFileBytes = 1 << 20
+
+// ContainedRelPath reports whether p is a relative path that still
+// sits inside its base directory once cleaned. The cleaned form is
+// what matters: "panel/../../../etc/passwd" has no leading ".." but
+// still escapes, so a prefix check on the raw string is not enough.
+func ContainedRelPath(p string) bool {
+	if p == "" || filepath.IsAbs(p) || strings.HasPrefix(p, "/") {
+		return false
+	}
+	clean := filepath.Clean(p)
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return true
+}
 
 func readFileLimited(path string) (string, error) {
 	data, err := os.ReadFile(path)

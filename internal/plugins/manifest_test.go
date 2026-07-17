@@ -59,7 +59,16 @@ func TestManifestWindow(t *testing.T) {
 }
 
 func TestManifestWindowRejectsBadEntry(t *testing.T) {
-	for _, e := range []string{"/abs/x.js", "../x.js"} {
+	// The embedded-traversal cases have no leading "..", so a prefix
+	// check on the raw string lets them through; they only escape once
+	// the path is cleaned.
+	for _, e := range []string{
+		"/abs/x.js",
+		"../x.js",
+		"..",
+		"panel/../../../etc/passwd",
+		"a/b/../../../../../../../../etc/shadow",
+	} {
 		m := Manifest{
 			ID: "scratchpad", Name: "Scratchpad", Version: "0.1.0",
 			UI: UISpec{Type: "window", Title: "Scratchpad", Entry: e},
