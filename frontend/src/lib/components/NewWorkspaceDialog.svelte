@@ -68,7 +68,9 @@
           on:blur={() => (nameError = validateName(name))}
           disabled={busy}
           placeholder="my-project"
-          class="mt-1 block w-full rounded border {nameError ? 'border-error/60' : 'border-bg-600'} bg-bg-800 px-2 py-1.5 text-sm font-mono focus:border-accent focus:outline-none"
+          class="mt-1 block w-full rounded border {nameError
+            ? 'border-error/60'
+            : 'border-bg-600'} bg-bg-800 px-2 py-1.5 text-sm font-mono focus:border-accent focus:outline-none"
         />
         {#if nameError}
           <span class="block text-xs text-error mt-1">{nameError}</span>
@@ -80,7 +82,9 @@
       </label>
 
       <div>
-        <span class="text-xs font-semibold uppercase tracking-wide text-fg-mute block mb-1.5">Location</span>
+        <span class="text-xs font-semibold uppercase tracking-wide text-fg-mute block mb-1.5"
+          >Location</span
+        >
         <label class="flex items-center gap-2 text-sm mb-1.5">
           <input
             type="radio"

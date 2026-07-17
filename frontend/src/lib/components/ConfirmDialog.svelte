@@ -52,7 +52,9 @@
       <button
         type="button"
         on:click={onConfirm}
-        class="rounded px-3 py-1.5 text-sm font-medium {danger ? 'bg-error text-white hover:bg-error/90' : 'bg-primary text-primary-content hover:bg-primary/90'}"
+        class="rounded px-3 py-1.5 text-sm font-medium {danger
+          ? 'bg-error text-white hover:bg-error/90'
+          : 'bg-primary text-primary-content hover:bg-primary/90'}"
       >
         {confirmLabel}
       </button>

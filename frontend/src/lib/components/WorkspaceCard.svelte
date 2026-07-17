@@ -11,7 +11,8 @@
 
   let busy = false;
   let expanded = false;
-  let detail: { app_details: { type: string; cmd: string; args: string; url?: string }[] } | null = null;
+  let detail: { app_details: { type: string; cmd: string; args: string; url?: string }[] } | null =
+    null;
   let showEditor = false;
   let showDeleteConfirm = false;
   let showStopConfirm = false;
@@ -84,11 +85,12 @@
     showEditor = false;
     onChanged();
   }
-
 </script>
 
 <section
-  class="relative rounded-lg border border-bg-600 bg-bg-700 p-3 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md shadow-sm {workspace.running ? 'shadow-primary/10' : ''}"
+  class="relative rounded-lg border border-bg-600 bg-bg-700 p-3 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md shadow-sm {workspace.running
+    ? 'shadow-primary/10'
+    : ''}"
 >
   <div
     class="absolute left-0 top-2 bottom-2 w-1 rounded-r {workspace.running
@@ -106,7 +108,11 @@
     >
       <div class="flex flex-wrap items-center gap-2">
         <span class="text-sm font-semibold text-fg truncate">{workspace.name}</span>
-        <span class="inline-flex items-center rounded-full {workspace.source === 'local' ? 'bg-info/15 text-info' : 'bg-accent-secondary/15 text-accent-secondary'} px-1.5 py-0.5 text-[10px] font-medium">
+        <span
+          class="inline-flex items-center rounded-full {workspace.source === 'local'
+            ? 'bg-info/15 text-info'
+            : 'bg-accent-secondary/15 text-accent-secondary'} px-1.5 py-0.5 text-[10px] font-medium"
+        >
           {workspace.source}
         </span>
         {#if workspace.running}
@@ -119,7 +125,15 @@
       {#if workspace.description}
         <p class="mt-0.5 text-xs text-fg-mute line-clamp-2">{workspace.description}</p>
       {/if}
-      <p class="mt-0.5 text-xs text-fg-mute">{workspace.apps} app{workspace.apps === 1 ? '' : 's'}{workspace.plugins && workspace.plugins.length > 0 ? ' and ' + workspace.plugins.length + ' plugin' + (workspace.plugins.length === 1 ? '' : 's') : ''}</p>
+      <p class="mt-0.5 text-xs text-fg-mute">
+        {workspace.apps} app{workspace.apps === 1 ? '' : 's'}{workspace.plugins &&
+        workspace.plugins.length > 0
+          ? ' and ' +
+            workspace.plugins.length +
+            ' plugin' +
+            (workspace.plugins.length === 1 ? '' : 's')
+          : ''}
+      </p>
     </button>
     <div class="flex items-center gap-1 shrink-0">
       <button
@@ -171,7 +185,9 @@
         {#each detail.app_details as app, i (i)}
           <li class="flex items-baseline gap-2 font-mono">
             <span class="w-20 text-fg-dim">{app.type}</span>
-            <span class="flex-1 break-all">{app.url || app.cmd}{app.args ? ' ' + app.args : ''}</span>
+            <span class="flex-1 break-all"
+              >{app.url || app.cmd}{app.args ? ' ' + app.args : ''}</span
+            >
           </li>
         {/each}
       </ul>
@@ -182,7 +198,10 @@
             {#each workspacePlugins as p (p.id)}
               <li class="flex items-center gap-2 text-sm">
                 <span class="text-fg-dim">{p.name || p.id}</span>
-                <span class="rounded bg-secondary/15 px-1 py-0.5 text-[10px] font-medium text-secondary">{p.ui.type}</span>
+                <span
+                  class="rounded bg-secondary/15 px-1 py-0.5 text-[10px] font-medium text-secondary"
+                  >{p.ui.type}</span
+                >
               </li>
             {/each}
           </ul>
@@ -217,7 +236,10 @@
     title="Stop workspace"
     message="Stop workspace &quot;{workspace.name}&quot;? Running apps will be terminated."
     confirmLabel="Stop"
-    on:confirm={() => { showStopConfirm = false; stop(); }}
+    on:confirm={() => {
+      showStopConfirm = false;
+      stop();
+    }}
     on:cancel={() => (showStopConfirm = false)}
   />
 {/if}

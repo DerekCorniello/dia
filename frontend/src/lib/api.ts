@@ -119,8 +119,10 @@ export const api = {
   openPluginFolder: (): Promise<void> => _OpenPluginFolder(),
   installPluginFromFolder: (): Promise<string> => _InstallPluginFromFolder(),
   revealPath: (path: string): Promise<void> => _RevealPath(path),
-  getWorkspaceEditor: (name: string): Promise<WorkspaceEditor> => _GetWorkspaceEditor(name) as Promise<WorkspaceEditor>,
-  saveWorkspaceEditor: (editor: WorkspaceEditor): Promise<void> => _SaveWorkspaceEditor(editor as any),
+  getWorkspaceEditor: (name: string): Promise<WorkspaceEditor> =>
+    _GetWorkspaceEditor(name) as Promise<WorkspaceEditor>,
+  saveWorkspaceEditor: (editor: WorkspaceEditor): Promise<void> =>
+    _SaveWorkspaceEditor(editor as any),
   deleteWorkspace: (name: string): Promise<void> => _DeleteWorkspace(name),
   detectTools: (): Promise<ToolCategory[]> => array(_DetectTools()),
   getRecent: (): Promise<RecentEntry[]> => array(_GetRecent()) as Promise<RecentEntry[]>,

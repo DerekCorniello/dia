@@ -8,7 +8,14 @@
     margin: 0;
   }
 
-  a, button, input, select, textarea, [role="menuitem"], [role="tab"], summary {
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  [role='menuitem'],
+  [role='tab'],
+  summary {
     @apply transition-colors duration-150 ease-out;
   }
 

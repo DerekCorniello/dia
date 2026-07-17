@@ -7,13 +7,7 @@
 // Swatches use the same hex values daisyUI ends up with, so the
 // swatch on the card matches the live preview at runtime.
 
-export type ThemeGroup =
-  | 'dia'
-  | 'light'
-  | 'dark'
-  | 'catppuccin'
-  | 'editor'
-  | 'classic';
+export type ThemeGroup = 'dia' | 'light' | 'dark' | 'catppuccin' | 'editor' | 'classic';
 
 export interface ThemeSwatch {
   base: string;
@@ -294,14 +288,7 @@ export const builtInThemes: ThemeMeta[] = [
   },
 ];
 
-export const groupOrder: ThemeGroup[] = [
-  'dia',
-  'catppuccin',
-  'editor',
-  'classic',
-  'light',
-  'dark',
-];
+export const groupOrder: ThemeGroup[] = ['dia', 'catppuccin', 'editor', 'classic', 'light', 'dark'];
 
 export const groupLabels: Record<ThemeGroup, string> = {
   dia: 'Dia',

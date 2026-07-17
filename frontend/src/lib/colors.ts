@@ -23,8 +23,7 @@ export function hexToOklch(hex: string): Oklch {
   const g = parseInt(m.slice(2, 4), 16) / 255;
   const b = parseInt(m.slice(4, 6), 16) / 255;
 
-  const lin = (c: number) =>
-    c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
   const lr = lin(r);
   const lg = lin(g);
   const lb = lin(b);

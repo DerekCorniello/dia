@@ -1,7 +1,20 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from 'svelte';
-  import { api, describeError, type CustomThemeInfo, type PluginInfo, type PluginPathsInfo } from '../api';
-  import { pushToast, customThemes, theme as themeStore, plugins as pluginsStore, pluginPaths as pluginPathsStore, keybinds as keybindsStore } from '../stores';
+  import {
+    api,
+    describeError,
+    type CustomThemeInfo,
+    type PluginInfo,
+    type PluginPathsInfo,
+  } from '../api';
+  import {
+    pushToast,
+    customThemes,
+    theme as themeStore,
+    plugins as pluginsStore,
+    pluginPaths as pluginPathsStore,
+    keybinds as keybindsStore,
+  } from '../stores';
   import ThemePicker from './ThemePicker.svelte';
   import CustomThemeEditor from './CustomThemeEditor.svelte';
   import PluginsPanel from './PluginsPanel.svelte';
@@ -48,7 +61,7 @@
       'Focus search': '/',
       'New workspace': `${mod}+N`,
       'Toggle settings': `${mod}+,`,
-      'Refresh': `${mod}+R`,
+      Refresh: `${mod}+R`,
       'Close dialog': 'Escape',
       'Zoom in': `${mod}+=`,
       'Zoom out': `${mod}+-`,
@@ -97,7 +110,9 @@
     e.stopPropagation();
     pressedKeys.delete(e.key);
 
-    const hasNonMod = [...pressedKeys].some((k) => !['Control', 'Meta', 'Alt', 'Shift'].includes(k));
+    const hasNonMod = [...pressedKeys].some(
+      (k) => !['Control', 'Meta', 'Alt', 'Shift'].includes(k),
+    );
     if (hasNonMod) return;
 
     const parts: string[] = [];
@@ -106,7 +121,14 @@
     if (pressedKeys.has('Alt')) parts.push('Alt');
     if (pressedKeys.has('Shift')) parts.push('Shift');
     if (e.key && !['Control', 'Meta', 'Alt', 'Shift'].includes(e.key)) {
-      const display = e.key === ',' ? ',' : e.key === '.' ? '.' : e.key.length === 1 ? e.key.toUpperCase() : e.key;
+      const display =
+        e.key === ','
+          ? ','
+          : e.key === '.'
+            ? '.'
+            : e.key.length === 1
+              ? e.key.toUpperCase()
+              : e.key;
       parts.push(display);
     }
     if (parts.length === 0) return;
@@ -270,7 +292,10 @@
     reconciling = true;
     try {
       const result = await api.reconcile();
-      pushToast('ok', `Reconciled ${result.reconciled} stale instance${result.reconciled === 1 ? '' : 's'}, ${result.remaining} remaining`);
+      pushToast(
+        'ok',
+        `Reconciled ${result.reconciled} stale instance${result.reconciled === 1 ? '' : 's'}, ${result.remaining} remaining`,
+      );
       dispatch('refresh');
     } catch (e) {
       pushToast('err', `reconcile: ${describeError(e)}`);
@@ -303,20 +328,20 @@
 
 <svelte:window on:keydown={onKey} />
 
+<div
+  class="fixed inset-0 z-50 flex items-center justify-center bg-bg-900/80 p-4"
+  on:click|self={close}
+  on:keydown|self={(e) => e.key === 'Escape' && close()}
+  role="presentation"
+>
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-bg-900/80 p-4"
-    on:click|self={close}
-    on:keydown|self={(e) => e.key === 'Escape' && close()}
-    role="presentation"
+    class="flex max-h-[calc(100vh-2rem)] w-[min(64rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-primary/15 bg-bg-700 shadow-lg"
+    role="dialog"
+    aria-modal="true"
+    aria-label="settings"
   >
-    <div
-      class="flex max-h-[calc(100vh-2rem)] w-[min(64rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-primary/15 bg-bg-700 shadow-lg"
-      role="dialog"
-      aria-modal="true"
-      aria-label="settings"
-    >
-      <div class="flex items-center justify-between border-b border-primary/15 px-4 py-3">
-        <h2 class="text-sm font-semibold uppercase tracking-wide text-fg-dim">Settings</h2>
+    <div class="flex items-center justify-between border-b border-primary/15 px-4 py-3">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-fg-dim">Settings</h2>
       <button
         type="button"
         on:click={close}
@@ -376,14 +401,14 @@
           />
         {:else if activeTab === 'paths'}
           <section>
-            <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-mute">
-              Paths
-            </h3>
+            <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-mute">Paths</h3>
             {#if paths}
               <dl class="space-y-2 text-sm">
                 <div class="flex flex-col gap-1 sm:flex-row sm:items-center">
                   <dt class="w-32 shrink-0 text-fg-mute">global config</dt>
-                  <dd class="flex-1 break-all font-mono text-xs text-fg-dim">{paths.global_config_dir}</dd>
+                  <dd class="flex-1 break-all font-mono text-xs text-fg-dim">
+                    {paths.global_config_dir}
+                  </dd>
                   <div class="flex shrink-0 gap-1">
                     <button
                       type="button"
@@ -450,11 +475,15 @@
             {/if}
             {#if pluginPaths}
               <div class="mt-4">
-                <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-mute">Plugin directories</h4>
+                <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-mute">
+                  Plugin directories
+                </h4>
                 <dl class="space-y-2 text-sm">
                   <div class="flex flex-col gap-1 sm:flex-row sm:items-center">
                     <dt class="w-32 shrink-0 text-fg-mute">global</dt>
-                    <dd class="flex-1 break-all font-mono text-xs text-fg-dim">{pluginPaths.globalDir}</dd>
+                    <dd class="flex-1 break-all font-mono text-xs text-fg-dim">
+                      {pluginPaths.globalDir}
+                    </dd>
                     <div class="flex shrink-0 gap-1">
                       <button
                         type="button"
@@ -501,7 +530,9 @@
           </section>
         {:else if activeTab === 'keybinds'}
           <section>
-            <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-mute">Keybindings</h3>
+            <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-mute">
+              Keybindings
+            </h3>
             <!-- svelte-ignore a11y-no-static-element-interactions -->
             <div class="space-y-1 text-sm" on:keydown={onRecordKeydown} on:keyup={onRecordKeyup}>
               {#each Object.entries(defaultKeybinds) as [action, def] (action)}
@@ -510,24 +541,24 @@
                   <span class="w-40 text-fg-dim">{action}</span>
                   <button
                     type="button"
-                    on:click={() => recording = recording === action ? null : action}
+                    on:click={() => (recording = recording === action ? null : action)}
                     class="flex-1 rounded border border-bg-600 bg-bg-800 px-2 py-1 text-xs font-mono text-left text-fg-dim hover:border-accent/50"
                   >
                     {#if recording === action}
                       <span class="text-accent">press keys...</span>
                     {:else}
                       {current}
-{/if}
+                    {/if}
 
-{#if showDeleteThemeConfirm}
-  <ConfirmDialog
-    title="Delete theme"
-    message="Delete custom theme &quot;{deleteThemeName}&quot;? This cannot be undone."
-    confirmLabel="Delete"
-    on:confirm={confirmDeleteTheme}
-    on:cancel={() => (showDeleteThemeConfirm = false)}
-  />
-{/if}
+                    {#if showDeleteThemeConfirm}
+                      <ConfirmDialog
+                        title="Delete theme"
+                        message="Delete custom theme &quot;{deleteThemeName}&quot;? This cannot be undone."
+                        confirmLabel="Delete"
+                        on:confirm={confirmDeleteTheme}
+                        on:cancel={() => (showDeleteThemeConfirm = false)}
+                      />
+                    {/if}
                   </button>
                   {#if current !== def}
                     <button
@@ -551,7 +582,9 @@
           </section>
         {:else if activeTab === 'doctor'}
           <section>
-            <h3 class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fg-mute">
+            <h3
+              class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-fg-mute"
+            >
               Doctor
               {#if doctor.length > 0}
                 <span class="rounded bg-success/20 px-1.5 text-[10px] text-success">
@@ -581,7 +614,9 @@
                       {c.status}
                     </span>
                     <span class="w-28 shrink-0 truncate text-fg" title={c.name}>{c.name}</span>
-                    <span class="flex-1 break-all font-mono text-xs text-fg-dim">{c.detail ?? ''}</span>
+                    <span class="flex-1 break-all font-mono text-xs text-fg-dim"
+                      >{c.detail ?? ''}</span
+                    >
                   </li>
                 {/each}
               </ul>
@@ -596,17 +631,14 @@
             </button>
           </section>
         {:else if activeTab === 'plugins'}
-          <PluginsPanel
-            plugins={plugins}
-            on:refresh={() => dispatch('refresh')}
-          />
+          <PluginsPanel {plugins} on:refresh={() => dispatch('refresh')} />
         {:else if activeTab === 'about'}
           <section>
             <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-mute">About</h3>
             <p class="mb-2 text-sm text-fg-dim">
-              <span class="font-semibold text-fg">dia</span> is a deterministic workspace
-              launcher. Define a workspace in YAML, click start, and dia brings up the
-              editor, terminal, browser, and services for that project.
+              <span class="font-semibold text-fg">dia</span> is a deterministic workspace launcher. Define
+              a workspace in YAML, click start, and dia brings up the editor, terminal, browser, and services
+              for that project.
             </p>
             <p class="text-sm text-fg-dim">
               See

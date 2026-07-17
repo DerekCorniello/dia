@@ -60,11 +60,7 @@
       ctx.strokes = strokes;
     }
     try {
-      const raw = await api.pluginCall(
-        plugin.id,
-        'onAction',
-        JSON.stringify([action.id, ctx]),
-      );
+      const raw = await api.pluginCall(plugin.id, 'onAction', JSON.stringify([action.id, ctx]));
       if (plugin.ui.type === 'canvas' && raw) {
         try {
           const next = JSON.parse(raw);
@@ -91,7 +87,11 @@
     return v.map((item, i) => {
       if (item == null) return { id: i, label: '' };
       if (typeof item !== 'object') return { id: i, label: String(item) };
-      return { id: item.id ?? i, label: item.label ?? item.name ?? item.title ?? String(item), ...item };
+      return {
+        id: item.id ?? i,
+        label: item.label ?? item.name ?? item.title ?? String(item),
+        ...item,
+      };
     });
   }
 
@@ -262,13 +262,19 @@
 
 <section class="relative rounded-lg border border-bg-600 bg-bg-700 p-3 shadow-sm">
   <div
-    class="absolute left-0 top-2 bottom-2 w-1 rounded-r {plugin.source === 'local' ? 'bg-info' : 'bg-accent-secondary'}"
+    class="absolute left-0 top-2 bottom-2 w-1 rounded-r {plugin.source === 'local'
+      ? 'bg-info'
+      : 'bg-accent-secondary'}"
   ></div>
   <header class="mb-2 flex items-center justify-between gap-2">
     <div class="min-w-0">
       <div class="flex flex-wrap items-center gap-2">
         <h3 class="text-sm font-semibold text-fg truncate">{plugin.ui.title || plugin.name}</h3>
-        <span class="inline-flex items-center rounded-full {plugin.source === 'local' ? 'bg-info/15 text-info' : 'bg-accent-secondary/15 text-accent-secondary'} px-1.5 py-0.5 text-[10px] font-medium">
+        <span
+          class="inline-flex items-center rounded-full {plugin.source === 'local'
+            ? 'bg-info/15 text-info'
+            : 'bg-accent-secondary/15 text-accent-secondary'} px-1.5 py-0.5 text-[10px] font-medium"
+        >
           {plugin.source}
         </span>
       </div>
@@ -282,8 +288,16 @@
           class="mt-0.5 inline-flex items-center gap-1 text-[10px] text-fg-mute hover:text-primary transition-colors"
         >
           {showDetails ? 'less' : 'more details'}
-          <svg class="h-3 w-3 transition-transform {showDetails ? 'rotate-180' : ''}" viewBox="0 0 20 20" fill="currentColor">
-            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+          <svg
+            class="h-3 w-3 transition-transform {showDetails ? 'rotate-180' : ''}"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+              clip-rule="evenodd"
+            />
           </svg>
         </button>
       {/if}
@@ -304,7 +318,9 @@
           type="button"
           on:click={() => onAction(a)}
           class="rounded px-2 py-1 text-[10px] text-fg disabled:opacity-50"
-          style="background: {colorForAction(plugin)}33; border: 1px solid {colorForAction(plugin)}66;"
+          style="background: {colorForAction(plugin)}33; border: 1px solid {colorForAction(
+            plugin,
+          )}66;"
         >
           {a.label}
         </button>
@@ -315,7 +331,8 @@
   {#if error}
     <p class="text-xs text-error">{error}</p>
   {:else if plugin.ui.type === 'text'}
-    <pre class="overflow-x-auto whitespace-pre-wrap rounded bg-bg-800 p-3 text-xs text-fg-dim">{text}</pre>
+    <pre
+      class="overflow-x-auto whitespace-pre-wrap rounded bg-bg-800 p-3 text-xs text-fg-dim">{text}</pre>
   {:else if plugin.ui.type === 'kv'}
     {#if kv.length === 0}
       <p class="text-xs text-fg-mute">no data</p>
@@ -409,7 +426,9 @@
 
   {#if showDetails}
     <div class="mt-3 border-t border-bg-600 pt-3" transition:slide={{ duration: 200 }}>
-      <p class="text-xs text-fg-dim whitespace-pre-line">{plugin.longDescription || plugin.description}</p>
+      <p class="text-xs text-fg-dim whitespace-pre-line">
+        {plugin.longDescription || plugin.description}
+      </p>
     </div>
   {/if}
 </section>

@@ -255,10 +255,11 @@
     {/each}
   </div>
 
-  <div class="rounded border border-primary/30 bg-bg-800 p-3" data-theme={name.trim() || 'preview-tmp'}>
-    <div class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-primary">
-      Preview
-    </div>
+  <div
+    class="rounded border border-primary/30 bg-bg-800 p-3"
+    data-theme={name.trim() || 'preview-tmp'}
+  >
+    <div class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-primary">Preview</div>
     <div class="flex flex-wrap items-center gap-2 text-xs">
       <button class="btn btn-xs btn-primary">Primary</button>
       <button class="btn btn-xs btn-secondary">Secondary</button>

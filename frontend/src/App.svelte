@@ -82,7 +82,7 @@
     'Focus search': '/',
     'New workspace': `${platformMod}+N`,
     'Toggle settings': `${platformMod}+,`,
-    'Refresh': `${platformMod}+R`,
+    Refresh: `${platformMod}+R`,
     'Close dialog': 'Escape',
     'Zoom in': `${platformMod}+=`,
     'Zoom out': `${platformMod}+-`,
@@ -125,9 +125,7 @@
     .sort((a, b) => sortWorkspaces(a, b, sortKey, recent));
 
   // Filtered plugins list (search matches name/id).
-  $: filteredPlugins = $pluginsStore.filter(
-    (p) => !search || fuzzyMatch(search, p.name || p.id),
-  );
+  $: filteredPlugins = $pluginsStore.filter((p) => !search || fuzzyMatch(search, p.name || p.id));
 
   function sortWorkspaces(
     a: WorkspaceInfo,
@@ -155,8 +153,12 @@
     return a.name.localeCompare(b.name);
   }
 
-  $: recentWs = sortKey === 'recent' ? filtered.filter((w) => recent.some((r) => r.name === w.name)) : [];
-  $: otherWs = sortKey === 'recent' ? filtered.filter((w) => !recent.some((r) => r.name === w.name)) : filtered;
+  $: recentWs =
+    sortKey === 'recent' ? filtered.filter((w) => recent.some((r) => r.name === w.name)) : [];
+  $: otherWs =
+    sortKey === 'recent'
+      ? filtered.filter((w) => !recent.some((r) => r.name === w.name))
+      : filtered;
 
   onDestroy(() => {
     customThemeStyle?.remove();
@@ -221,8 +223,12 @@
     applyZoom();
   }
 
-  function openNew() { showNew = true; }
-  function closeNew() { showNew = false; }
+  function openNew() {
+    showNew = true;
+  }
+  function closeNew() {
+    showNew = false;
+  }
 
   async function openProject() {
     try {
@@ -246,14 +252,20 @@
     }
   }
 
-  function toggleSettings() { showSettings = !showSettings; }
-  function closeSettings() { showSettings = false; }
+  function toggleSettings() {
+    showSettings = !showSettings;
+  }
+  function closeSettings() {
+    showSettings = false;
+  }
 
   function onNewCreated(event: CustomEvent<string>) {
     selectedEditorName = event.detail;
   }
 
-  function onEditorClose() { selectedEditorName = null; }
+  function onEditorClose() {
+    selectedEditorName = null;
+  }
 
   async function onEditorSaved() {
     selectedEditorName = null;
@@ -306,9 +318,18 @@
       }
       return;
     }
-    if (action === 'Zoom in') { zoomIn(); return; }
-    if (action === 'Zoom out') { zoomOut(); return; }
-    if (action === 'Zoom reset') { zoomReset(); return; }
+    if (action === 'Zoom in') {
+      zoomIn();
+      return;
+    }
+    if (action === 'Zoom out') {
+      zoomOut();
+      return;
+    }
+    if (action === 'Zoom reset') {
+      zoomReset();
+      return;
+    }
   }
 
   onMount(async () => {
@@ -331,7 +352,7 @@
     } catch {
       projectDir.set('');
     }
-    unsubStateChanged = EventsOn("workspace:state-changed", () => {
+    unsubStateChanged = EventsOn('workspace:state-changed', () => {
       refresh();
     });
     await refresh();
@@ -341,7 +362,10 @@
 <svelte:window on:keydown={onGlobalKey} />
 
 <div class="flex h-screen flex-col">
-  <header class="flex items-center gap-3 border-b border-primary/20 px-5 py-3" style="--wails-draggable: drag">
+  <header
+    class="flex items-center gap-3 border-b border-primary/20 px-5 py-3"
+    style="--wails-draggable: drag"
+  >
     <h1 class="shrink-0 flex h-6 items-center gap-2" style="--wails-draggable: no-drag">
       <span class="text-xl font-bold text-primary">dia</span>
       <span class="text-fg/30">|</span>
@@ -350,7 +374,9 @@
     <div class="flex-1 flex items-center justify-center">
       <div class="relative w-full max-w-md">
         {#if search}
-          <span class="pointer-events-none absolute left-2 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-primary shadow-glow-sm"></span>
+          <span
+            class="pointer-events-none absolute left-2 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full bg-primary shadow-glow-sm"
+          ></span>
         {/if}
         <input
           bind:this={searchInput}
@@ -380,7 +406,9 @@
       <button
         type="button"
         on:click={toggleSettings}
-        class="rounded px-3 py-1.5 text-xs {showSettings ? 'bg-primary/20 text-primary' : 'bg-bg-600 hover:bg-bg-600/70'}"
+        class="rounded px-3 py-1.5 text-xs {showSettings
+          ? 'bg-primary/20 text-primary'
+          : 'bg-bg-600 hover:bg-bg-600/70'}"
       >
         Settings
       </button>
@@ -392,7 +420,17 @@
         title="minimise"
         aria-label="minimise window"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12" /></svg
+        >
       </button>
       <button
         type="button"
@@ -401,7 +439,17 @@
         title="maximise"
         aria-label="maximise window"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /></svg
+        >
       </button>
       <button
         type="button"
@@ -410,13 +458,26 @@
         title="close"
         aria-label="close window"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          ><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg
+        >
       </button>
     </div>
   </header>
 
   {#if $projectDir}
-    <div class="flex items-center gap-2 border-b border-primary/15 bg-bg-800/50 px-5 py-1.5 text-xs">
+    <div
+      class="flex items-center gap-2 border-b border-primary/15 bg-bg-800/50 px-5 py-1.5 text-xs"
+    >
       <span class="text-fg-mute">Project:</span>
       <span class="font-mono text-fg-dim truncate flex-1">{$projectDir}</span>
       <button
@@ -426,7 +487,18 @@
         title="clear project directory"
         aria-label="clear project directory"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          ><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg
+        >
       </button>
     </div>
   {/if}
@@ -435,7 +507,9 @@
     <div class="grid gap-5 {showSettings ? 'lg:grid-cols-2' : ''}">
       <section>
         <div class="mb-3 flex items-center gap-3">
-          <h2 class="flex h-5 items-center text-[10px] font-semibold uppercase tracking-wide text-fg-dim">
+          <h2
+            class="flex h-5 items-center text-[10px] font-semibold uppercase tracking-wide text-fg-dim"
+          >
             Workspaces ({filtered.length})
           </h2>
           <div class="relative">
@@ -447,7 +521,9 @@
               aria-expanded={showSortMenu}
             >
               Sort: {sortLabel(sortKey)}
-              <svg class="h-2.5 w-2.5" viewBox="0 0 10 6" fill="currentColor"><path d="M0 0l5 6 5-6z"/></svg>
+              <svg class="h-2.5 w-2.5" viewBox="0 0 10 6" fill="currentColor"
+                ><path d="M0 0l5 6 5-6z" /></svg
+              >
             </button>
             {#if showSortMenu}
               <div
@@ -457,8 +533,13 @@
                 {#each SORT_KEYS as opt (opt)}
                   <button
                     type="button"
-                    on:click={() => { sortKey = opt; showSortMenu = false; }}
-                    class="block w-full text-left px-3 py-1.5 text-xs {sortKey === opt ? 'bg-accent/20 text-accent' : 'text-fg-dim hover:bg-accent/15 hover:text-fg'}"
+                    on:click={() => {
+                      sortKey = opt;
+                      showSortMenu = false;
+                    }}
+                    class="block w-full text-left px-3 py-1.5 text-xs {sortKey === opt
+                      ? 'bg-accent/20 text-accent'
+                      : 'text-fg-dim hover:bg-accent/15 hover:text-fg'}"
                   >
                     {sortLabel(opt)}
                   </button>
@@ -469,7 +550,9 @@
         </div>
         {#if filtered.length === 0}
           {#if search}
-            <div class="rounded-lg border border-dashed border-bg-600 p-8 text-center text-sm text-fg-mute">
+            <div
+              class="rounded-lg border border-dashed border-bg-600 p-8 text-center text-sm text-fg-mute"
+            >
               No workspaces matching "{search}".
             </div>
           {:else if !$projectDir}
@@ -494,12 +577,17 @@
               </div>
               {#if recent.length > 0}
                 <div class="mt-8 w-full max-w-md">
-                  <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wide text-fg-mute">Recent</h3>
+                  <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wide text-fg-mute">
+                    Recent
+                  </h3>
                   <div class="space-y-1">
                     {#each recent.slice(0, 5) as r (r.name)}
                       <button
                         type="button"
-                        on:click={async () => { search = r.name; await refresh(); }}
+                        on:click={async () => {
+                          search = r.name;
+                          await refresh();
+                        }}
                         class="block w-full rounded px-3 py-1.5 text-left text-sm text-fg-dim hover:bg-bg-600 hover:text-fg"
                       >
                         {r.name}
@@ -511,11 +599,19 @@
               {/if}
             </div>
           {:else}
-            <div class="rounded-lg border border-dashed border-bg-600 p-8 text-center text-sm text-fg-mute">
+            <div
+              class="rounded-lg border border-dashed border-bg-600 p-8 text-center text-sm text-fg-mute"
+            >
               No workspaces in this directory.
-              <button type="button" on:click={openNew} class="ml-1 text-primary hover:underline">Create one</button>
+              <button type="button" on:click={openNew} class="ml-1 text-primary hover:underline"
+                >Create one</button
+              >
               or
-              <button type="button" on:click={closeProject} class="ml-1 text-primary hover:underline">change directory</button>.
+              <button
+                type="button"
+                on:click={closeProject}
+                class="ml-1 text-primary hover:underline">change directory</button
+              >.
             </div>
           {/if}
         {:else}
@@ -534,19 +630,23 @@
           </h2>
           {#if filteredPlugins.length === 0}
             {#if search}
-              <div class="rounded-lg border border-dashed border-bg-600 p-8 text-center text-sm text-fg-mute">
+              <div
+                class="rounded-lg border border-dashed border-bg-600 p-8 text-center text-sm text-fg-mute"
+              >
                 No plugins matching "{search}".
               </div>
             {:else}
-              <div class="rounded-lg border border-dashed border-bg-600 p-8 text-center text-sm text-fg-mute">
+              <div
+                class="rounded-lg border border-dashed border-bg-600 p-8 text-center text-sm text-fg-mute"
+              >
                 No plugins available.
               </div>
             {/if}
           {:else}
             <div class="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3 items-start">
               {#each filteredPlugins as p (p.id)}
-              <PluginPanel plugin={p} on:refresh={refresh} />
-            {/each}
+                <PluginPanel plugin={p} on:refresh={refresh} />
+              {/each}
             </div>
           {/if}
         </section>
@@ -568,7 +668,9 @@
     </div>
   </div>
 
-  <footer class="flex items-center justify-between border-t border-primary/15 px-5 py-2 text-xs text-fg-mute">
+  <footer
+    class="flex items-center justify-between border-t border-primary/15 px-5 py-2 text-xs text-fg-mute"
+  >
     <span class={$workspaces.filter((w) => w.running).length > 0 ? 'text-primary font-medium' : ''}>
       {$workspaces.filter((w) => w.running).length} running
     </span>
@@ -576,11 +678,27 @@
       <span class="font-mono text-fg-mute">{$paths?.state_file ?? ''}</span>
       <span class="mx-1 h-3 w-px bg-fg-mute/30"></span>
       {#if zoomLevel !== 1.0}
-        <button type="button" on:click={zoomReset} class="rounded px-1 py-0.5 text-[10px] text-fg-mute hover:text-fg">reset</button>
+        <button
+          type="button"
+          on:click={zoomReset}
+          class="rounded px-1 py-0.5 text-[10px] text-fg-mute hover:text-fg">reset</button
+        >
       {/if}
-      <button type="button" on:click={zoomOut} disabled={zoomLevel <= ZOOM_MIN} class="rounded px-1 py-0.5 text-fg-dim hover:text-fg disabled:opacity-40">−</button>
-      <span class="min-w-[3ch] text-center font-mono text-fg-dim">{Math.round(zoomLevel * 100)}%</span>
-      <button type="button" on:click={zoomIn} disabled={zoomLevel >= ZOOM_MAX} class="rounded px-1 py-0.5 text-fg-dim hover:text-fg disabled:opacity-40">+</button>
+      <button
+        type="button"
+        on:click={zoomOut}
+        disabled={zoomLevel <= ZOOM_MIN}
+        class="rounded px-1 py-0.5 text-fg-dim hover:text-fg disabled:opacity-40">−</button
+      >
+      <span class="min-w-[3ch] text-center font-mono text-fg-dim"
+        >{Math.round(zoomLevel * 100)}%</span
+      >
+      <button
+        type="button"
+        on:click={zoomIn}
+        disabled={zoomLevel >= ZOOM_MAX}
+        class="rounded px-1 py-0.5 text-fg-dim hover:text-fg disabled:opacity-40">+</button
+      >
     </div>
   </footer>
 </div>

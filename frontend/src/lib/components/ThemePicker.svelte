@@ -37,10 +37,7 @@
     );
   }
 
-  function filterCustomThemes(
-    themes: CustomThemeInfo[],
-    q: string,
-  ): CustomThemeInfo[] {
+  function filterCustomThemes(themes: CustomThemeInfo[], q: string): CustomThemeInfo[] {
     if (!q.trim()) return themes;
     const needle = q.trim().toLowerCase();
     return themes.filter((t) => t.name.toLowerCase().includes(needle));
@@ -140,9 +137,18 @@
                 style="background-color: {t.swatch.base};"
               >
                 <div class="absolute inset-0 flex items-center justify-center gap-1.5">
-                  <div class="h-3 w-6 rounded-sm" style="background-color: {t.swatch.primary};"></div>
-                  <div class="h-3 w-6 rounded-sm" style="background-color: {t.swatch.secondary};"></div>
-                  <div class="h-3 w-6 rounded-sm" style="background-color: {t.swatch.accent};"></div>
+                  <div
+                    class="h-3 w-6 rounded-sm"
+                    style="background-color: {t.swatch.primary};"
+                  ></div>
+                  <div
+                    class="h-3 w-6 rounded-sm"
+                    style="background-color: {t.swatch.secondary};"
+                  ></div>
+                  <div
+                    class="h-3 w-6 rounded-sm"
+                    style="background-color: {t.swatch.accent};"
+                  ></div>
                 </div>
               </div>
               <div class="flex items-center justify-between gap-1 px-0.5">
@@ -194,7 +200,9 @@
             </div>
             <div class="flex items-center justify-between gap-1 px-0.5">
               <span class="truncate text-xs font-medium text-fg">{t.name}</span>
-              <div class="relative z-10 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100">
+              <div
+                class="relative z-10 flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100"
+              >
                 <button
                   type="button"
                   on:click|stopPropagation={() => startEditCustom(t.name)}
