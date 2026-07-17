@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { createEventDispatcher, onDestroy, onMount } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
   import { api, describeError, type CustomThemeInfo, type PluginInfo, type PluginPathsInfo } from '../api';
-  import { lastError, customThemes, theme as themeStore, plugins as pluginsStore, pluginPaths as pluginPathsStore, keybinds as keybindsStore } from '../stores';
+  import { pushToast, customThemes, theme as themeStore, plugins as pluginsStore, pluginPaths as pluginPathsStore, keybinds as keybindsStore } from '../stores';
   import ThemePicker from './ThemePicker.svelte';
   import CustomThemeEditor from './CustomThemeEditor.svelte';
   import PluginsPanel from './PluginsPanel.svelte';
@@ -26,8 +26,6 @@
   let editorBase: string = 'dia';
 
   let busy = false;
-  let toast: { kind: 'ok' | 'err'; text: string } | null = null;
-  let toastTimer: ReturnType<typeof setTimeout> | null = null;
   let showDeleteThemeConfirm = false;
   let deleteThemeName = '';
 
@@ -127,7 +125,7 @@
       }
       keybindsStore.set(next);
     } catch (e) {
-      showToast('err', `save keybinding: ${describeError(e)}`);
+      pushToast('err', `save keybinding: ${describeError(e)}`);
     }
   }
 
@@ -135,22 +133,10 @@
     try {
       await api.resetKeybindings();
       keybindsStore.set({});
-      showToast('ok', 'reset keybindings');
+      pushToast('ok', 'reset keybindings');
     } catch (e) {
-      showToast('err', `reset: ${describeError(e)}`);
+      pushToast('err', `reset: ${describeError(e)}`);
     }
-  }
-
-  onDestroy(() => {
-    if (toastTimer) clearTimeout(toastTimer);
-  });
-
-  function showToast(kind: 'ok' | 'err', text: string) {
-    toast = { kind, text };
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      toast = null;
-    }, 2500);
   }
 
   function close() {
@@ -173,7 +159,7 @@
     document.documentElement.dataset.theme = id;
     dispatch('themeChange', { id });
     api.setTheme(id).catch((err) => {
-      lastError.set(`theme: ${describeError(err)}`);
+      pushToast('err', `theme: ${describeError(err)}`);
     });
   }
 
@@ -203,9 +189,9 @@
       dispatch('themeChange', { id: info.name });
       await api.setTheme(info.name);
       editorOpen = false;
-      showToast('ok', `saved ${info.name}`);
+      pushToast('ok', `saved ${info.name}`);
     } catch (err) {
-      showToast('err', `save: ${describeError(err)}`);
+      pushToast('err', `save: ${describeError(err)}`);
     }
   }
 
@@ -231,21 +217,19 @@
         dispatch('themeChange', { id: 'dia' });
         await api.setTheme('dia');
       }
-      showToast('ok', `deleted ${name}`);
+      pushToast('ok', `deleted ${name}`);
     } catch (err) {
-      showToast('err', `delete: ${describeError(err)}`);
+      pushToast('err', `delete: ${describeError(err)}`);
     }
   }
 
   async function openConfig() {
     busy = true;
-    lastError.set(null);
     try {
       await api.openConfigFolder();
-      showToast('ok', 'opened config folder');
+      pushToast('ok', 'opened config folder');
     } catch (e) {
-      lastError.set(`open config: ${describeError(e)}`);
-      showToast('err', 'open config failed');
+      pushToast('err', `open config: ${describeError(e)}`);
     } finally {
       busy = false;
     }
@@ -253,13 +237,11 @@
 
   async function openState() {
     busy = true;
-    lastError.set(null);
     try {
       await api.openStateFolder();
-      showToast('ok', 'opened state folder');
+      pushToast('ok', 'opened state folder');
     } catch (e) {
-      lastError.set(`open state: ${describeError(e)}`);
-      showToast('err', 'open state failed');
+      pushToast('err', `open state: ${describeError(e)}`);
     } finally {
       busy = false;
     }
@@ -267,8 +249,8 @@
 
   function copy(text: string) {
     navigator.clipboard?.writeText(text).then(
-      () => showToast('ok', 'copied'),
-      () => showToast('err', 'copy failed'),
+      () => pushToast('ok', 'copied'),
+      () => pushToast('err', 'copy failed'),
     );
   }
 
@@ -284,10 +266,10 @@
     reconciling = true;
     try {
       const result = await api.reconcile();
-      showToast('ok', `Reconciled ${result.reconciled} stale instance${result.reconciled === 1 ? '' : 's'}, ${result.remaining} remaining`);
+      pushToast('ok', `Reconciled ${result.reconciled} stale instance${result.reconciled === 1 ? '' : 's'}, ${result.remaining} remaining`);
       dispatch('refresh');
     } catch (e) {
-      showToast('err', `reconcile: ${describeError(e)}`);
+      pushToast('err', `reconcile: ${describeError(e)}`);
     } finally {
       reconciling = false;
     }
@@ -645,17 +627,6 @@
     </div>
   </div>
 </div>
-
-{#if toast}
-  <div
-    class="pointer-events-none fixed bottom-4 left-1/2 z-[60] -translate-x-1/2 rounded px-3 py-1.5 text-xs shadow {toast.kind ===
-    'ok'
-      ? 'border-l-2 border-success bg-success/15 text-success'
-      : 'border-l-2 border-error bg-error/15 text-error'}"
-  >
-    {toast.text}
-  </div>
-{/if}
 
 {#if editorOpen}
   <div

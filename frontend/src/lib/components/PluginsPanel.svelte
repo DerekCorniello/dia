@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { lastError } from '../stores';
+  import { pushToast } from '../stores';
   import { api, describeError } from '../api';
 
   export let plugins: PluginInfo[];
@@ -29,7 +29,7 @@
   function copy(text: string) {
     navigator.clipboard?.writeText(text).then(
       () => {},
-      () => lastError.set('copy failed'),
+      () => pushToast('err', 'copy failed'),
     );
   }
 </script>

@@ -1,6 +1,5 @@
 <script lang="ts">
   import { api, describeError } from '../api';
-  import { lastError } from '../stores';
   import { createEventDispatcher } from 'svelte';
 
   export let onClose: () => void = () => {};
@@ -32,7 +31,6 @@
   async function submit() {
     if (!name.trim() || nameError) return;
     busy = true;
-    lastError.set(null);
     try {
       await api.newWorkspace(name.trim(), local);
       dispatch('created', name.trim());

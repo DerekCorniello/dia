@@ -2,7 +2,7 @@
   import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
   import { slide } from 'svelte/transition';
   import { api, describeError, type PluginInfo, type PluginActionDef } from '../api';
-  import { lastError } from '../stores';
+  import { pushToast } from '../stores';
   import ConfirmDialog from './ConfirmDialog.svelte';
 
   export let plugin: PluginInfo;
@@ -78,7 +78,7 @@
       }
       dispatch('refresh');
     } catch (e) {
-      lastError.set(`plugin action: ${describeError(e)}`);
+      pushToast('err', `plugin action: ${describeError(e)}`);
     }
   }
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, describeError } from '../api';
-  import { lastError, loading, plugins as pluginsStore } from '../stores';
+  import { pushToast, loading, plugins as pluginsStore } from '../stores';
   import type { WorkspaceInfo, PluginInfo } from '../api';
   import WorkspaceEditor from './WorkspaceEditor.svelte';
   import ConfirmDialog from './ConfirmDialog.svelte';
@@ -22,12 +22,12 @@
 
   async function start() {
     busy = true;
-    lastError.set(null);
     try {
       await api.startWorkspace(workspace.name);
+      pushToast('ok', `started ${workspace.name}`);
       onChanged();
     } catch (e) {
-      lastError.set(`start ${workspace.name}: ${describeError(e)}`);
+      pushToast('err', `start ${workspace.name}: ${describeError(e)}`);
     } finally {
       busy = false;
     }
@@ -35,12 +35,12 @@
 
   async function stop() {
     busy = true;
-    lastError.set(null);
     try {
       await api.stopWorkspace(workspace.name);
+      pushToast('ok', `stopped ${workspace.name}`);
       onChanged();
     } catch (e) {
-      lastError.set(`stop ${workspace.name}: ${describeError(e)}`);
+      pushToast('err', `stop ${workspace.name}: ${describeError(e)}`);
     } finally {
       busy = false;
     }
@@ -53,12 +53,12 @@
   async function confirmDelete() {
     showDeleteConfirm = false;
     busy = true;
-    lastError.set(null);
     try {
       await api.deleteWorkspace(workspace.name);
+      pushToast('ok', `deleted ${workspace.name}`);
       onChanged();
     } catch (e) {
-      lastError.set(`delete workspace: ${describeError(e)}`);
+      pushToast('err', `delete workspace: ${describeError(e)}`);
     } finally {
       busy = false;
     }
@@ -70,7 +70,7 @@
       try {
         detail = await api.getWorkspace(workspace.name);
       } catch (e) {
-        lastError.set(`load ${workspace.name}: ${describeError(e)}`);
+        pushToast('err', `load ${workspace.name}: ${describeError(e)}`);
       }
     }
   }

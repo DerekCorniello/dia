@@ -6,7 +6,7 @@
     doctor,
     paths,
     loading,
-    lastError,
+    pushToast,
     theme,
     customThemes,
     plugins as pluginsStore,
@@ -21,6 +21,7 @@
   import NewWorkspaceDialog from './lib/components/NewWorkspaceDialog.svelte';
   import WorkspaceEditor from './lib/components/WorkspaceEditor.svelte';
   import PluginPanel from './lib/components/PluginPanel.svelte';
+  import Toasts from './lib/components/Toasts.svelte';
 
   type SortKey = 'recent' | 'mostUsed' | 'name' | 'source';
   const SORT_KEYS: SortKey[] = ['recent', 'mostUsed', 'name', 'source'];
@@ -165,7 +166,6 @@
 
   async function refresh() {
     loading.set(true);
-    lastError.set(null);
     try {
       const [ws, doc, p, ct, pl, pp, rec, pd] = await Promise.all([
         api.listWorkspaces(),
@@ -186,7 +186,7 @@
       recent = rec;
       projectDir.set(pd);
     } catch (e) {
-      lastError.set(`refresh: ${describeError(e)}`);
+      pushToast('err', `refresh: ${describeError(e)}`);
     } finally {
       loading.set(false);
     }
@@ -198,7 +198,7 @@
     try {
       await api.setTheme(id);
     } catch (e) {
-      lastError.set(`theme: ${describeError(e)}`);
+      pushToast('err', `theme: ${describeError(e)}`);
     }
   }
 
@@ -232,7 +232,7 @@
         await refresh();
       }
     } catch (e) {
-      lastError.set(`open project: ${describeError(e)}`);
+      pushToast('err', `open project: ${describeError(e)}`);
     }
   }
 
@@ -242,7 +242,7 @@
       projectDir.set('');
       await refresh();
     } catch (e) {
-      lastError.set(`close project: ${describeError(e)}`);
+      pushToast('err', `close project: ${describeError(e)}`);
     }
   }
 
@@ -414,20 +414,6 @@
       </button>
     </div>
   </header>
-
-  {#if $lastError}
-    <div class="flex items-center gap-2 border-b border-error/30 bg-error/10 px-5 py-2 text-sm text-error">
-      <span class="flex-1 break-all">{$lastError}</span>
-      <button
-        type="button"
-        on:click={() => lastError.set(null)}
-        class="shrink-0 rounded p-0.5 text-error/60 hover:text-error"
-        aria-label="dismiss error"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-      </button>
-    </div>
-  {/if}
 
   {#if $projectDir}
     <div class="flex items-center gap-2 border-b border-primary/15 bg-bg-800/50 px-5 py-1.5 text-xs">
@@ -612,3 +598,5 @@
     ondeleted={onEditorDeleted}
   />
 {/if}
+
+<Toasts />
