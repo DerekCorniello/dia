@@ -220,6 +220,21 @@ func (s *Store) Mutate(fn func(d *Data)) error {
 	return s.writeLocked()
 }
 
+// MutateIfChanged runs fn with exclusive access to the state and
+// persists the result only if fn reports a change, by returning true.
+// Prefer this over Mutate for a hot loop that usually has nothing to
+// write, such as a periodic liveness poll: Mutate's unconditional
+// write turns "nothing changed" into a full marshal, temp file, and
+// atomic rename on every call.
+func (s *Store) MutateIfChanged(fn func(d *Data) bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !fn(&s.data) {
+		return nil
+	}
+	return s.writeLocked()
+}
+
 // MutateErr runs fn with exclusive access. If fn returns an error,
 // nothing is written and that error is propagated.
 func (s *Store) MutateErr(fn func(d *Data) error) error {

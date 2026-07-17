@@ -518,6 +518,97 @@ func TestStopAll(t *testing.T) {
 	}
 }
 
+func TestTickInstance_NoChangeSkipsWrite(t *testing.T) {
+	rt, _, st := newTestRuntime(t)
+	w := &config.Workspace{
+		Name: "tick-noop",
+		Apps: []config.App{{Type: "local", Cmd: "a"}, {Type: "local", Cmd: "b"}},
+	}
+	inst, err := rt.Start(w, config.Source{Path: "/x"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	// Both apps are still alive in the mock. Remove the file Start
+	// already wrote; if tickInstance writes despite nothing changing,
+	// it reappears.
+	if err := os.Remove(st.Path()); err != nil {
+		t.Fatal(err)
+	}
+
+	if !rt.tickInstance(inst.ID) {
+		t.Error("tickInstance = false, want true (still watching, nothing changed)")
+	}
+	if _, err := os.Stat(st.Path()); err == nil {
+		t.Error("tickInstance wrote to disk even though no process changed")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
+func TestTickInstance_AppExitPersistsPartialChange(t *testing.T) {
+	rt, pf, _ := newTestRuntime(t)
+	w := &config.Workspace{
+		Name: "tick-partial",
+		Apps: []config.App{{Type: "local", Cmd: "a"}, {Type: "local", Cmd: "b"}},
+	}
+	inst, err := rt.Start(w, config.Source{Path: "/x"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	pf.MarkDead(inst.Apps[0].PID)
+
+	if !rt.tickInstance(inst.ID) {
+		t.Error("tickInstance = false, want true (other app still running)")
+	}
+
+	got := rt.Instances()
+	if len(got) != 1 {
+		t.Fatalf("Instances len = %d", len(got))
+	}
+	if got[0].Status != state.StatusRunning {
+		t.Errorf("instance Status = %s, want running", got[0].Status)
+	}
+	if got[0].Apps[0].Status != state.StatusStopped {
+		t.Errorf("apps[0].Status = %s, want stopped", got[0].Apps[0].Status)
+	}
+	if got[0].Apps[1].Status != state.StatusRunning {
+		t.Errorf("apps[1].Status = %s, want running", got[0].Apps[1].Status)
+	}
+}
+
+func TestTickInstance_AllAppsExitStopsInstance(t *testing.T) {
+	rt, pf, _ := newTestRuntime(t)
+	w := &config.Workspace{
+		Name: "tick-stop",
+		Apps: []config.App{{Type: "local", Cmd: "a"}},
+	}
+	inst, err := rt.Start(w, config.Source{Path: "/x"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	pf.MarkDead(inst.Apps[0].PID)
+
+	if rt.tickInstance(inst.ID) {
+		t.Error("tickInstance = true, want false (all apps exited)")
+	}
+
+	got := rt.Instances()
+	if len(got) != 1 {
+		t.Fatalf("Instances len = %d", len(got))
+	}
+	if got[0].Status != state.StatusStopped {
+		t.Errorf("instance Status = %s, want stopped", got[0].Status)
+	}
+}
+
+func TestTickInstance_UnknownIDReturnsFalse(t *testing.T) {
+	rt, _, _ := newTestRuntime(t)
+	if rt.tickInstance("does-not-exist") {
+		t.Error("tickInstance = true, want false for an unknown id")
+	}
+}
+
 func TestReconcile(t *testing.T) {
 	rt, pf, _ := newTestRuntime(t)
 	w := &config.Workspace{

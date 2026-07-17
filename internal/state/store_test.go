@@ -212,6 +212,61 @@ func idFor(g, i int) string {
 	})
 }
 
+func TestMutateIfChangedSkipsWriteWhenUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "state.json")
+	s, err := OpenAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Seed a real file on disk, then remove it. If MutateIfChanged
+	// writes despite fn reporting no change, the file reappears.
+	if err := s.Mutate(func(d *Data) { d.Theme = "seed" }); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.MutateIfChanged(func(d *Data) bool {
+		_ = d.Theme // read-only access, nothing changes
+		return false
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(p); err == nil {
+		t.Error("MutateIfChanged wrote to disk even though fn reported no change")
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+}
+
+func TestMutateIfChangedWritesWhenChanged(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "state.json")
+	s, err := OpenAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.MutateIfChanged(func(d *Data) bool {
+		d.Theme = "changed"
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := OpenAt(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reloaded.Snapshot().Theme; got != "changed" {
+		t.Errorf("Theme = %q, want %q", got, "changed")
+	}
+}
+
 type sentinelErr string
 
 func (s sentinelErr) Error() string { return string(s) }

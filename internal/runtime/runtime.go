@@ -230,53 +230,88 @@ func (r *Runtime) watchInstance(id string) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
-		var done bool
-		_ = r.st.Mutate(func(d *state.Data) {
-			inst, ok := d.Instances[id]
-			if !ok || inst.Status != state.StatusRunning {
-				done = true
-				return
-			}
-			anyRunning := false
-			for i, app := range inst.Apps {
-				if app.PID <= 0 || app.Status != state.StatusRunning {
-					continue
-				}
-				running, err := r.pf.IsRunning(app.PID)
-				if err != nil {
-					r.log.Warn("isrunning", "id", id, "pid", app.PID, "error", err)
-					continue
-				}
-				if running {
-					anyRunning = true
-				} else {
-					inst.Apps[i].Status = state.StatusStopped
-				}
-			}
-			for _, ppid := range inst.PluginPIDs {
-				if ppid <= 0 {
-					continue
-				}
-				running, err := r.pf.IsRunning(ppid)
-				if err != nil {
-					r.log.Warn("isrunning plugin", "id", id, "pid", ppid, "error", err)
-					continue
-				}
-				if running {
-					anyRunning = true
-				}
-			}
-			if !anyRunning {
-				inst.Status = state.StatusStopped
-				r.log.Info("instance auto-stopped (all apps and plugins exited)", "id", id, "workspace", inst.WorkspaceName)
-				done = true
-			}
-			d.Instances[id] = inst
-		})
-		if done {
+		if !r.tickInstance(id) {
 			return
 		}
 	}
+}
+
+// tickInstance checks the liveness of one instance's apps and plugin
+// windows and updates state to match. It reports whether the caller
+// should keep watching: false means the instance is gone, was already
+// not running, or just transitioned to stopped this tick.
+//
+// The liveness syscalls run without holding the store lock. Holding it
+// for their duration, every 2s for as long as any workspace runs, meant
+// every other read or write of state -- starting a workspace, the
+// GUI's periodic refresh -- blocked on however long the OS took to
+// answer. The result is written back through MutateIfChanged, which
+// re-verifies the instance is still running before applying it (so a
+// concurrent Stop cannot be clobbered by a stale update) and skips the
+// write entirely on the common tick where every process is still
+// alive.
+func (r *Runtime) tickInstance(id string) bool {
+	snap := r.st.Snapshot()
+	inst, ok := snap.Instances[id]
+	if !ok || inst.Status != state.StatusRunning {
+		return false
+	}
+
+	apps := append([]state.AppProcess(nil), inst.Apps...)
+	anyRunning := false
+	appsChanged := false
+	for i, app := range apps {
+		if app.PID <= 0 || app.Status != state.StatusRunning {
+			continue
+		}
+		running, err := r.pf.IsRunning(app.PID)
+		if err != nil {
+			r.log.Warn("isrunning", "id", id, "pid", app.PID, "error", err)
+			continue
+		}
+		if running {
+			anyRunning = true
+		} else {
+			apps[i].Status = state.StatusStopped
+			appsChanged = true
+		}
+	}
+	for _, ppid := range inst.PluginPIDs {
+		if ppid <= 0 {
+			continue
+		}
+		running, err := r.pf.IsRunning(ppid)
+		if err != nil {
+			r.log.Warn("isrunning plugin", "id", id, "pid", ppid, "error", err)
+			continue
+		}
+		if running {
+			anyRunning = true
+		}
+	}
+
+	stopped := !anyRunning
+	if !appsChanged && !stopped {
+		return true
+	}
+
+	keepWatching := true
+	_ = r.st.MutateIfChanged(func(d *state.Data) bool {
+		cur, ok := d.Instances[id]
+		if !ok || cur.Status != state.StatusRunning {
+			keepWatching = false
+			return false
+		}
+		cur.Apps = apps
+		if stopped {
+			cur.Status = state.StatusStopped
+			r.log.Info("instance auto-stopped (all apps and plugins exited)", "id", id, "workspace", cur.WorkspaceName)
+			keepWatching = false
+		}
+		d.Instances[id] = cur
+		return true
+	})
+	return keepWatching
 }
 
 // Stop terminates every running app in the instance. With force=false
