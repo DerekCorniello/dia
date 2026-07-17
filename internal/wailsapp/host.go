@@ -98,7 +98,7 @@ func (h *wailsHost) Doctor(ctx context.Context) ([]any, error) {
 }
 
 func (h *wailsHost) Paths(ctx context.Context) (any, error) {
-	return h.app.Paths(), nil
+	return marshalAny(h.app.Paths())
 }
 
 func (h *wailsHost) GetTheme(ctx context.Context) (string, error) {
