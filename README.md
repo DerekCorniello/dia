@@ -228,15 +228,17 @@ good starting points.
 | `table`   | `[{ col: value, ... }, ...]`                   | table; columns declared in `ui.columns`     |
 | `kv`      | `{ key: value, ... }`                          | key/value list                              |
 | `text`    | any string                                     | monospace block                             |
-| `canvas`  | n/a (strokes come from drawing)                | free-draw canvas; see below                 |
-| `window`  | n/a (no `getData`)                             | separate OS window with `panel/panel.js`    |
+| `canvas`  | required, but the value is ignored             | free-draw canvas; see below                 |
+| `window`  | n/a (`getData` is never called)                | separate OS window with `panel/panel.js`    |
 
 ### `canvas` panels
 
 A `canvas` panel renders a free-draw surface with a built-in clear
-button and a stroke counter. Strokes are produced by the user drawing,
-not by `getData`, so the panel owns the drawing state and the plugin
-observes it through actions.
+button and a stroke counter. The panel still calls `getData` on load
+and on refresh, so the entry must export it or the panel shows
+`plugin does not export "getData"`; the returned value is not drawn.
+Strokes are produced by the user drawing, so the panel owns the drawing
+state and the plugin observes it through actions.
 
 Each action's `ctx` carries the current strokes:
 
