@@ -47,9 +47,12 @@ make build          # wails build (needs the Wails CLI + GTK/WebKit on Linux)
 Frontend gates (run from `frontend/`):
 
 ```sh
-npm run check       # svelte-check
-npm test            # vitest
-npm run build       # vite build
+npm run check        # svelte-check (types)
+npm run lint         # eslint (config in eslint.config.js)
+npm run format:check # prettier, verify only
+npm run format       # prettier, rewrite in place
+npm test             # vitest
+npm run build        # vite build
 ```
 
 First-time setup:
@@ -81,3 +84,11 @@ mutating ones are opt-in. When touching the bridge or runtime, preserve
 the sandbox: `require()` is plugin-scoped (relative paths only, no `..`),
 files are size-capped, and calls are time-bounded. See `README.md` for
 the host API and capability table.
+
+Any plugin-supplied path must go through `plugins.ContainedRelPath`.
+Validate the *cleaned* path, never a prefix of the raw string:
+`panel/../../../etc/passwd` has no leading `..` and will escape. This
+has bitten both `require()` and `ui.entry`; the rule lives in one place
+so it only has to be right once. Code that reads a plugin path and
+hands the bytes somewhere the plugin can observe them (the plugin
+window asset server, for one) should re-check containment itself.
