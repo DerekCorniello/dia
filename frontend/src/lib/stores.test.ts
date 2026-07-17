@@ -67,6 +67,46 @@ describe('toast store', () => {
     expect(get(toasts)).toHaveLength(1);
   });
 
+  it('does not stack a repeated identical message', () => {
+    // A refresh that keeps failing fires the same error every couple of
+    // seconds for as long as a workspace is running.
+    for (let i = 0; i < 30; i++) pushToast('err', 'refresh: boom');
+
+    const list = get(toasts);
+    expect(list).toHaveLength(1);
+    expect(list[0].text).toBe('refresh: boom');
+  });
+
+  it('returns the existing id for a repeated message', () => {
+    const first = pushToast('err', 'same');
+    const second = pushToast('err', 'same');
+    expect(second).toBe(first);
+  });
+
+  it('distinguishes messages that differ only by kind', () => {
+    pushToast('ok', 'thing');
+    pushToast('err', 'thing');
+    expect(get(toasts)).toHaveLength(2);
+  });
+
+  it('caps the stack at the newest few distinct messages', () => {
+    for (let i = 0; i < 10; i++) pushToast('err', `failure ${i}`);
+
+    const list = get(toasts);
+    expect(list).toHaveLength(4);
+    expect(list.map((t) => t.text)).toEqual(['failure 6', 'failure 7', 'failure 8', 'failure 9']);
+  });
+
+  it('keeps a repeated success on its original timer', () => {
+    pushToast('ok', 'saved');
+    vi.advanceTimersByTime(2000);
+    pushToast('ok', 'saved');
+
+    // The repeat reuses the showing toast rather than extending it.
+    vi.advanceTimersByTime(1000);
+    expect(get(toasts)).toHaveLength(0);
+  });
+
   it('does not remove a replacement toast that reuses a slot', () => {
     // A success toast's pending timer must not evict whatever is in the
     // list when it fires, only the toast it was created for.
