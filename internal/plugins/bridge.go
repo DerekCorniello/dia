@@ -9,11 +9,12 @@ import (
 )
 
 type Bridge struct {
-	rt        *goja.Runtime
-	granted   map[string]struct{}
-	host      HostAPI
-	pluginDir string
-	config    map[string]any
+	rt          *goja.Runtime
+	granted     map[string]struct{}
+	host        HostAPI
+	pluginDir   string
+	config      map[string]any
+	moduleCache map[string]goja.Value
 }
 
 func NewBridge(rt *goja.Runtime, requested, grants []string, host HostAPI, cfg map[string]any) *Bridge {
@@ -21,7 +22,7 @@ func NewBridge(rt *goja.Runtime, requested, grants []string, host HostAPI, cfg m
 	for _, g := range grants {
 		m[g] = struct{}{}
 	}
-	return &Bridge{rt: rt, granted: m, host: host, config: cfg}
+	return &Bridge{rt: rt, granted: m, host: host, config: cfg, moduleCache: make(map[string]goja.Value)}
 }
 func (b *Bridge) require(need string) error {
 	if _, ok := b.granted[need]; !ok {
@@ -166,19 +167,31 @@ func (b *Bridge) fetch(url string, opts map[string]any) (any, error) {
 	return b.host.Fetch(context.Background(), url, opts)
 }
 
+// NewRequire returns the plugin-scoped require function. Each required
+// file runs in its own function scope with a fresh module/exports, so
+// modules cannot clobber the entry's globals or each other. Results are
+// cached per plugin instance by resolved path, so a file is executed at
+// most once and repeated requires return the same exports.
 func (b *Bridge) NewRequire(pluginDir string) func(string) (goja.Value, error) {
 	b.pluginDir = pluginDir
-	return func(spec string) (goja.Value, error) {
+	var requireFn func(string) (goja.Value, error)
+	requireFn = func(spec string) (goja.Value, error) {
 		clean := filepath.Clean(spec)
-		if filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
+		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 			return nil, fmt.Errorf("require %q: must be a relative path inside the plugin", spec)
 		}
-		full := filepath.Join(pluginDir, clean)
+		full := resolveRequire(filepath.Join(pluginDir, clean))
+		if cached, ok := b.moduleCache[full]; ok {
+			return cached, nil
+		}
 		data, err := readAll(full, maxPluginFileBytes)
 		if err != nil {
 			return nil, err
 		}
-		program, err := goja.Compile(full, string(data), true)
+		// Wrap the source in a function so it gets its own module,
+		// exports, and require, isolated from the global scope.
+		wrapped := "(function (module, exports, require) {\n" + string(data) + "\n})"
+		program, err := goja.Compile(full, wrapped, true)
 		if err != nil {
 			return nil, fmt.Errorf("compile %s: %w", full, err)
 		}
@@ -186,14 +199,25 @@ func (b *Bridge) NewRequire(pluginDir string) func(string) (goja.Value, error) {
 		if err != nil {
 			return nil, fmt.Errorf("run %s: %w", full, err)
 		}
-		if obj, ok := v.(*goja.Object); ok {
-			if exp := obj.Get("module"); exp != nil && !goja.IsUndefined(exp) {
-				return exp, nil
-			}
-			if exp := obj.Get("exports"); exp != nil && !goja.IsUndefined(exp) {
-				return exp, nil
-			}
+		fn, ok := goja.AssertFunction(v)
+		if !ok {
+			return nil, fmt.Errorf("require %s: module wrapper is not callable", full)
 		}
-		return v, nil
+		module := b.rt.NewObject()
+		exports := b.rt.NewObject()
+		if err := module.Set("exports", exports); err != nil {
+			return nil, err
+		}
+		// Cache the initial exports before running so a circular
+		// require resolves to the partial object instead of looping.
+		b.moduleCache[full] = module.Get("exports")
+		if _, err := fn(goja.Undefined(), module, exports, b.rt.ToValue(requireFn)); err != nil {
+			delete(b.moduleCache, full)
+			return nil, fmt.Errorf("run %s: %w", full, err)
+		}
+		result := module.Get("exports")
+		b.moduleCache[full] = result
+		return result, nil
 	}
+	return requireFn
 }

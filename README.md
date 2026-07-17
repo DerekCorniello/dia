@@ -278,9 +278,12 @@ dia plugin enable my-plugin --caps workspaces:read,workspaces:start
 ### `require()` and `module.exports`
 
 `require('./lib/foo')` is plugin-scoped: relative paths only, no
-`..` traversal, no absolute paths. Each required file is run with
-its own `module`/`exports` and returns its `module.exports`. The
-host caps each file at 1 MiB.
+`..` traversal, no absolute paths. A bare path resolves to its
+`.js` file (`./lib/foo` loads `lib/foo.js`). Each required file runs
+in its own scope with a fresh `module`/`exports` and returns its
+`module.exports`. Modules are cached per plugin instance by resolved
+path, so a file executes at most once and repeated requires return the
+same exports. The host caps each file at 1 MiB.
 
 ### Plugin directories
 
