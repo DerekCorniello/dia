@@ -94,6 +94,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   covering rendering, validation, and state transitions.
 - **`svelte-check` in CI.** The CI workflow runs `svelte-check`
   and `vitest` on every push to main and on pull requests.
+- **`examples/sketch-pad`.** The first example of an embedded
+  `canvas` panel (the other canvas-related example, whiteboard, is
+  a `ui.type=window` plugin with its own canvas, a different code
+  path). Demonstrates config-driven pen defaults and replacing
+  canvas contents from `onAction` (Undo).
+- **`golangci-lint` (Go) and `eslint`/`prettier` (frontend), both
+  gated in CI.** A committed pre-commit hook runs the same gates
+  locally. `AGENTS.md` documents the layout and commands for
+  contributors and coding agents.
+- **Test coverage.** `PluginPanel.svelte` (renders every embedded
+  panel type) went from 0 tests to 10, covering every `ui.type`'s
+  render path. `internal/wailsapp/host.go` (the plugin capability
+  bridge) went from 0% to fully covered, with the most attention on
+  `Exec`/`Fetch`, its two most capability-sensitive calls. A new
+  `TestExamplePluginsValidate` loads every `examples/*/plugin.json`
+  through the real manifest validator. `internal/version` and the
+  state store's `MutateIfChanged` are covered by dedicated tests
+  (see Fixed, below).
+
+### Fixed
+
+- **Plugin path traversal.** `ui.entry`, the top-level plugin
+  `entry`, and `require()` were each validated by rejecting a
+  leading `..` on the raw path string. A path like
+  `panel/../../../etc/passwd` has no leading `..` and passed, then
+  resolved outside the plugin directory once cleaned. All three now
+  validate the cleaned path through one shared `ContainedRelPath`
+  check; the plugin-window asset server also re-checks containment
+  itself before serving a file, since it is what actually hands the
+  bytes to the plugin's window.
+- **`require()` module isolation and caching.** A required file ran
+  against the entry's shared `module`/`exports`, so it could
+  clobber the entry's exports or a sibling module's, and nothing
+  was cached -- a file re-executed on every `require()` call. Each
+  required file now runs in its own scope with a fresh
+  `module`/`exports`/`require`, cached per plugin instance by
+  resolved path.
+- **`dia.paths()` returned fields a plugin could not read.**
+  `wailsHost.Paths` returned a raw Go struct instead of the
+  `map[string]any` every sibling `HostAPI` method returns. Go's
+  goja runtime here has no field-name mapper configured, so a raw
+  struct crossing into JS exposes its Go field names
+  (`GlobalConfigDir`), not the documented, JSON-tagged ones
+  (`global_config_dir`), which came back `undefined`.
+- **A repeating error could bury the UI in toasts.** Errors persist
+  until dismissed and toasts stack; a workspace's background
+  watcher rewrote state every 2s for as long as it ran, and each
+  write drove a frontend refresh, so a refresh that kept failing
+  pushed a new permanent toast roughly every 2s. Repeated identical
+  messages now reuse the toast already on screen, and the stack is
+  capped at 4 distinct messages.
+- **Release binaries would have reported the wrong version.** Go
+  stamps a VCS pseudo-version onto the main module for any build
+  run inside a git checkout, including a plain `go build` with no
+  `-ldflags` at all. `version.go`'s `init()` let that silently
+  override an explicit `-ldflags -X .../version.Version=...`, so
+  `make build` and the release workflow's version injection were
+  both being clobbered; a downloaded release binary would have
+  shown a commit-derived pseudo-version instead of its tag. Fixed
+  to only fall back to build info when the field is still at its
+  default, so an explicit override always wins.
+- **The release workflow would not have actually produced a
+  release.** goreleaser's `builds` were `skip: true` (these
+  binaries are built via the wails CLI, not `go build`, and
+  cross-compiled per OS in CI, not locally), which left its
+  `archives` step with no build output to package. Confirmed by
+  running it against the real config with faked prebuilt binaries:
+  `dist/` came out with only metadata files, no `.tar.gz`, `.zip`,
+  or `checksums.txt`. Replaced goreleaser with direct per-OS
+  archiving (tar+gzip on unix, `Compress-Archive` on Windows) in
+  the release workflow.
+- **The per-instance watcher held the state store's lock across
+  process-liveness syscalls and wrote state every 2s regardless of
+  whether anything had changed**, for as long as any workspace ran
+  -- continuous, avoidable disk and UI churn, and a lock held for
+  no reason across every other read or write of state. Split into a
+  `tickInstance` step that reads without the lock and only persists
+  through the new `Store.MutateIfChanged` when something actually
+  changed.
 
 ### Changed
 
@@ -109,12 +188,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Keybindings are reactive and platform-aware.** The modifier
   key is detected at load time (Cmd on macOS, Ctrl elsewhere).
   Defaults recompute when the modifier changes.
+- **Unified toast feedback.** The persistent error-only `lastError`
+  banner and `SettingsPanel`'s separate local toast (which also did
+  successes) are replaced by one toast store: success/info
+  auto-dismiss after 3s, errors persist until dismissed, toasts
+  stack (see Fixed, above, for the follow-up that stopped a
+  repeating error from stacking forever).
+- **`app.go` split by domain.** It had grown to 1172 lines and 53
+  functions across eight unrelated responsibilities (bootstrap,
+  workspaces, instances, themes, folders/paths, plugins,
+  keybindings), on top of the plugin-host bridge that was already
+  split into `host.go`. Now `workspaces.go`, `themes.go`,
+  `paths.go`, `plugins_bindings.go`, `keybinds.go`; `app.go` keeps
+  only the `App` struct and its constructor/lifecycle. Verified
+  with an AST-level diff of every function, not just that it
+  builds: 53 functions in, 53 out, zero mismatches.
 
 ### Removed
 
 - **Unused Nunito font and logo assets.** The frontend uses Outfit
   via Google Fonts. The leftover `src/assets/` directory has been
   removed.
+- **The 16MB `gen-completions` binary that was committed to git.**
+  It is a build artifact, now gitignored.
+- **`.goreleaser.yaml` and goreleaser itself**, replaced by direct
+  archiving in the release workflow (see Fixed, above).
 
 ### Dependencies
 
@@ -122,6 +220,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (Go 1.20-compatible pseudo-version, pinned to keep CI on Go 1.23)
 - `github.com/fsnotify/fsnotify` v1.10.1 added for cross-process
   state file watching.
+- `golangci-lint` v1.64.8 (Go lint, dev-only).
+- `eslint` 9.x + `typescript-eslint` + `eslint-plugin-svelte`, and
+  `prettier` (frontend lint/format, dev-only).
 
 ## [0.2.0] - Unreleased
 
