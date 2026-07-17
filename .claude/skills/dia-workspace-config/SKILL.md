@@ -104,7 +104,7 @@ back to treating the entry like `local` (needs `cmd`).
 | `custom` | `cmd` | Alias for `local`, generic icon. |
 | `ai` | `cmd` | Alias for `local`. **Not documented in the README's app-type table** — exists in the registry (`registry.go`) as an icon-only label like the others. |
 | `open` | `url` | Opens `url` in the OS's default handler for that scheme. Any scheme is accepted (`mailto:`, `file://`, `ssh://`, custom schemes) — validation only checks that `url` is non-empty, not that it's http(s). |
-| `browser` | `url` | Opens a URL in the browser. `url` **must** start with `http://` or `https://` (checked at validation time, unlike `open`). **Always set `url`, never rely on `cmd` alone here** — see the validator/handler mismatch below. |
+| `browser` | `url` | Opens a URL in the browser. `url` **must** start with `http://` or `https://` (checked at validation time, unlike `open`) and is required unconditionally — `cmd` is not read by this type at all, so don't set it here; use `local`/`custom` if you need to shell out to a specific browser binary. |
 | `gh` | `cmd` | Wraps the `gh` CLI: `cmd` is the subcommand (e.g. `pr`), `args` are appended. Runs `gh <cmd> <args...>`. |
 | `gh:pr` | — | Sugar for `gh pr <args...>`. No required fields. |
 | `gh:issue` | — | Sugar for `gh issue <args...>`. |
@@ -122,18 +122,15 @@ eye** — dry-run will not catch it.
 If `type`, `cmd`, and `url` are *all* empty on an entry, that's a real
 validation error (`"must have type, cmd, or url"`) and dry-run does catch it.
 
-**`type: browser` with only `cmd` set (no `url`) is a validator/handler
-mismatch — it will never work.** The schema validator (`validateApp`'s
-`case "browser"`) accepts either `url` or `cmd`, so this passes
-`Validate()` and `dia start --dry-run` cleanly. But the actual runtime
-resolver, `resolveBrowser` in `internal/registry/handlers.go`, unconditionally
-requires `app.Url` and never reads `app.Cmd` at all — so a `cmd`-only
-`browser` entry always fails at real `dia start` with `type "browser": url
-is required`, no matter what `cmd` was set to. This is a genuine bug in
-dia (validator is more permissive than the handler it's supposed to be
-gatekeeping), not a config mistake — until it's fixed, always give
-`type: browser` entries a `url`, and use `type: local`/`custom` with
-`cmd` if you specifically need to shell out to a particular browser binary.
+`type: browser` requires `url` unconditionally — `validateApp`'s
+`case "browser"` and the runtime resolver (`resolveBrowser` in
+`internal/registry/handlers.go`) agree on this now. (They didn't always:
+the validator used to also accept a `cmd`-only entry, which passed
+`Validate()`/`--dry-run` but then always failed at a real `dia start`
+with `type "browser": url is required`, since `resolveBrowser` never
+read `cmd`. Fixed by tightening the validator to match the handler it's
+supposed to be gatekeeping — mentioned here in case you're looking at
+an older dia checkout that still has the mismatch.)
 
 ### Common fields on every app entry
 

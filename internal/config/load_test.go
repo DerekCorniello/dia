@@ -152,6 +152,22 @@ func TestValidateBrowserBadScheme(t *testing.T) {
 	}
 }
 
+// TestValidateBrowserRequiresURL pins the fix for a validator/handler
+// mismatch: browser used to validate successfully with only cmd set,
+// but the runtime handler (resolveBrowser) only ever reads url and
+// never cmd, so that config always failed at a real `dia start`
+// despite passing validation and --dry-run.
+func TestValidateBrowserRequiresURL(t *testing.T) {
+	w := &Workspace{
+		Version: 1,
+		Name:    "x",
+		Apps:    []App{{Type: "browser", Cmd: "firefox"}},
+	}
+	if err := Validate(w); err == nil {
+		t.Fatal("expected error for browser with cmd but no url")
+	}
+}
+
 func TestValidName(t *testing.T) {
 	cases := []struct {
 		in   string

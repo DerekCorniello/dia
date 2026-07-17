@@ -173,6 +173,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `tickInstance` step that reads without the lock and only persists
   through the new `Store.MutateIfChanged` when something actually
   changed.
+- **A `type: browser` app with only `cmd` set (no `url`) passed
+  validation and `start --dry-run` but always failed at a real
+  `dia start`.** The schema validator accepted either `url` or
+  `cmd` for `browser`, but the runtime resolver only ever reads
+  `url` and never `cmd`. Tightened the validator to require `url`
+  unconditionally, matching the resolver it's supposed to be
+  gatekeeping. Found while writing a skill documenting the
+  workspace config schema against the validator and registry code
+  directly.
 
 ### Changed
 

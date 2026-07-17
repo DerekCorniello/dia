@@ -130,13 +130,17 @@ func validateApp(a *App, prefix string, errs *ValidationErrors) {
 			})
 		}
 	case "browser":
-		if a.Url == "" && a.Cmd == "" {
+		// The runtime handler (resolveBrowser) only ever opens a.Url;
+		// it never reads a.Cmd. Require url unconditionally so an
+		// invalid cmd-only entry is rejected here instead of passing
+		// validation and --dry-run, then always failing at a real
+		// `dia start` with "url is required".
+		if a.Url == "" {
 			*errs = append(*errs, ValidationError{
-				Path: prefix,
-				Msg:  "browser requires url or cmd",
+				Path: prefix + ".url",
+				Msg:  "required for type \"browser\"",
 			})
-		}
-		if a.Url != "" && !strings.HasPrefix(a.Url, "http://") && !strings.HasPrefix(a.Url, "https://") {
+		} else if !strings.HasPrefix(a.Url, "http://") && !strings.HasPrefix(a.Url, "https://") {
 			*errs = append(*errs, ValidationError{
 				Path: prefix + ".url",
 				Msg:  "must start with http:// or https://",
