@@ -62,6 +62,11 @@ type Registry struct {
 // (local, open, browser, gh, and gh:* sugar).
 func New() *Registry {
 	r := &Registry{handlers: map[string]Handler{}}
+	// The empty type is the documented default ("cmd runs the
+	// program") and the config loader accepts it, so it needs a
+	// handler here or such an app fails at launch with
+	// `unknown app type ""`.
+	r.Register(HandlerFunc{Name: "", Fn: resolveLocal})
 	r.Register(HandlerFunc{Name: "local", Fn: resolveLocal})
 	r.Register(HandlerFunc{Name: "open", Fn: resolveOpen})
 	r.Register(HandlerFunc{Name: "browser", Fn: resolveBrowser})
@@ -88,6 +93,15 @@ func (r *Registry) Register(h Handler) {
 	r.mu.Unlock()
 }
 
+// Unregister removes the handler for a type. Used when a plugin loses
+// the grant that let it claim one; without this a revoked capability
+// would leave the type resolvable until the next restart.
+func (r *Registry) Unregister(name string) {
+	r.mu.Lock()
+	delete(r.handlers, name)
+	r.mu.Unlock()
+}
+
 // Resolve returns the Action for the given app. A nil app or
 // unknown type is an error.
 func (r *Registry) Resolve(app config.App) (Action, error) {
@@ -98,6 +112,14 @@ func (r *Registry) Resolve(app config.App) (Action, error) {
 		return Action{}, fmt.Errorf("unknown app type %q", app.Type)
 	}
 	return h.Resolve(app)
+}
+
+// handler returns the registered handler for a type, if any.
+func (r *Registry) handler(name string) (Handler, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	h, ok := r.handlers[name]
+	return h, ok
 }
 
 // Types returns the sorted list of registered type names, for

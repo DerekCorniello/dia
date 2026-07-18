@@ -20,7 +20,7 @@ func (p *unixProcess) PID() int { return p.cmd.Process.Pid }
 func (p *unixProcess) Done() <-chan struct{} { return p.done }
 
 // unixPlatform implements Platform for Linux and macOS.
-type unixPlatform struct{}
+type unixPlatform struct{ cmdRunner }
 
 func newUnixPlatform() Platform { return &unixPlatform{} }
 

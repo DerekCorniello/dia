@@ -12,6 +12,11 @@ const (
 	CapThemesWrite     = "themes:write"
 	CapCmdExec         = "cmd:exec"
 	CapFetch           = "fetch"
+	// CapAppsResolve lets a plugin claim app types in its manifest and
+	// decide what each one launches. The resolver itself is pure, but
+	// the command it returns is run by the host, which makes this
+	// cmd:exec with extra steps -- hence mutating and opt-in.
+	CapAppsResolve = "apps:resolve"
 )
 
 var defaultReadCaps = []string{
@@ -33,6 +38,7 @@ var knownCapabilities = map[string]struct{}{
 	CapThemesWrite:     {},
 	CapCmdExec:         {},
 	CapFetch:           {},
+	CapAppsResolve:     {},
 }
 var mutatingCapabilities = map[string]struct{}{
 	CapWorkspacesStart: {},
@@ -40,6 +46,7 @@ var mutatingCapabilities = map[string]struct{}{
 	CapWorkspacesNew:   {},
 	CapThemesWrite:     {},
 	CapCmdExec:         {},
+	CapAppsResolve:     {},
 }
 
 func IsKnownCapability(c string) bool {

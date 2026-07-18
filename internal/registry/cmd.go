@@ -5,13 +5,13 @@ import (
 	"strings"
 )
 
-// splitProgram parses a user-written `Cmd` field into the program
+// SplitProgram parses a user-written `Cmd` field into the program
 // name and a list of leading arguments. It honours single and double
 // quotes so that paths with spaces work, e.g. `code "/Users/me/My Code"`.
 // The caller can still append extra Args afterwards; this just
 // unpacks the part of the command that the user put into `Cmd` for
 // convenience.
-func splitProgram(cmd string) (string, []string, error) {
+func SplitProgram(cmd string) (string, []string, error) {
 	cmd = strings.TrimSpace(cmd)
 	if cmd == "" {
 		return "", nil, fmt.Errorf("cmd is empty")

@@ -35,7 +35,7 @@ func resolveLocal(app config.App) (Action, error) {
 	if strings.TrimSpace(app.Cmd) == "" {
 		return Action{}, fmt.Errorf("type %q: cmd is required", appOrType(app, "local"))
 	}
-	program, prefixArgs, err := splitProgram(app.Cmd)
+	program, prefixArgs, err := SplitProgram(app.Cmd)
 	if err != nil {
 		return Action{}, fmt.Errorf("type %q: %w", appOrType(app, "local"), err)
 	}

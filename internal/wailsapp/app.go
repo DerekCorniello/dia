@@ -78,7 +78,23 @@ func (a *App) Startup(ctx context.Context) {
 			a.logger.Warn("discover plugins", "error", err)
 		}
 		a.applyPersistedPluginState(pmgr)
+		a.registerPluginAppTypes(pmgr)
 		a.pmgr = pmgr
+	}
+}
+
+// registerPluginAppTypes adds every app type claimed by a plugin to
+// the registry, so a workspace can use one the same way it uses a
+// built-in type. Conflicts are reported rather than resolved silently:
+// a workspace launching something other than what its author meant is
+// worth a log line.
+func (a *App) registerPluginAppTypes(pmgr *plugins.Manager) {
+	for _, err := range registry.SyncPluginTypes(a.reg, pmgr) {
+		a.logger.Warn("register plugin app type", "error", err)
+	}
+	for _, c := range pmgr.AppTypeConflicts() {
+		a.logger.Warn("app type claimed by more than one plugin",
+			"type", c.Type, "using", c.Winner, "ignored", c.Loser)
 	}
 }
 

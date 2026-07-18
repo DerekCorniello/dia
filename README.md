@@ -8,10 +8,10 @@ process snapshot, just deterministic rebuilds from a config.
 
 ## Status
 
-v0.3.0 (unreleased). All planned phases are complete:
-core engine (v0.1.0), theming + UI polish (v0.2.0), JS plugin system
-(v0.3.0) with embedded and window-style plugins, AI tool detection,
-frameless window mode, and a custom title bar.
+v0.3.0 is released; v0.4.0 is in development. Core engine (v0.1.0),
+theming + UI polish (v0.2.0), JS plugin system (v0.3.0) with embedded
+and window-style plugins. In development for v0.4.0: plugin-provided
+app types, plugin install from git, and workspace lifecycle hooks.
 
 ## Features
 
@@ -26,6 +26,10 @@ frameless window mode, and a custom title bar.
 - In-process JS plugin system: embedded panels (`list`/`grid`/`table`/
   `kv`/`text`/`canvas`) and full-window plugins (`window`) with plain
   HTML/CSS/JS
+- Plugins can provide their own workspace app types, so `type:` is not
+  limited to the built-ins
+- Plugins install from a git repository, and update in place
+- Lifecycle hooks (`pre_start`/`post_start`/`pre_stop`/`post_stop`)
 - Cross-platform: Linux, macOS, Windows
 - Frameless window with custom title bar (no OS decoration)
 - Scriptable CLI alongside the GUI
@@ -104,8 +108,60 @@ More examples live in `examples/`.
 All launch types accept `cwd` (path, `~` and `$VAR` expanded) and `env`
 (map of string to string).
 
+Plugins can add more app types; see
+[Plugin-provided app types](#plugin-provided-app-types).
+
 Project-local configs are also supported. Drop a `.dia.yaml` at the root of
 your repo and dia will pick it up automatically.
+
+## Hooks
+
+Commands to run around a workspace's lifecycle. The usual case is
+bringing up infrastructure the apps depend on:
+
+```yaml
+name: backend
+hooks:
+  pre_start:
+    - docker compose up -d
+  post_stop:
+    - docker compose down
+apps:
+  - type: editor
+    cmd: code .
+  - type: browser
+    url: http://localhost:8080
+```
+
+| Phase        | When it runs               | On failure                          |
+|--------------|----------------------------|-------------------------------------|
+| `pre_start`  | before any app launches    | fatal: nothing starts               |
+| `post_start` | after all apps launch      | logged; the workspace stays up      |
+| `pre_stop`   | before apps are terminated | logged; the stop continues          |
+| `post_stop`  | after apps are terminated  | logged                              |
+
+Rules:
+
+- Each phase runs its commands **in order, one at a time**, blocking
+  until each exits. The first failure ends that phase.
+- Commands are parsed the same way as `cmd` (shell-style, quotes
+  honored), but they are **not** run through a shell. Use
+  `sh -c "..."` if you need pipes or globbing.
+- Hooks run in the directory holding the workspace config. For a
+  project-local `.dia.yaml` that is your repo root; for a global
+  workspace it is the workspaces dir, so use absolute paths there.
+- Each command is capped at 2 minutes. Long-running processes belong
+  in `apps`, not hooks.
+- `dia stop --force` skips `pre_stop` and `post_stop` entirely.
+
+Only `pre_start` can block a workspace. The other phases wrap work
+that has already happened, so a failure is reported and execution
+continues -- a failing cleanup command should never leave you unable
+to stop a workspace from dia.
+
+There is deliberately no `depends_on` or per-app health checking. If
+you need ordering between apps, `pre_start` is the supported way to
+express it.
 
 ## CLI
 
@@ -125,6 +181,8 @@ dia open <name> --json  # machine-readable output
 dia reconcile           # drop PIDs from state that are no longer running
 dia doctor              # smoke checks
 dia plugin list         # list installed plugins
+dia plugin install <path|url>  # install from a directory or git repo
+dia plugin update <id>  # re-clone a git-installed plugin
 dia completion bash     # generate shell completion (bash/zsh/fish/powershell)
 dia --version           # print version and exit
 ```
@@ -204,6 +262,7 @@ good starting points.
 | `author`                    | no       | 0-60 chars                                         |
 | `entry`                     | no       | relative path; defaults to `index.js`              |
 | `capabilities`              | no       | subset of the capability list (see below)          |
+| `app_types`                 | no       | workspace app types this plugin provides; requires the `apps:resolve` capability |
 | `ui.type`                   | yes      | `list` \| `grid` \| `table` \| `kv` \| `text` \| `canvas` \| `window` |
 | `ui.title`                  | yes      | panel title (and window title for `type=window`)   |
 | `ui.entry`                  | window   | path to `panel.js` (default `panel/panel.js`)      |
@@ -289,7 +348,14 @@ module.exports = {
 ### Capabilities
 
 Read-only capabilities are granted by default at install time.
-Mutating ones are opt-in and recorded in the persisted state.
+Mutating ones are never granted by requesting them: the manifest only
+declares what a plugin *wants*, and the user has to approve each one
+explicitly with `dia plugin enable --caps`.
+
+Grants are shared between the GUI and the CLI: Settings > Plugins
+lists each plugin's requested capabilities and lets you toggle them,
+and either side sees what the other granted. Changes apply
+immediately -- no restart needed.
 
 | Capability          | Mutating | What it gates                          |
 |---------------------|----------|----------------------------------------|
@@ -304,6 +370,7 @@ Mutating ones are opt-in and recorded in the persisted state.
 | `themes:write`      | yes      | `dia.setTheme()`, `dia.setCustomTheme()`, `dia.deleteCustomTheme()` |
 | `cmd:exec`          | yes      | `dia.exec(cmd, args)`                  |
 | `fetch`             | yes      | `dia.fetch(url, opts)`                 |
+| `apps:resolve`      | yes      | claiming app types via `app_types`     |
 
 Calling a method you don't have throws `capability "X" not granted`.
 The host catches the error and surfaces it as a toast; the rest of
@@ -314,6 +381,92 @@ Grant capabilities explicitly:
 ```sh
 dia plugin enable my-plugin --caps workspaces:read,workspaces:start
 ```
+
+### Plugin-provided app types
+
+A plugin can add its own workspace app types, so `type:` is not
+limited to what dia ships. Declare them in the manifest and export
+`resolveApp`:
+
+```json
+{
+  "id": "compose-app-type",
+  "name": "Docker Compose App Type",
+  "version": "0.1.0",
+  "capabilities": ["apps:resolve"],
+  "app_types": ["compose", "compose:down"],
+  "ui": { "type": "kv", "title": "Compose App Type" }
+}
+```
+
+```js
+module.exports = {
+  resolveApp: function (app) {
+    return {
+      cmd: "docker compose",
+      args: ["up", "-d"].concat(app.args || []),
+      cwd: app.cwd,
+      env: app.env,
+    };
+  },
+};
+```
+
+Then in a workspace:
+
+```yaml
+apps:
+  - type: compose
+    cwd: ~/projects/api
+```
+
+`resolveApp(app)` receives the workspace entry exactly as written
+(`type`, `label`, `cmd`, `args`, `cwd`, `env`, `url`) and returns
+**either** a command or a URL, never both:
+
+| Key    | With   | Meaning                                     |
+|--------|--------|---------------------------------------------|
+| `cmd`  | launch | program to run; parsed like a workspace `cmd` (quotes honored) |
+| `args` | launch | appended to whatever `cmd` already contained |
+| `cwd`  | launch | working directory; falls back to the app's `cwd` |
+| `env`  | launch | map of string to string, added to the environment |
+| `url`  | open   | opened in the OS default handler; cannot be combined with the above |
+
+Any other key is an error, so a typo like `command` is reported
+rather than silently ignored.
+
+**The resolver is pure.** It runs in a restricted runtime where the
+only available calls are `dia.getConfig()` and `dia.pluginDir()` --
+no workspaces, no `exec`, no `fetch`. This keeps `dia start --dry-run`
+side-effect free, lets the CLI resolve app types without loading any
+plugin UI, and stops a resolver from making a network call in the
+middle of a start. `require()` works as usual, so shared logic can
+live in `lib/`.
+
+Rules worth knowing:
+
+- `apps:resolve` is **mutating** and never granted by default. The
+  command a resolver returns is executed by dia, which makes it
+  `cmd:exec` by another route.
+- A plugin cannot claim a built-in type (`editor`, `browser`, `gh:pr`,
+  and so on). The claim is refused and the built-in keeps working.
+- If two plugins claim the same type, the first wins deterministically
+  (project-local before global, then by plugin id) and `dia doctor`
+  reports the conflict.
+- Both the GUI and the CLI honor plugin types, so `dia start` works
+  the same either way.
+
+`dia start --dry-run` resolves every app and shows what would run,
+including which plugin resolved each non-builtin type:
+
+```
+api (dry run)
+  hook pre_start    docker compose up -d
+  launch compose    docker compose up -d  (via plugin compose-app-type)
+  open   browser    http://localhost:8080
+```
+
+See `examples/compose-app-type/` for the full plugin.
 
 ### `require()` and `module.exports`
 
@@ -341,11 +494,44 @@ the local dir for `new` and `list`.
 dia plugin new <id> [--local]
 dia plugin list
 dia plugin info <id>
-dia plugin install <path> [--local]
+dia plugin install <path|url> [--local] [--ref <branch|tag>] [--yes]
+dia plugin update <id>
 dia plugin uninstall <id>
 dia plugin enable <id> [--caps a,b,c]
 dia plugin disable <id>
 ```
+
+#### Installing from a git repository
+
+`dia plugin install` takes either a local directory or a git remote:
+
+```sh
+dia plugin install ./my-plugin                       # local directory
+dia plugin install github.com/user/dia-plugin        # normalized to https
+dia plugin install https://github.com/user/plugin    # explicit URL
+dia plugin install git@github.com:user/plugin.git    # scp-style
+dia plugin install github.com/user/plugin --ref v1.2.0
+```
+
+Remotes are shallow-cloned with the system `git`, so existing
+credential helpers and SSH config apply, and `.git` is not copied
+into the plugins dir. A bare `owner/repo` is rejected on purpose: it
+cannot be told apart from a relative path.
+
+Installing a plugin puts code on your machine that dia will run, so
+the requested capabilities are printed before anything is copied, and
+confirmation is required when any of them are mutating. Use `--yes`
+to skip the prompt in scripts; `--json` requires it.
+
+The clone URL and ref are recorded next to the plugin, so:
+
+```sh
+dia plugin update my-plugin
+```
+
+re-clones it in place, preserving your granted capabilities and
+enabled state. A plugin installed from a local path has no recorded
+source and cannot be updated this way.
 
 The GUI picks up enabled plugins on the next launch. Open Settings
 > Plugins to enable/disable, install from a folder, see paths, and

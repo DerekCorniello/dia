@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,8 +32,11 @@ func newPluginCmd() *cobra.Command {
 		newPluginNewCmd(),
 		newPluginListCmd(),
 		newPluginInstallCmd(),
+		newPluginUpdateCmd(),
 		newPluginUninstallCmd(),
 		newPluginInfoCmd(),
+		newPluginEnableCmd(),
+		newPluginDisableCmd(),
 	)
 	return cmd
 }
@@ -137,43 +142,299 @@ func newPluginListCmd() *cobra.Command {
 
 func newPluginInstallCmd() *cobra.Command {
 	var local bool
+	var ref string
+	var assumeYes bool
 	cmd := &cobra.Command{
-		Use:   "install <path>",
-		Short: "Install a plugin from a local path",
-		Long:  "Copy <path> (which must contain plugin.json) into the global plugins dir. With --local, copy into ./.dia/plugins instead.",
-		Args:  cobra.ExactArgs(1),
+		Use:   "install <path|url>",
+		Short: "Install a plugin from a local path or a git repository",
+		Long: "Install a plugin (a directory containing plugin.json) into the global plugins dir, " +
+			"or into ./.dia/plugins with --local.\n\n" +
+			"<path|url> is either an existing local directory or a git remote: " +
+			"https://host/owner/repo, git@host:owner/repo, or host.tld/owner/repo. " +
+			"Git sources are shallow-cloned with the system git, and --ref selects a branch or tag.\n\n" +
+			"Installing a plugin puts code on your machine that dia will run. The plugin's " +
+			"requested capabilities are shown before anything is copied, and confirmation is " +
+			"required when any of them are mutating.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := newSetup(flagsFromCmd(cmd).StateDir, cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
-			host := &nullHost{}
-			mgr, err := plugins.NewManager(plugins.GlobalPluginsDir(s.StateDir), host)
+			mgr, err := plugins.NewManager(plugins.GlobalPluginsDir(s.StateDir), &nullHost{})
 			if err != nil {
 				return err
 			}
-			var dst string
+			src, err := plugins.ParseInstallSource(args[0], ref)
+			if err != nil {
+				return err
+			}
+			cwd := ""
 			if local {
-				cwd, _ := os.Getwd()
-				if cwd == "" {
+				if cwd, _ = os.Getwd(); cwd == "" {
 					return fmt.Errorf("cannot determine current directory")
 				}
-				dst, err = mgr.InstallLocal(args[0], cwd)
-			} else {
-				dst, err = mgr.Install(args[0])
 			}
+
+			// Materialize once: the manifest shown to the user must be
+			// the one that gets installed, and cloning a second time
+			// could fetch different code.
+			manifest, dir, cleanup, err := mgr.InspectSource(src)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+
+			out := newOutput(cmd)
+			if err := confirmInstall(cmd, out, manifest, assumeYes); err != nil {
+				return err
+			}
+
+			var prov *plugins.Provenance
+			if src.Kind == plugins.InstallGit {
+				prov = &plugins.Provenance{URL: src.URL, Ref: src.Ref}
+			}
+			dst, err := mgr.InstallMaterialized(dir, local, cwd, prov)
+			if err != nil {
+				return err
+			}
+			if out.IsJSON() {
+				return out.JSON(map[string]string{"path": dst, "id": manifest.ID})
+			}
+			return out.Printf("installed %s to %s\n", manifest.ID, dst)
+		},
+	}
+	cmd.Flags().BoolVar(&local, "local", false, "install into ./.dia/plugins instead of the global plugins dir")
+	cmd.Flags().StringVar(&ref, "ref", "", "branch or tag to clone (git sources only)")
+	cmd.Flags().BoolVarP(&assumeYes, "yes", "y", false, "skip the capability confirmation prompt")
+	return cmd
+}
+
+func newPluginUpdateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "update <id>",
+		Short: "Re-clone a git-installed plugin",
+		Long: "Fetch the plugin's recorded git source again and replace the installed copy. " +
+			"Granted capabilities and enabled state are preserved. Plugins installed from a " +
+			"local path have no recorded source and cannot be updated this way.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := newSetup(flagsFromCmd(cmd).StateDir, cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			mgr, err := plugins.NewManager(plugins.GlobalPluginsDir(s.StateDir), &nullHost{})
+			if err != nil {
+				return err
+			}
+			if cwd, _ := os.Getwd(); cwd != "" {
+				mgr.SetLocalDir(cwd)
+			}
+			if err := mgr.Discover(); err != nil {
+				return err
+			}
+			dst, err := mgr.Update(args[0])
 			if err != nil {
 				return err
 			}
 			out := newOutput(cmd)
 			if out.IsJSON() {
-				return out.JSON(map[string]string{"path": dst})
+				return out.JSON(map[string]string{"path": dst, "id": args[0]})
 			}
-			return out.Printf("installed to %s\n", dst)
+			return out.Printf("updated %s at %s\n", args[0], dst)
 		},
 	}
-	cmd.Flags().BoolVar(&local, "local", false, "install into ./.dia/plugins instead of the global plugins dir")
 	return cmd
+}
+
+// newPluginEnableCmd persists a plugin's enabled flag and granted
+// capabilities. This is the only way to grant a mutating capability
+// from the CLI: discovery and install grant read-only capabilities
+// only, no matter what the manifest requests.
+func newPluginEnableCmd() *cobra.Command {
+	var caps string
+	cmd := &cobra.Command{
+		Use:   "enable <id>",
+		Short: "Enable a plugin and set its granted capabilities",
+		Long: "Mark a plugin enabled in the persisted state. --caps takes a comma-separated " +
+			"capability list; anything the manifest does not request is dropped. Without " +
+			"--caps the plugin keeps the read-only defaults.\n\n" +
+			"Granting a mutating capability lets the plugin change your system: cmd:exec runs " +
+			"commands, and apps:resolve lets it decide what a workspace app type launches.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			s, err := newSetup(flagsFromCmd(cmd).StateDir, cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			mgr, err := discoveredManager(s)
+			if err != nil {
+				return err
+			}
+			l, ok := mgr.Get(id)
+			if !ok || l.Manifest == nil {
+				return &NotFoundError{What: "plugin " + id}
+			}
+
+			granted := plugins.DefaultReadCapabilities()
+			if caps != "" {
+				granted = splitCaps(caps)
+			}
+			granted = plugins.GrantCapabilities(l.Manifest.Capabilities, granted)
+
+			if err := s.Store.Mutate(func(d *state.Data) {
+				prev := d.Plugins[id]
+				d.Plugins[id] = state.PluginState{
+					Enabled:             true,
+					GrantedCapabilities: granted,
+					Config:              prev.Config,
+				}
+			}); err != nil {
+				return err
+			}
+
+			out := newOutput(cmd)
+			if out.IsJSON() {
+				return out.JSON(map[string]any{"id": id, "enabled": true, "granted": granted})
+			}
+			if len(granted) == 0 {
+				return out.Printf("enabled %s with no capabilities\n", id)
+			}
+			return out.Printf("enabled %s with %s\n", id, strings.Join(granted, ", "))
+		},
+	}
+	cmd.Flags().StringVar(&caps, "caps", "", "comma-separated capabilities to grant")
+	return cmd
+}
+
+func newPluginDisableCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "disable <id>",
+		Short: "Disable a plugin",
+		Long:  "Mark a plugin disabled in the persisted state. Granted capabilities are kept so re-enabling does not re-prompt.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			s, err := newSetup(flagsFromCmd(cmd).StateDir, cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
+			mgr, err := discoveredManager(s)
+			if err != nil {
+				return err
+			}
+			if _, ok := mgr.Get(id); !ok {
+				return &NotFoundError{What: "plugin " + id}
+			}
+			if err := s.Store.Mutate(func(d *state.Data) {
+				prev := d.Plugins[id]
+				prev.Enabled = false
+				d.Plugins[id] = prev
+			}); err != nil {
+				return err
+			}
+			out := newOutput(cmd)
+			if out.IsJSON() {
+				return out.JSON(map[string]any{"id": id, "enabled": false})
+			}
+			return out.Printf("disabled %s\n", id)
+		},
+	}
+	return cmd
+}
+
+// discoveredManager returns the setup's plugin manager, falling back to
+// a freshly discovered one when the setup could not build it.
+func discoveredManager(s *setup) (*plugins.Manager, error) {
+	if s.Plugins != nil {
+		return s.Plugins, nil
+	}
+	mgr, err := plugins.NewManager(plugins.GlobalPluginsDir(s.StateDir), &nullHost{})
+	if err != nil {
+		return nil, err
+	}
+	if cwd, _ := os.Getwd(); cwd != "" {
+		mgr.SetLocalDir(cwd)
+	}
+	if err := mgr.Discover(); err != nil {
+		return nil, err
+	}
+	return mgr, nil
+}
+
+func splitCaps(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// confirmInstall shows what the plugin will be allowed to do and, when
+// any requested capability is mutating, requires an explicit yes.
+// Installing runs someone else's code; the capability list is the only
+// signal the user gets about what that code can reach.
+func confirmInstall(cmd *cobra.Command, out *output, m *plugins.Manifest, assumeYes bool) error {
+	mutating := make([]string, 0, len(m.Capabilities))
+	for _, c := range m.Capabilities {
+		if plugins.IsMutatingCapability(c) {
+			mutating = append(mutating, c)
+		}
+	}
+	if out.IsJSON() || assumeYes {
+		if len(mutating) > 0 && !assumeYes {
+			return fmt.Errorf("plugin %q requests mutating capabilities (%s); "+
+				"re-run with --yes to install it non-interactively",
+				m.ID, strings.Join(mutating, ", "))
+		}
+		return nil
+	}
+
+	w := cmd.OutOrStdout()
+	fmt.Fprintf(w, "%s %s", m.Name, m.Version)
+	if m.Author != "" {
+		fmt.Fprintf(w, " by %s", m.Author)
+	}
+	fmt.Fprintln(w)
+	if m.Description != "" {
+		fmt.Fprintf(w, "  %s\n", m.Description)
+	}
+	if len(m.Capabilities) == 0 {
+		fmt.Fprintln(w, "  requests no capabilities")
+	} else {
+		fmt.Fprintln(w, "  requests:")
+		for _, c := range m.Capabilities {
+			mark := ""
+			if plugins.IsMutatingCapability(c) {
+				mark = "  (mutating)"
+			}
+			fmt.Fprintf(w, "    %s%s\n", c, mark)
+		}
+	}
+	if len(mutating) == 0 {
+		return nil
+	}
+	fmt.Fprintf(w, "\nThis plugin asks for capabilities that change your system. Install it? [y/N] ")
+	return readYesNo(cmd)
+}
+
+// readYesNo reads a single confirmation line from the command's input.
+func readYesNo(cmd *cobra.Command) error {
+	reader := bufio.NewReader(cmd.InOrStdin())
+	line, err := reader.ReadString('\n')
+	if err != nil && line == "" {
+		return errors.New("install cancelled")
+	}
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "y", "yes":
+		return nil
+	default:
+		return errors.New("install cancelled")
+	}
 }
 
 func newPluginUninstallCmd() *cobra.Command {

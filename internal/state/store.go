@@ -110,7 +110,15 @@ func Open() (*Store, error) {
 // OpenAt opens a Store backed by the file at path. A missing file is
 // treated as an empty state; a corrupt file returns an error.
 func OpenAt(path string) (*Store, error) {
-	s := &Store{path: path, data: Data{Version: 1, Instances: map[string]Instance{}, CustomThemes: map[string]CustomTheme{}}}
+	// Every map has to be non-nil here, not just on the load path
+	// below: a caller that writes into one on a brand new state file
+	// (no state.json yet) would otherwise panic assigning to a nil map.
+	s := &Store{path: path, data: Data{
+		Version:      1,
+		Instances:    map[string]Instance{},
+		CustomThemes: map[string]CustomTheme{},
+		Plugins:      map[string]PluginState{},
+	}}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

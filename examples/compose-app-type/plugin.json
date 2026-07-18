@@ -1,0 +1,27 @@
+{
+  "id": "compose-app-type",
+  "name": "Docker Compose App Type",
+  "version": "0.1.0",
+  "description": "Adds compose and compose:down app types to workspaces.",
+  "long_description": "Demonstrates app_types: a plugin can claim its own workspace app types and decide what each one launches. Add `- type: compose` to a workspace and this plugin turns it into a `docker compose up -d` invocation, honoring the app's `file` convention via args and its cwd. Requires the apps:resolve capability, which is mutating because the command this plugin returns is executed by dia.",
+  "author": "dia",
+  "entry": "index.js",
+  "capabilities": [
+    "apps:resolve"
+  ],
+  "app_types": [
+    "compose",
+    "compose:down"
+  ],
+  "config_schema": {
+    "binary": {
+      "type": "string",
+      "label": "Compose command",
+      "default": "docker compose"
+    }
+  },
+  "ui": {
+    "type": "kv",
+    "title": "Compose App Type"
+  }
+}

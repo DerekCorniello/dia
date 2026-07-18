@@ -17,6 +17,7 @@ import (
 
 	"github.com/DerekCorniello/dia/internal/config"
 	"github.com/DerekCorniello/dia/internal/platform"
+	"github.com/DerekCorniello/dia/internal/plugins"
 	"github.com/DerekCorniello/dia/internal/registry"
 	"github.com/DerekCorniello/dia/internal/runtime"
 	"github.com/DerekCorniello/dia/internal/state"
@@ -36,10 +37,18 @@ const (
 // Run executes the CLI with the given args (typically os.Args[1:]).
 // Returns the process exit code.
 func Run(args []string) int {
+	return runWithIO(args, os.Stdin, os.Stdout, os.Stderr)
+}
+
+// runWithIO is Run with explicit streams. Commands that prompt (plugin
+// install, when a plugin asks for mutating capabilities) read from in,
+// so tests need to supply it rather than inherit the real stdin.
+func runWithIO(args []string, in io.Reader, out, errOut io.Writer) int {
 	cmd := newRootCmd()
 	cmd.SetArgs(args)
-	cmd.SetOut(os.Stdout)
-	cmd.SetErr(os.Stderr)
+	cmd.SetIn(in)
+	cmd.SetOut(out)
+	cmd.SetErr(errOut)
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr(), "Error:", err)
 		return exitCodeFor(err)
@@ -132,6 +141,7 @@ type setup struct {
 	Store    *state.Store
 	Runtime  *runtime.Runtime
 	Reg      *registry.Registry
+	Plugins  *plugins.Manager
 	StateDir string
 	Logger   *slog.Logger
 }
@@ -167,10 +177,49 @@ func newSetup(override string, errOut io.Writer) (*setup, error) {
 		Registry: reg,
 		Logger:   log,
 	})
+	pmgr := newResolverManager(dir, st, reg, log)
 	return &setup{
-		PF: pf, Store: st, Runtime: rt, Reg: reg,
+		PF: pf, Store: st, Runtime: rt, Reg: reg, Plugins: pmgr,
 		StateDir: dir, Logger: log,
 	}, nil
+}
+
+// newResolverManager discovers plugins and registers the app types
+// they claim on the registry, so `dia start` can launch a workspace
+// that uses one. Only the resolver side of the plugin system is
+// involved: no panel runtime is loaded, and the resolver's goja
+// runtime is built lazily on the first app of that type.
+//
+// Every failure here is non-fatal and warned about. A broken plugin
+// must not stop the CLI from managing workspaces that do not use it.
+func newResolverManager(stateDir string, st *state.Store, reg *registry.Registry, log *slog.Logger) *plugins.Manager {
+	pmgr, err := plugins.NewManager(plugins.GlobalPluginsDir(stateDir), &nullHost{})
+	if err != nil {
+		log.Warn("init plugin manager", "error", err)
+		return nil
+	}
+	if cwd, _ := os.Getwd(); cwd != "" {
+		pmgr.SetLocalDir(cwd)
+	}
+	if err := pmgr.Discover(); err != nil {
+		log.Warn("discover plugins", "error", err)
+		return pmgr
+	}
+
+	grants := map[string][]string{}
+	for id, ps := range st.Snapshot().Plugins {
+		grants[id] = ps.GrantedCapabilities
+	}
+	pmgr.ApplyPersistedGrants(grants)
+
+	for _, err := range registry.SyncPluginTypes(reg, pmgr) {
+		log.Warn("register plugin app type", "error", err)
+	}
+	for _, c := range pmgr.AppTypeConflicts() {
+		log.Warn("app type claimed by more than one plugin",
+			"type", c.Type, "using", c.Winner, "ignored", c.Loser)
+	}
+	return pmgr
 }
 
 // resolveWorkspace finds a workspace by name across the global and

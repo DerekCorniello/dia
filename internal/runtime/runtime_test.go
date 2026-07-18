@@ -40,6 +40,8 @@ type mockPlatform struct {
 	runningSeed map[int]bool
 	openURLs    []string
 	openURLErr  error
+	ran         []platform.LaunchOpts
+	runFn       func(opts platform.LaunchOpts) (string, error)
 }
 
 type killCall struct {
@@ -96,6 +98,30 @@ func (m *mockPlatform) Kill(pid int, force bool) error {
 func (m *mockPlatform) RevealInFileManager(path string) error { return nil }
 
 func (m *mockPlatform) OpenFile(path string) error { return nil }
+
+// Run records each hook invocation in order. runFn, when set, decides
+// the result so a test can fail a specific command.
+func (m *mockPlatform) Run(opts platform.LaunchOpts, timeout time.Duration) (string, error) {
+	m.mu.Lock()
+	m.ran = append(m.ran, opts)
+	fn := m.runFn
+	m.mu.Unlock()
+	if fn != nil {
+		return fn(opts)
+	}
+	return "", nil
+}
+
+// ranCmds returns the program name of each Run call, in order.
+func (m *mockPlatform) ranCmds() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, 0, len(m.ran))
+	for _, r := range m.ran {
+		out = append(out, r.Cmd)
+	}
+	return out
+}
 
 func (m *mockPlatform) MarkDead(pid int) {
 	m.mu.Lock()
@@ -417,6 +443,9 @@ func (failingPlatform) IsRunning(int) (bool, error)      { return false, nil }
 func (failingPlatform) Kill(int, bool) error             { return nil }
 func (failingPlatform) RevealInFileManager(string) error { return nil }
 func (failingPlatform) OpenFile(string) error            { return nil }
+func (failingPlatform) Run(platform.LaunchOpts, time.Duration) (string, error) {
+	return "", nil
+}
 
 func TestStart_NilOrEmptyWorkspace(t *testing.T) {
 	rt, _, _ := newTestRuntime(t)

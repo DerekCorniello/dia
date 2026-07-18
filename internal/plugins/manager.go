@@ -44,7 +44,15 @@ type Manager struct {
 	localDir  string
 	loaded    map[string]*Loaded
 	runtimes  map[string]*Runtime
-	host      HostAPI
+	// resolvers hold the pure app-type runtimes, kept apart from
+	// runtimes so resolving an app type does not require the plugin's
+	// panel to be running and shares no state with it.
+	resolvers map[string]*Runtime
+	// appTypes maps a claimed app type to the plugin id providing it.
+	appTypes map[string]string
+	// appTypeConflicts records claims refused during the last rebuild.
+	appTypeConflicts []AppTypeConflict
+	host             HostAPI
 }
 
 func NewManager(globalDir string, host HostAPI) (*Manager, error) {
@@ -61,6 +69,8 @@ func NewManager(globalDir string, host HostAPI) (*Manager, error) {
 		globalDir: globalDir,
 		loaded:    map[string]*Loaded{},
 		runtimes:  map[string]*Runtime{},
+		resolvers: map[string]*Runtime{},
+		appTypes:  map[string]string{},
 		host:      host,
 	}, nil
 }
@@ -98,9 +108,11 @@ func (m *Manager) Discover() error {
 				_ = rt.Close()
 				delete(m.runtimes, id)
 			}
+			m.dropResolverLocked(id)
 			delete(m.loaded, id)
 		}
 	}
+	m.rebuildAppTypesLocked()
 	return nil
 }
 func (m *Manager) scanDir(dir string, source Source, seen map[string]bool) error {
@@ -147,7 +159,7 @@ func (m *Manager) scanDir(dir string, source Source, seen map[string]bool) error
 		existing.Dir = full
 		existing.Source = source
 		if existing.GrantedCaps == nil {
-			existing.GrantedCaps = MergeCapabilities(DefaultReadCapabilities(), manifest.Capabilities)
+			existing.GrantedCaps = GrantCapabilities(manifest.Capabilities, DefaultReadCapabilities())
 		}
 		if existing.Status == "" || existing.Status == StatusErrored {
 			existing.Status = StatusLoaded
@@ -166,7 +178,7 @@ func (m *Manager) Enable(id string) error {
 	if l.Manifest == nil {
 		return fmt.Errorf("plugin %q has no valid manifest: %s", id, l.LastError)
 	}
-	grants := MergeCapabilities(DefaultReadCapabilities(), l.Manifest.Capabilities)
+	grants := GrantCapabilities(l.Manifest.Capabilities, DefaultReadCapabilities())
 	return m.enableLocked(l, grants)
 }
 
@@ -188,6 +200,13 @@ func (m *Manager) EnableWithGrants(id string, grants []string) error {
 }
 
 func (m *Manager) enableLocked(l *Loaded, grants []string) error {
+	// Grants decide which app types this plugin may claim, so any
+	// change to them has to reach the index and invalidate a resolver
+	// built under the old set.
+	defer func() {
+		m.dropResolverLocked(l.Manifest.ID)
+		m.rebuildAppTypesLocked()
+	}()
 	if l.Enabled {
 		l.GrantedCaps = grants
 		return nil
@@ -230,6 +249,24 @@ func (m *Manager) Disable(id string) error {
 	if l.Status == StatusActive {
 		l.Status = StatusLoaded
 	}
+	return nil
+}
+
+// SetGrants replaces a plugin's granted capabilities without touching
+// its enabled state, and refreshes anything derived from them.
+func (m *Manager) SetGrants(id string, grants []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	l, ok := m.loaded[id]
+	if !ok {
+		return fmt.Errorf("plugin %q not found", id)
+	}
+	if l.Manifest == nil {
+		return fmt.Errorf("plugin %q has no valid manifest: %s", id, l.LastError)
+	}
+	l.GrantedCaps = GrantCapabilities(l.Manifest.Capabilities, grants)
+	m.dropResolverLocked(id)
+	m.rebuildAppTypesLocked()
 	return nil
 }
 func (m *Manager) Call(id, method string, args []any) (any, error) {
@@ -297,6 +334,154 @@ func (m *Manager) InstallLocal(srcDir, cwd string) (string, error) {
 	}
 	return m.installAt(srcDir, LocalPluginsDir(cwd))
 }
+
+// InstallFrom installs from a parsed source, cloning first when the
+// source is a git remote. cwd is only consulted for a local install
+// and may be empty otherwise.
+func (m *Manager) InstallFrom(src InstallSource, local bool, cwd string) (string, error) {
+	dstBase := m.globalDir
+	if local {
+		if cwd == "" {
+			return "", errors.New("cwd is required for local install")
+		}
+		dstBase = LocalPluginsDir(cwd)
+	}
+	srcDir, cleanup, err := src.materialize()
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+
+	dst, err := m.installAt(srcDir, dstBase)
+	if err != nil {
+		return dst, err
+	}
+	if src.Kind == InstallGit {
+		if err := writeProvenance(dst, Provenance{URL: src.URL, Ref: src.Ref}); err != nil {
+			// The plugin is installed and works; only `update` is lost.
+			return dst, fmt.Errorf("plugin installed to %s, but recording its source failed "+
+				"(dia plugin update will not work for it): %w", dst, err)
+		}
+	}
+	return dst, nil
+}
+
+// InspectSource materializes a source (cloning it if it is a remote)
+// and returns its manifest along with the directory it landed in. The
+// CLI uses this to show the user which capabilities a plugin asks for
+// before its code is copied into the plugins dir, then passes the same
+// directory to InstallMaterialized so the repository is fetched once
+// and the manifest shown is exactly the one installed.
+//
+// The caller must invoke the returned cleanup.
+func (m *Manager) InspectSource(src InstallSource) (manifest *Manifest, dir string, cleanup func(), err error) {
+	dir, cleanup, err = src.materialize()
+	if err != nil {
+		return nil, "", nil, err
+	}
+	manifest, err = LoadManifest(dir)
+	if err != nil {
+		cleanup()
+		return nil, "", nil, err
+	}
+	return manifest, dir, cleanup, nil
+}
+
+// InstallMaterialized installs from an already-materialized directory,
+// recording prov as its source. It pairs with InspectSource so a
+// confirmed install does not clone the repository a second time.
+func (m *Manager) InstallMaterialized(srcDir string, local bool, cwd string, prov *Provenance) (string, error) {
+	dstBase := m.globalDir
+	if local {
+		if cwd == "" {
+			return "", errors.New("cwd is required for local install")
+		}
+		dstBase = LocalPluginsDir(cwd)
+	}
+	dst, err := m.installAt(srcDir, dstBase)
+	if err != nil {
+		return dst, err
+	}
+	if prov != nil {
+		if err := writeProvenance(dst, *prov); err != nil {
+			return dst, fmt.Errorf("plugin installed to %s, but recording its source failed "+
+				"(dia plugin update will not work for it): %w", dst, err)
+		}
+	}
+	return dst, nil
+}
+
+// Update re-clones a git-installed plugin and replaces it in place.
+// The old directory is only removed once the new copy has been cloned
+// and its manifest validated, so a failed update leaves the working
+// plugin untouched.
+func (m *Manager) Update(id string) (string, error) {
+	m.mu.RLock()
+	l, ok := m.loaded[id]
+	m.mu.RUnlock()
+	if !ok {
+		return "", fmt.Errorf("plugin %q not found", id)
+	}
+	dir := l.Dir
+
+	prov, hasProv, err := ReadProvenance(dir)
+	if err != nil {
+		return "", err
+	}
+	if !hasProv {
+		return "", fmt.Errorf("plugin %q was installed from a local path, so there is nothing to update from; "+
+			"reinstall it with `dia plugin install <path>`", id)
+	}
+
+	src := InstallSource{Kind: InstallGit, URL: prov.URL, Ref: prov.Ref}
+	fresh, cleanup, err := src.materialize()
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+
+	manifest, err := LoadManifest(fresh)
+	if err != nil {
+		return "", fmt.Errorf("updated plugin at %s is invalid, keeping the installed version: %w", prov.URL, err)
+	}
+	if manifest.ID != id {
+		return "", fmt.Errorf("updated plugin declares id %q but %q is installed; refusing to replace it",
+			manifest.ID, id)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if rt, ok := m.runtimes[id]; ok {
+		_ = rt.Close()
+		delete(m.runtimes, id)
+	}
+	m.dropResolverLocked(id)
+	if err := os.RemoveAll(dir); err != nil {
+		return "", fmt.Errorf("remove old plugin dir: %w", err)
+	}
+	if err := copyDir(fresh, dir); err != nil {
+		return "", fmt.Errorf("copy updated plugin: %w", err)
+	}
+	if err := writeProvenance(dir, prov); err != nil {
+		return dir, fmt.Errorf("plugin updated, but recording its source failed: %w", err)
+	}
+
+	// Preserve the user's grants and enabled state across the update:
+	// an update is not a reinstall, and silently dropping capabilities
+	// would break a working plugin.
+	granted := GrantCapabilities(manifest.Capabilities, l.GrantedCaps)
+	m.loaded[id] = &Loaded{
+		Manifest:    manifest,
+		Dir:         dir,
+		Source:      l.Source,
+		GrantedCaps: granted,
+		Config:      l.Config,
+		Enabled:     l.Enabled,
+		Status:      StatusLoaded,
+	}
+	m.rebuildAppTypesLocked()
+	return dir, nil
+}
 func (m *Manager) installAt(srcDir, dstBase string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -315,9 +500,10 @@ func (m *Manager) installAt(srcDir, dstBase string) (string, error) {
 		Manifest:    manifest,
 		Dir:         dst,
 		Source:      SourceOfDir(dstBase),
-		GrantedCaps: MergeCapabilities(DefaultReadCapabilities(), manifest.Capabilities),
+		GrantedCaps: GrantCapabilities(manifest.Capabilities, DefaultReadCapabilities()),
 		Status:      StatusLoaded,
 	}
+	m.rebuildAppTypesLocked()
 	return dst, nil
 }
 func (m *Manager) Uninstall(id string) error {
@@ -331,12 +517,14 @@ func (m *Manager) Uninstall(id string) error {
 		_ = rt.Close()
 		delete(m.runtimes, id)
 	}
+	m.dropResolverLocked(id)
 	if l.Dir != "" {
 		if err := os.RemoveAll(l.Dir); err != nil {
 			return fmt.Errorf("remove plugin dir: %w", err)
 		}
 	}
 	delete(m.loaded, id)
+	m.rebuildAppTypesLocked()
 	return nil
 }
 func (m *Manager) Close() {
@@ -345,6 +533,9 @@ func (m *Manager) Close() {
 	for id, rt := range m.runtimes {
 		_ = rt.Close()
 		delete(m.runtimes, id)
+	}
+	for id := range m.resolvers {
+		m.dropResolverLocked(id)
 	}
 }
 func GlobalPluginsDir(stateDir string) string {
@@ -371,6 +562,12 @@ func copyDir(src, dst string) error {
 		return err
 	}
 	for _, e := range entries {
+		// A git-installed plugin arrives as a clone; its history is
+		// dead weight in the plugins dir and would be the largest
+		// thing in it.
+		if e.IsDir() && e.Name() == ".git" {
+			continue
+		}
 		s := filepath.Join(src, e.Name())
 		d := filepath.Join(dst, e.Name())
 		if e.IsDir() {

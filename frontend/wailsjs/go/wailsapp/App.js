@@ -26,6 +26,10 @@ export function GetKeybindings() {
   return window['go']['wailsapp']['App']['GetKeybindings']();
 }
 
+export function GetPluginCapabilities(arg1) {
+  return window['go']['wailsapp']['App']['GetPluginCapabilities'](arg1);
+}
+
 export function GetProjectDir() {
   return window['go']['wailsapp']['App']['GetProjectDir']();
 }
@@ -128,6 +132,10 @@ export function SetCustomTheme(arg1) {
 
 export function SetKeybinding(arg1, arg2) {
   return window['go']['wailsapp']['App']['SetKeybinding'](arg1, arg2);
+}
+
+export function SetPluginCapabilities(arg1, arg2) {
+  return window['go']['wailsapp']['App']['SetPluginCapabilities'](arg1, arg2);
 }
 
 export function SetTheme(arg1) {

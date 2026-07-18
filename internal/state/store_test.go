@@ -272,3 +272,24 @@ type sentinelErr string
 func (s sentinelErr) Error() string { return string(s) }
 
 func errSentinel(s string) error { return sentinelErr(s) }
+
+// A brand new store (no state.json on disk) must have every map ready
+// to write into. Plugins was left nil here, so the first
+// d.Plugins[id] = ... on a fresh install panicked.
+func TestOpenAt_FreshStoreHasNonNilMaps(t *testing.T) {
+	s, err := OpenAt(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatalf("OpenAt: %v", err)
+	}
+	err = s.Mutate(func(d *Data) {
+		d.Instances["i"] = Instance{ID: "i"}
+		d.CustomThemes["t"] = CustomTheme{}
+		d.Plugins["p"] = PluginState{Enabled: true}
+	})
+	if err != nil {
+		t.Fatalf("Mutate on a fresh store: %v", err)
+	}
+	if !s.Snapshot().Plugins["p"].Enabled {
+		t.Error("plugin state was not persisted")
+	}
+}

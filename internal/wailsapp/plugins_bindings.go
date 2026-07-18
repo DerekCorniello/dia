@@ -9,6 +9,7 @@ import (
 
 	"github.com/DerekCorniello/dia/internal/platform"
 	"github.com/DerekCorniello/dia/internal/plugins"
+	"github.com/DerekCorniello/dia/internal/state"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -147,16 +148,98 @@ func (a *App) OpenPluginWindow(id string) (int, error) {
 // discovered plugin so all plugins are immediately usable. A plugin
 // whose entry script fails is left in the errored state and the
 // frontend will show the LastError.
+//
+// Capabilities come from the persisted grant list the user approved in
+// a previous session, falling back to the read-only defaults for a
+// plugin that has never been granted anything. This function used to
+// ignore the store entirely and hardcode the read-only set, which
+// meant a capability granted from the CLI silently did nothing in the
+// GUI.
 func (a *App) applyPersistedPluginState(pmgr *plugins.Manager) {
+	persisted := map[string]state.PluginState{}
+	if a.store != nil {
+		persisted = a.store.Snapshot().Plugins
+	}
 	for _, l := range pmgr.List() {
-		granted := plugins.DefaultReadCapabilities()
-		if l.Manifest != nil {
-			granted = plugins.GrantCapabilities(l.Manifest.Capabilities, granted)
+		if l.Manifest == nil {
+			continue
 		}
-		if err := pmgr.EnableWithGrants(l.Manifest.ID, granted); err != nil {
-			a.logger.Warn("enable plugin", "id", l.Manifest.ID, "error", err)
+		id := l.Manifest.ID
+		granted := plugins.DefaultReadCapabilities()
+		if ps, ok := persisted[id]; ok && ps.GrantedCapabilities != nil {
+			granted = ps.GrantedCapabilities
+		}
+		granted = plugins.GrantCapabilities(l.Manifest.Capabilities, granted)
+		if err := pmgr.EnableWithGrants(id, granted); err != nil {
+			a.logger.Warn("enable plugin", "id", id, "error", err)
 		}
 	}
+}
+
+// GetPluginCapabilities returns what a plugin asks for and what it has
+// been granted, so the frontend can render the grant controls without
+// re-deriving the capability model.
+func (a *App) GetPluginCapabilities(id string) (PluginCapabilityInfo, error) {
+	out := PluginCapabilityInfo{Requested: []CapabilityInfo{}, Granted: []string{}}
+	if a.pmgr == nil {
+		return out, errors.New("plugin manager unavailable")
+	}
+	l, ok := a.pmgr.Get(id)
+	if !ok || l.Manifest == nil {
+		return out, fmt.Errorf("plugin %q not found", id)
+	}
+	for _, c := range l.Manifest.Capabilities {
+		out.Requested = append(out.Requested, CapabilityInfo{
+			Name:     c,
+			Mutating: plugins.IsMutatingCapability(c),
+			Granted:  plugins.HasCapability(l.GrantedCaps, c),
+		})
+	}
+	if l.GrantedCaps != nil {
+		out.Granted = l.GrantedCaps
+	}
+	return out, nil
+}
+
+// SetPluginCapabilities persists a new grant list for a plugin and
+// applies it immediately: the plugin's runtime is rebuilt with the new
+// grants and the app-type registry is re-synced, so granting or
+// revoking apps:resolve takes effect without a restart.
+//
+// Capabilities the manifest never requested are dropped rather than
+// rejected, so the frontend can send whatever the user toggled.
+func (a *App) SetPluginCapabilities(id string, caps []string) error {
+	if a.pmgr == nil {
+		return errors.New("plugin manager unavailable")
+	}
+	l, ok := a.pmgr.Get(id)
+	if !ok || l.Manifest == nil {
+		return fmt.Errorf("plugin %q not found", id)
+	}
+	granted := plugins.GrantCapabilities(l.Manifest.Capabilities, caps)
+
+	if a.store != nil {
+		if err := a.store.Mutate(func(d *state.Data) {
+			prev := d.Plugins[id]
+			prev.Enabled = true
+			prev.GrantedCapabilities = granted
+			d.Plugins[id] = prev
+		}); err != nil {
+			return fmt.Errorf("persist plugin capabilities: %w", err)
+		}
+	}
+
+	// Disable then re-enable: enableLocked only rebuilds the runtime
+	// for a plugin that is not already enabled, and the runtime has to
+	// be rebuilt for a changed grant set to reach the bridge.
+	if err := a.pmgr.Disable(id); err != nil {
+		a.logger.Warn("disable plugin before regrant", "id", id, "error", err)
+	}
+	if err := a.pmgr.EnableWithGrants(id, granted); err != nil {
+		return fmt.Errorf("apply plugin capabilities: %w", err)
+	}
+	a.registerPluginAppTypes(a.pmgr)
+	return nil
 }
 
 func loadedToInfo(l plugins.Loaded) PluginInfo {

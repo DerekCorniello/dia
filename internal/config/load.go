@@ -98,10 +98,29 @@ func Validate(w *Workspace) error {
 		validateApp(&w.Apps[i], fmt.Sprintf("workspace.apps[%d]", i), &errs)
 	}
 
+	validateHooks(w.Hooks, &errs)
+
 	if len(errs) == 0 {
 		return nil
 	}
 	return errs
+}
+
+// validateHooks rejects blank hook commands. A blank entry is almost
+// always a YAML mistake (a stray "-" or an empty quoted string), and
+// letting it through means a confusing "cmd is empty" at start time
+// instead of a precise path here.
+func validateHooks(h *Hooks, errs *ValidationErrors) {
+	for _, phase := range h.Phases() {
+		for i, cmd := range phase.Cmds {
+			if strings.TrimSpace(cmd) == "" {
+				*errs = append(*errs, ValidationError{
+					Path: fmt.Sprintf("workspace.hooks.%s[%d]", phase.Name, i),
+					Msg:  "must not be empty",
+				})
+			}
+		}
+	}
 }
 
 func validateApp(a *App, prefix string, errs *ValidationErrors) {

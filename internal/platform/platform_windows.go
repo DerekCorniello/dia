@@ -21,7 +21,7 @@ type winProcess struct {
 func (p *winProcess) PID() int              { return p.pid }
 func (p *winProcess) Done() <-chan struct{} { return p.done }
 
-type winPlatform struct{}
+type winPlatform struct{ cmdRunner }
 
 func newWinPlatform() Platform { return &winPlatform{} }
 

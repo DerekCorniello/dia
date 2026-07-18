@@ -5,6 +5,15 @@
 // platform_windows.go.
 package platform
 
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"time"
+)
+
 // ProcessHandle is a lightweight reference to a launched process.
 // PID is what gets stored in the state; Done (if non-nil) closes when
 // the process exits. Not all implementations populate Done.
@@ -62,4 +71,52 @@ type Platform interface {
 	// OpenFile opens path with the OS default application for
 	// that file type (e.g. a text editor for .json files).
 	OpenFile(path string) error
+
+	// Run executes a command to completion and returns its combined
+	// stdout and stderr. Unlike Launch the process is NOT detached:
+	// the caller is waiting on the result, which is what workspace
+	// hooks need. A non-zero exit and a timeout both return an
+	// error, and the output collected so far is returned either
+	// way so the caller can show the user why it failed.
+	Run(opts LaunchOpts, timeout time.Duration) (string, error)
+}
+
+// cmdRunner supplies Run for both concrete platforms. Running a
+// command to completion needs none of the session/process-group
+// handling that makes Launch OS-specific, so there is one
+// implementation rather than a copy behind each build tag.
+type cmdRunner struct{}
+
+// ErrRunTimeout is returned by Run when the command outlives its
+// timeout. It is distinct from a non-zero exit so callers (and
+// tests) can tell "the hook failed" from "the hook hung".
+var ErrRunTimeout = errors.New("timed out")
+
+func (cmdRunner) Run(opts LaunchOpts, timeout time.Duration) (string, error) {
+	if opts.Cmd == "" {
+		return "", fmt.Errorf("run: empty command")
+	}
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	cmd := exec.CommandContext(ctx, opts.Cmd, opts.Args...)
+	if opts.Cwd != "" {
+		cmd.Dir = opts.Cwd
+	}
+	if len(opts.Env) > 0 {
+		cmd.Env = append(os.Environ(), opts.Env...)
+	}
+	out, err := cmd.CombinedOutput()
+	// A killed-by-context command surfaces as a generic exit error,
+	// so check the context itself to report the real cause.
+	if ctx.Err() != nil {
+		return string(out), fmt.Errorf("%w after %s", ErrRunTimeout, timeout)
+	}
+	if err != nil {
+		return string(out), err
+	}
+	return string(out), nil
 }

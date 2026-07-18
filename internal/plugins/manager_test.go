@@ -236,7 +236,9 @@ func TestPluginCanCallGranted(t *testing.T) {
 	host := &fakeHost{}
 	js := `module.exports = { go: async function(name) { return await dia.startWorkspace(name); } };`
 	_, mgr := setupPlugin(t, host, "hello", js, []string{CapWorkspacesRead, CapWorkspacesStart})
-	if err := mgr.Enable("hello"); err != nil {
+	// A mutating capability has to be granted explicitly; plain Enable
+	// only ever hands out the read-only defaults.
+	if err := mgr.EnableWithGrants("hello", []string{CapWorkspacesRead, CapWorkspacesStart}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := mgr.Call("hello", "go", []any{"alpha"}); err != nil {
@@ -244,6 +246,74 @@ func TestPluginCanCallGranted(t *testing.T) {
 	}
 	if len(host.started) != 1 || host.started[0] != "alpha" {
 		t.Errorf("host did not receive start call: %v", host.started)
+	}
+}
+
+// Requesting a capability in the manifest must never be enough to get
+// it. Discovery, Enable, and install all default to the read-only set,
+// or a plugin could grant itself cmd:exec just by asking.
+func TestMutatingCapabilitiesAreNotGrantedByDefault(t *testing.T) {
+	requested := []string{CapWorkspacesRead, CapWorkspacesStart, CapCmdExec, CapAppsResolve}
+	host := &fakeHost{}
+	js := `module.exports = { getData: function () { return []; } };`
+	_, mgr := setupPlugin(t, host, "greedy", js, requested)
+
+	check := func(stage string, granted []string) {
+		t.Helper()
+		for _, c := range granted {
+			if IsMutatingCapability(c) {
+				t.Errorf("%s: granted mutating capability %q", stage, c)
+			}
+		}
+		if !HasCapability(granted, CapWorkspacesRead) {
+			t.Errorf("%s: read capability should still be granted, got %v", stage, granted)
+		}
+	}
+
+	l, ok := mgr.Get("greedy")
+	if !ok {
+		t.Fatal("plugin not discovered")
+	}
+	check("after discover", l.GrantedCaps)
+
+	if err := mgr.Enable("greedy"); err != nil {
+		t.Fatal(err)
+	}
+	l, _ = mgr.Get("greedy")
+	check("after enable", l.GrantedCaps)
+}
+
+// A plugin declaring app_types must not get apps:resolve for free:
+// its types stay unclaimed until the user grants it.
+func TestAppTypesUnclaimedUntilGranted(t *testing.T) {
+	dir := t.TempDir()
+	pdir := filepath.Join(dir, "greedy-type")
+	if err := os.MkdirAll(pdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"id":"greedy-type","name":"G","version":"0.1.0","entry":"index.js",` +
+		`"capabilities":["apps:resolve"],"app_types":["sneaky"],"ui":{"type":"kv","title":"T"}}`
+	if err := os.WriteFile(filepath.Join(pdir, "plugin.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pdir, "index.js"),
+		[]byte(`module.exports = { resolveApp: function () { return { cmd: "evil" }; } };`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mgr, err := NewManager(dir, &fakeHost{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.Discover(); err != nil {
+		t.Fatal(err)
+	}
+	if _, claimed := mgr.AppTypes()["sneaky"]; claimed {
+		t.Error("app type claimed without the user granting apps:resolve")
+	}
+
+	mgr.ApplyPersistedGrants(map[string][]string{"greedy-type": {CapAppsResolve}})
+	if _, claimed := mgr.AppTypes()["sneaky"]; !claimed {
+		t.Error("app type should be claimed once apps:resolve is granted")
 	}
 }
 func TestPluginErrorCaptured(t *testing.T) {

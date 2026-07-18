@@ -2,9 +2,12 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/DerekCorniello/dia/internal/config"
+	"github.com/DerekCorniello/dia/internal/registry"
 	"github.com/DerekCorniello/dia/internal/state"
 )
 
@@ -31,25 +34,12 @@ func newStartCmd() *cobra.Command {
 			}
 
 			out := newOutput(cmd)
-			if dryRun {
-				if out.IsJSON() {
-					return out.JSON(map[string]any{
-						"workspace": name,
-						"dry_run":   true,
-						"apps":      w.Apps,
-						"source":    src.Path,
-					})
-				}
-				_ = out.Printf("%s (dry run)\n", name)
-				for _, a := range w.Apps {
-					_ = out.Printf("  %-10s %s\n", a.Type, a.Cmd)
-				}
-				return nil
-			}
-
 			s, err := newSetup(flagsFromCmd(cmd).StateDir, cmd.ErrOrStderr())
 			if err != nil {
 				return err
+			}
+			if dryRun {
+				return printDryRun(out, name, src.Path, w, s)
 			}
 			inst, err := s.Runtime.Start(w, src)
 			if err != nil {
@@ -92,4 +82,106 @@ func newStartCmd() *cobra.Command {
 	cmd.Flags().StringVar(&cwdFlag, "cwd", "", "override the cwd of every app in the workspace")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "resolve and print what would launch without executing")
 	return cmd
+}
+
+// dryRunApp is one resolved app in a --dry-run report.
+type dryRunApp struct {
+	Type string `json:"type"`
+	// Action is "launch" or "open".
+	Action string `json:"action"`
+	Cmd    string `json:"cmd,omitempty"`
+	URL    string `json:"url,omitempty"`
+	Cwd    string `json:"cwd,omitempty"`
+	// Plugin names the plugin that resolved this app, when the type
+	// is not built in.
+	Plugin string `json:"plugin,omitempty"`
+	Error  string `json:"error,omitempty"`
+}
+
+// printDryRun resolves every app through the registry and reports what
+// would happen, without launching anything. Resolution is the part
+// worth previewing: for a plugin-provided type the command is computed
+// by the plugin, so printing the raw config would show nothing useful.
+//
+// A resolution failure is reported per app rather than aborting, so one
+// broken app does not hide the rest -- the same policy the runtime uses
+// when actually starting.
+func printDryRun(out *output, name, srcPath string, w *config.Workspace, s *setup) error {
+	pluginFor := map[string]string{}
+	if s.Plugins != nil {
+		pluginFor = s.Plugins.AppTypes()
+	}
+
+	apps := make([]dryRunApp, 0, len(w.Apps))
+	for _, a := range w.Apps {
+		entry := dryRunApp{Type: a.Type, Cwd: a.Cwd, Plugin: pluginFor[a.Type]}
+		action, err := s.Reg.Resolve(a)
+		if err != nil {
+			entry.Error = err.Error()
+			apps = append(apps, entry)
+			continue
+		}
+		switch action.Kind {
+		case registry.ActionOpenURL:
+			entry.Action = "open"
+			entry.URL = action.URL
+		case registry.ActionLaunch:
+			entry.Action = "launch"
+			entry.Cmd = strings.TrimSpace(action.Launch.Cmd + " " + strings.Join(action.Launch.Args, " "))
+			if action.Launch.Cwd != "" {
+				entry.Cwd = action.Launch.Cwd
+			}
+		}
+		apps = append(apps, entry)
+	}
+
+	if out.IsJSON() {
+		payload := map[string]any{
+			"workspace": name,
+			"dry_run":   true,
+			"source":    srcPath,
+			"apps":      apps,
+		}
+		if w.Hooks != nil {
+			hooks := map[string][]string{}
+			for _, p := range w.Hooks.Phases() {
+				if len(p.Cmds) > 0 {
+					hooks[p.Name] = p.Cmds
+				}
+			}
+			payload["hooks"] = hooks
+		}
+		return out.JSON(payload)
+	}
+
+	if err := out.Printf("%s (dry run)\n", name); err != nil {
+		return err
+	}
+	for _, p := range w.Hooks.Phases() {
+		for _, c := range p.Cmds {
+			if err := out.Printf("  hook %-12s %s\n", p.Name, c); err != nil {
+				return err
+			}
+		}
+	}
+	for _, a := range apps {
+		target := a.Cmd
+		if a.Action == "open" {
+			target = a.URL
+		}
+		if a.Error != "" {
+			if err := out.Printf("  fail %-12s %s\n", a.Type, a.Error); err != nil {
+				return err
+			}
+			continue
+		}
+		line := fmt.Sprintf("  %-4s %-12s %s", a.Action, a.Type, target)
+		if a.Plugin != "" {
+			line += fmt.Sprintf("  (via plugin %s)", a.Plugin)
+		}
+		if err := out.Printf("%s\n", line); err != nil {
+			return err
+		}
+	}
+	return nil
 }

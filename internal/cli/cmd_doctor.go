@@ -52,6 +52,7 @@ func newDoctorCmd() *cobra.Command {
 				stateStatus = "warn"
 			}
 			checks = append(checks, diag.Check{Name: "state", Status: stateStatus, Detail: detail})
+			checks = append(checks, appTypeChecks(s.Plugins)...)
 
 			if out.IsJSON() {
 				return out.JSON(checks)

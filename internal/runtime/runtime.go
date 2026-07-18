@@ -67,12 +67,23 @@ func New(opts Options) *Runtime {
 // failure is recorded in the per-app AppProcess.Err rather than
 // aborting the whole workspace, so a single broken app does not prevent
 // the rest from coming up.
+//
+// pre_start hooks run first and are fatal: if one fails nothing is
+// launched and no instance is persisted, because the usual reason to
+// write one is to bring up something the apps need. post_start hooks
+// run after the apps and are advisory -- the apps are already up, so a
+// failure is logged rather than unwound.
 func (r *Runtime) Start(w *config.Workspace, src config.Source) (*state.Instance, error) {
 	if w == nil {
 		return nil, errors.New("runtime: nil workspace")
 	}
 	if len(w.Apps) == 0 && len(w.Plugins) == 0 {
 		return nil, errors.New("runtime: workspace has no apps or plugins")
+	}
+
+	hookDir := hookCwd(src.Path)
+	if err := r.runHooks("pre_start", hookPhase(w, "pre_start"), hookDir); err != nil {
+		return nil, err
 	}
 
 	inst := state.Instance{
@@ -132,6 +143,10 @@ func (r *Runtime) Start(w *config.Workspace, src config.Source) (*state.Instance
 		d.Recent = pushRecent(d.Recent, w.Name, RecentLimit)
 	}); err != nil {
 		r.log.Warn("save instance after launch", "id", inst.ID, "error", err)
+	}
+
+	if err := r.runHooks("post_start", hookPhase(w, "post_start"), hookDir); err != nil {
+		r.log.Warn("post_start hook failed", "workspace", w.Name, "error", err)
 	}
 
 	if inst.Status == state.StatusRunning {
@@ -318,6 +333,12 @@ func (r *Runtime) tickInstance(id string) bool {
 // a SIGTERM is sent and the runtime waits up to GracePeriod for the
 // processes to exit before escalating to SIGKILL. Apps without a
 // tracked PID (e.g. URL opens) are simply marked stopped.
+//
+// pre_stop and post_stop hooks run around the teardown. Neither is
+// fatal: refusing to stop a workspace because a cleanup command failed
+// would leave the user with processes they cannot shut down from dia.
+// Failures are logged. With force=true both are skipped, since the
+// point of a forced stop is to not wait for anything.
 func (r *Runtime) Stop(id string, force bool) error {
 	var inst state.Instance
 	ok := false
@@ -331,6 +352,15 @@ func (r *Runtime) Stop(id string, force bool) error {
 	}
 	if inst.Status != state.StatusRunning {
 		return nil
+	}
+
+	var w *config.Workspace
+	var hookDir string
+	if !force {
+		w, hookDir = r.workspaceHooks(inst)
+		if err := r.runHooks("pre_stop", hookPhase(w, "pre_stop"), hookDir); err != nil {
+			r.log.Warn("pre_stop hook failed", "instance", id, "error", err)
+		}
 	}
 
 	for i, app := range inst.Apps {
@@ -367,9 +397,18 @@ func (r *Runtime) Stop(id string, force bool) error {
 		}
 	}
 
-	return r.st.Mutate(func(d *state.Data) {
+	if err := r.st.Mutate(func(d *state.Data) {
 		d.Instances[id] = inst
-	})
+	}); err != nil {
+		return err
+	}
+
+	if !force {
+		if err := r.runHooks("post_stop", hookPhase(w, "post_stop"), hookDir); err != nil {
+			r.log.Warn("post_stop hook failed", "instance", id, "error", err)
+		}
+	}
+	return nil
 }
 
 // StopAll terminates every running instance. Used on dia shutdown.

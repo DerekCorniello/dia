@@ -21,6 +21,7 @@ type Manifest struct {
 	Entry           string         `json:"entry"`
 	Capabilities    []string       `json:"capabilities"`
 	ConfigSchema    map[string]any `json:"config_schema"`
+	AppTypes        []string       `json:"app_types,omitempty"`
 	UI              UISpec         `json:"ui"`
 }
 
@@ -149,6 +150,22 @@ func (m *Manifest) Validate() error {
 		if !IsKnownCapability(c) {
 			return fmt.Errorf("plugin capability %q is not recognized", c)
 		}
+	}
+	seenType := map[string]bool{}
+	for _, t := range m.AppTypes {
+		if !validAppType(t) {
+			return fmt.Errorf("app_type %q must match %s", t, appTypePattern)
+		}
+		if seenType[t] {
+			return fmt.Errorf("app_type %q is declared twice", t)
+		}
+		seenType[t] = true
+	}
+	// Declaring app types without the capability that gates them is a
+	// manifest the user cannot act on: the types would never be
+	// registered and the plugin would look silently broken.
+	if len(m.AppTypes) > 0 && !HasCapability(m.Capabilities, CapAppsResolve) {
+		return fmt.Errorf("app_types requires the %q capability to be declared", CapAppsResolve)
 	}
 	switch m.UI.Type {
 	case "list", "grid", "kv", "text", "canvas":

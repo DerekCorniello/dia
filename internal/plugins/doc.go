@@ -25,6 +25,18 @@ const (
 
 var idPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{1,38}[a-z0-9])?$`)
 
+// appTypePattern is the shape of an app type a plugin can claim. It
+// allows the same `namespace:sub` form the built-in gh:pr sugar uses,
+// so a plugin can group related types.
+var appTypePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*(:[a-z0-9][a-z0-9-]*)?$`)
+
+func validAppType(s string) bool {
+	if len(s) < 2 || len(s) > 40 {
+		return false
+	}
+	return appTypePattern.MatchString(s)
+}
+
 func validID(s string) bool {
 	if len(s) < 3 {
 		return false

@@ -131,5 +131,16 @@ func (a *App) Doctor() []CheckInfo {
 	for _, r := range rows {
 		out = append(out, CheckInfo{Name: r.Name, Status: r.Status, Detail: r.Detail})
 	}
+	// A plugin that lost an app-type claim is otherwise invisible: the
+	// workspace starts and launches the winner's command instead.
+	if a.pmgr != nil {
+		for _, c := range a.pmgr.AppTypeConflicts() {
+			out = append(out, CheckInfo{
+				Name:   "app type conflict",
+				Status: "warn",
+				Detail: fmt.Sprintf("%q claimed by %s and %s; using %s", c.Type, c.Winner, c.Loser, c.Winner),
+			})
+		}
+	}
 	return out
 }

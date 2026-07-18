@@ -16,6 +16,8 @@ export function Doctor():Promise<Array<wailsapp.CheckInfo>>;
 
 export function GetKeybindings():Promise<Record<string, string>>;
 
+export function GetPluginCapabilities(arg1:string):Promise<wailsapp.PluginCapabilityInfo>;
+
 export function GetProjectDir():Promise<string>;
 
 export function GetRecent():Promise<Array<state.RecentEntry>>;
@@ -67,6 +69,8 @@ export function SelectProjectDir():Promise<string>;
 export function SetCustomTheme(arg1:wailsapp.CustomThemeInfo):Promise<void>;
 
 export function SetKeybinding(arg1:string,arg2:string):Promise<void>;
+
+export function SetPluginCapabilities(arg1:string,arg2:Array<string>):Promise<void>;
 
 export function SetTheme(arg1:string):Promise<void>;
 

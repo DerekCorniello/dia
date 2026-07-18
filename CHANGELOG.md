@@ -5,7 +5,101 @@ All notable changes to dia are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.3.0] - Unreleased
+## [0.4.0] - Unreleased
+
+### Added
+
+- **Plugin-provided app types.** A plugin can declare `app_types` in
+  its manifest and export `resolveApp(app)`, letting a workspace use
+  `type:` names dia does not ship (`compose`, `devcontainer`, and so
+  on) without forking. The resolver returns either a launch
+  descriptor (`cmd`/`args`/`cwd`/`env`) or `{url}`, and runs in a
+  deliberately pure runtime whose only `dia.*` calls are `getConfig`
+  and `pluginDir`. Gated by the new mutating capability
+  `apps:resolve`, since the command a resolver returns is executed by
+  dia. Claims on built-in type names are refused, and conflicting
+  claims between two plugins resolve deterministically (project-local
+  before global, then by id) with a `dia doctor` warning. Both the GUI
+  and the CLI honor plugin types. See `examples/compose-app-type/`.
+- **`dia plugin install` from a git repository.** The argument is now
+  a local directory *or* a git remote: `https://host/owner/repo`,
+  `git@host:owner/repo`, or a bare `host.tld/owner/repo` normalized to
+  https. Remotes are shallow-cloned with the system `git` (no new
+  dependency, existing credential helpers apply) and `--ref` selects a
+  branch or tag. A bare `owner/repo` is rejected as ambiguous with a
+  relative path.
+- **Install-time capability disclosure.** `dia plugin install` prints
+  the plugin's requested capabilities before copying any code, and
+  requires confirmation when any of them are mutating. `--yes` skips
+  the prompt; `--json` requires it.
+- **`dia plugin update <id>`.** Re-clones a git-installed plugin from
+  its recorded source, preserving granted capabilities and enabled
+  state. The old copy is only replaced after the new one clones and
+  validates, and an id mismatch is refused.
+- **Workspace lifecycle hooks.** `hooks.pre_start`, `post_start`,
+  `pre_stop`, and `post_stop` run shell-style commands around a
+  workspace, in order, blocking, capped at 2 minutes each. `pre_start`
+  is fatal (nothing launches and no instance is persisted if it
+  fails); the others are advisory so a failing cleanup command can
+  never leave a workspace unstoppable. `dia stop --force` skips both
+  stop phases. There is deliberately no `depends_on` or health
+  checking.
+- **Capability granting in the GUI.** Settings > Plugins now lists each
+  plugin's requested capabilities, flags the mutating ones, and lets
+  you grant or revoke them. Changes apply immediately -- granting
+  `apps:resolve` registers the plugin's app types without a restart,
+  and revoking it unregisters them.
+- `platform.Platform` gained `Run(opts, timeout)`, a blocking
+  run-to-completion counterpart to the detached `Launch`, used by
+  hooks.
+
+### Changed
+
+- **`dia start --dry-run` now actually resolves.** It previously
+  echoed the config; it now runs every app through the registry and
+  reports the resolved command or URL, which plugin resolved each
+  non-builtin type, and the workspace's hooks. Necessary for
+  plugin-provided types, where the command is computed rather than
+  written in the YAML.
+- `dia doctor` reports plugin-provided app types and warns about
+  conflicting claims.
+
+### Fixed
+
+- **Mutating capabilities were granted just for being requested.**
+  Plugin discovery, `Enable`, and install all used
+  `MergeCapabilities(defaults, manifest)`, which unions in every
+  capability the manifest asks for -- so a plugin declaring
+  `cmd:exec` received it without the user ever approving it,
+  contradicting the documented "read-only by default, mutating are
+  opt-in" model. All three now intersect against the read-only
+  defaults. Only `dia plugin enable --caps` (or the GUI's grant flow)
+  hands out a mutating capability. The GUI was already correcting this
+  at startup; the CLI was not. Pre-existing.
+- **`dia plugin enable` and `dia plugin disable` did not exist.** Both
+  were documented in the README but never registered on the `plugin`
+  command, so there was no way to grant a capability from the CLI at
+  all. Now implemented, with `--caps` intersected against the
+  manifest's requested set.
+- **Writing plugin state on a fresh install panicked.** `state.OpenAt`
+  initialized `Instances` and `CustomThemes` but not `Plugins` when no
+  `state.json` existed yet, so the first write to `d.Plugins[id]`
+  panicked with "assignment to entry in nil map". Pre-existing; the
+  GUI's plugin-config save path could hit it on a first run.
+- An app with no `type` failed at launch with `unknown app type ""`,
+  despite being documented as "runs `cmd`" and accepted by the config
+  validator. The registry had no handler registered for the empty
+  string. Pre-existing; found while adding plugin app types.
+
+### Removed
+
+- **Breaking:** the `wait` and `open` app fields. Both were declared
+  in the config schema but never read by the runtime or registry, so
+  they silently did nothing. Because the loader uses
+  `KnownFields(true)`, a config that still sets them now fails to load
+  rather than quietly ignoring them; delete the keys.
+
+## [0.3.0] - 2026-07-18
 
 ### Added
 

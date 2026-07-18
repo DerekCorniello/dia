@@ -85,6 +85,34 @@ the sandbox: `require()` is plugin-scoped (relative paths only, no `..`),
 files are size-capped, and calls are time-bounded. See `README.md` for
 the host API and capability table.
 
+Plugins can also claim workspace app types (`app_types` in the
+manifest, `resolveApp` in the entry, gated by the mutating
+`apps:resolve` capability). The resolver runs in a *separate,
+restricted* goja runtime built by `NewResolverRuntime`: the only
+`dia.*` calls it sees are `getConfig` and `pluginDir`. Keep it that
+way. Purity is what lets the CLI resolve app types without a
+`HostAPI`, keeps `--dry-run` side-effect free, and stops a resolver
+from doing I/O in the middle of a workspace start. Resolvers are
+cached in `Manager.resolvers`, separate from panel runtimes, and must
+be dropped whenever a plugin's code or grants change.
+
+`internal/registry` must not import `internal/plugins`. The adapter in
+`registry/plugin.go` states what it needs as a local `AppResolver`
+interface over plain maps; the dependency points one way.
+
+`registry.SyncPluginTypes` *reconciles* rather than only adding: it
+unregisters plugin-claimed types that are no longer claimed. Grants can
+change at runtime (Settings > Plugins), and revoking `apps:resolve` has
+to make the type stop resolving immediately, not at the next restart.
+Call it after anything that changes grants.
+
+Capabilities are never granted by being requested. `MergeCapabilities`
+unions and is the wrong tool for deriving grants; use
+`GrantCapabilities(manifest.Capabilities, approved)`, which intersects.
+Discovery, `Enable`, and install all default to the read-only set, and
+only an explicit user action (`dia plugin enable --caps`, or
+`App.SetPluginCapabilities`) hands out a mutating one.
+
 Any plugin-supplied path must go through `plugins.ContainedRelPath`.
 Validate the *cleaned* path, never a prefix of the raw string:
 `panel/../../../etc/passwd` has no leading `..` and will escape. This

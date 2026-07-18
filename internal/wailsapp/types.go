@@ -111,6 +111,21 @@ type PluginInfo struct {
 	ConfigSchema        map[string]any    `json:"configSchema,omitempty"`
 }
 
+// CapabilityInfo is one capability a plugin asks for, with enough
+// context for the frontend to render it: whether it can change the
+// user's system, and whether it is currently granted.
+type CapabilityInfo struct {
+	Name     string `json:"name"`
+	Mutating bool   `json:"mutating"`
+	Granted  bool   `json:"granted"`
+}
+
+// PluginCapabilityInfo is the grant state of a single plugin.
+type PluginCapabilityInfo struct {
+	Requested []CapabilityInfo `json:"requested"`
+	Granted   []string         `json:"granted"`
+}
+
 // PluginUIInfo describes how the host should render a plugin's panel.
 type PluginUIInfo struct {
 	Type        string           `json:"type"`

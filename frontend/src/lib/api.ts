@@ -25,6 +25,8 @@ import {
   SetCustomTheme as _SetCustomTheme,
   DeleteCustomTheme as _DeleteCustomTheme,
   ListPlugins as _ListPlugins,
+  GetPluginCapabilities as _GetPluginCapabilities,
+  SetPluginCapabilities as _SetPluginCapabilities,
   PluginCall as _PluginCall,
   PluginPaths as _PluginPaths,
   OpenPluginFolder as _OpenPluginFolder,
@@ -46,6 +48,8 @@ export type CheckInfo = wailsapp.CheckInfo;
 export type PathsInfo = wailsapp.PathsInfo;
 export type CustomThemeInfo = wailsapp.CustomThemeInfo;
 export type PluginInfo = wailsapp.PluginInfo;
+export type PluginCapabilityInfo = wailsapp.PluginCapabilityInfo;
+export type CapabilityInfo = wailsapp.CapabilityInfo;
 export type PluginUIInfo = wailsapp.PluginUIInfo;
 export type PluginUIColumn = wailsapp.PluginUIColumn;
 export type PluginActionDef = wailsapp.PluginActionDef;
@@ -115,6 +119,9 @@ export const api = {
   listPlugins: (): Promise<PluginInfo[]> => array(_ListPlugins()),
   pluginCall: (id: string, method: string, argsJSON: string): Promise<string> =>
     _PluginCall(id, method, argsJSON),
+  getPluginCapabilities: (id: string): Promise<PluginCapabilityInfo> => _GetPluginCapabilities(id),
+  setPluginCapabilities: (id: string, caps: string[]): Promise<void> =>
+    _SetPluginCapabilities(id, caps),
   pluginPaths: (): Promise<PluginPathsInfo> => _PluginPaths(),
   openPluginFolder: (): Promise<void> => _OpenPluginFolder(),
   installPluginFromFolder: (): Promise<string> => _InstallPluginFromFolder(),
