@@ -42,6 +42,7 @@ make vet            # go vet ./...
 make lint           # golangci-lint run ./...  (config in .golangci.yml)
 make test           # go test -count=1 -timeout 60s ./...
 make build          # wails build (needs the Wails CLI + GTK/WebKit on Linux)
+make run            # build, then launch ./build/bin/dia
 ```
 
 Frontend gates (run from `frontend/`):

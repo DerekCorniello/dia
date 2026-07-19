@@ -38,8 +38,18 @@ app types, plugin install from git, and workspace lifecycle hooks.
 
 ### From source (requires Go 1.23+ and Node 20+)
 
+The CLI alone:
+
 ```sh
 go install github.com/DerekCorniello/dia@latest
+```
+
+The desktop app needs the Wails CLI and, on Linux, GTK/WebKit:
+
+```sh
+make install-tools   # Wails CLI (version taken from go.mod) + golangci-lint
+make build           # writes build/bin/dia
+make run             # build, then launch it
 ```
 
 ### Prebuilt binaries

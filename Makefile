@@ -16,13 +16,20 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/version.Commit=$(COMMIT) \
 	-X $(PKG)/internal/version.BuildTime=$(BUILD_TIME)
 
-.PHONY: dev build test vet lint fmt tidy release clean install-tools install-hooks check
+.PHONY: dev build run test vet lint fmt tidy release clean install-tools install-hooks check
 
 dev:
 	$(WAILS) dev
 
 build:
 	$(WAILS) build -clean -trimpath -ldflags "$(LDFLAGS)" -tags webkit2_41
+	@echo "built build/bin/$(BINARY) -- run it with 'make run' or './build/bin/$(BINARY)'"
+
+# run launches the binary make build produced. wails writes to
+# build/bin/, not the repo root, which is easy to miss when a stale
+# binary is sitting in the root from an older build.
+run: build
+	./build/bin/$(BINARY)
 
 test:
 	go test -count=1 -timeout 60s ./...
