@@ -231,6 +231,50 @@ export namespace wailsapp {
 		    return a;
 		}
 	}
+	export class PluginSourceInfo {
+	    id: string;
+	    name: string;
+	    version: string;
+	    description: string;
+	    author: string;
+	    requested: CapabilityInfo[];
+	    appTypes: string[];
+	    isGit: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new PluginSourceInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.version = source["version"];
+	        this.description = source["description"];
+	        this.author = source["author"];
+	        this.requested = this.convertValues(source["requested"], CapabilityInfo);
+	        this.appTypes = source["appTypes"];
+	        this.isGit = source["isGit"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class PluginActionDef {
 	    id: string;
 	    label: string;

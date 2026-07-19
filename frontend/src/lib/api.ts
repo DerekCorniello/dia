@@ -26,6 +26,11 @@ import {
   DeleteCustomTheme as _DeleteCustomTheme,
   ListPlugins as _ListPlugins,
   GetPluginCapabilities as _GetPluginCapabilities,
+  InspectPluginSource as _InspectPluginSource,
+  InstallPluginFromSource as _InstallPluginFromSource,
+  PluginIsUpdatable as _PluginIsUpdatable,
+  UpdatePlugin as _UpdatePlugin,
+  UninstallPlugin as _UninstallPlugin,
   SetPluginCapabilities as _SetPluginCapabilities,
   PluginCall as _PluginCall,
   PluginPaths as _PluginPaths,
@@ -49,6 +54,7 @@ export type PathsInfo = wailsapp.PathsInfo;
 export type CustomThemeInfo = wailsapp.CustomThemeInfo;
 export type PluginInfo = wailsapp.PluginInfo;
 export type PluginCapabilityInfo = wailsapp.PluginCapabilityInfo;
+export type PluginSourceInfo = wailsapp.PluginSourceInfo;
 export type CapabilityInfo = wailsapp.CapabilityInfo;
 export type PluginUIInfo = wailsapp.PluginUIInfo;
 export type PluginUIColumn = wailsapp.PluginUIColumn;
@@ -122,6 +128,13 @@ export const api = {
   getPluginCapabilities: (id: string): Promise<PluginCapabilityInfo> => _GetPluginCapabilities(id),
   setPluginCapabilities: (id: string, caps: string[]): Promise<void> =>
     _SetPluginCapabilities(id, caps),
+  inspectPluginSource: (source: string, ref: string): Promise<PluginSourceInfo> =>
+    _InspectPluginSource(source, ref),
+  installPluginFromSource: (source: string, ref: string): Promise<string> =>
+    _InstallPluginFromSource(source, ref),
+  pluginIsUpdatable: (id: string): Promise<boolean> => _PluginIsUpdatable(id),
+  updatePlugin: (id: string): Promise<string> => _UpdatePlugin(id),
+  uninstallPlugin: (id: string): Promise<void> => _UninstallPlugin(id),
   pluginPaths: (): Promise<PluginPathsInfo> => _PluginPaths(),
   openPluginFolder: (): Promise<void> => _OpenPluginFolder(),
   installPluginFromFolder: (): Promise<string> => _InstallPluginFromFolder(),

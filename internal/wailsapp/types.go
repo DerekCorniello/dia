@@ -126,6 +126,22 @@ type PluginCapabilityInfo struct {
 	Granted   []string         `json:"granted"`
 }
 
+// PluginSourceInfo previews what an install would bring in, so the
+// user can see a plugin's identity and requested capabilities before
+// any of its code is copied onto their machine.
+type PluginSourceInfo struct {
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Version     string           `json:"version"`
+	Description string           `json:"description"`
+	Author      string           `json:"author"`
+	Requested   []CapabilityInfo `json:"requested"`
+	// AppTypes are the workspace app types this plugin would claim.
+	AppTypes []string `json:"appTypes"`
+	// IsGit reports whether the source is a remote that will be cloned.
+	IsGit bool `json:"isGit"`
+}
+
 // PluginUIInfo describes how the host should render a plugin's panel.
 type PluginUIInfo struct {
 	Type        string           `json:"type"`

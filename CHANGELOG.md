@@ -44,11 +44,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   never leave a workspace unstoppable. `dia stop --force` skips both
   stop phases. There is deliberately no `depends_on` or health
   checking.
-- **Capability granting in the GUI.** Settings > Plugins now lists each
-  plugin's requested capabilities, flags the mutating ones, and lets
-  you grant or revoke them. Changes apply immediately -- granting
-  `apps:resolve` registers the plugin's app types without a restart,
-  and revoking it unregisters them.
+- **Plugin management in the GUI.** Settings > Plugins now covers the
+  whole lifecycle, so the CLI is no longer required for any of it:
+  install from a git repository (with an optional ref), update a
+  git-installed plugin in place, uninstall one, and grant or revoke
+  capabilities. Installing previews the plugin's identity, the app
+  types it would claim, and its requested capabilities before any code
+  is copied, and grants nothing mutating. Capability changes apply
+  immediately -- granting `apps:resolve` registers the plugin's app
+  types without a restart, revoking it unregisters them. Uninstalling
+  also forgets the persisted grants, so a later reinstall of the same
+  id is not silently pre-authorized.
+- **`dia plugin new --type=app`.** Scaffolds an app-type plugin
+  (claims a `type:`, exports `resolveApp`) rather than a GUI panel,
+  and prints the `dia plugin enable --caps apps:resolve` line needed
+  to make the type resolve.
 - `platform.Platform` gained `Run(opts, timeout)`, a blocking
   run-to-completion counterpart to the detached `Launch`, used by
   hooks.

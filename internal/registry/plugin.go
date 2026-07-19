@@ -178,9 +178,10 @@ func appToMap(app config.App) map[string]any {
 	return m
 }
 
-// descriptor mirrors plugins.AppDescriptor. It is duplicated rather
-// than imported to keep the dependency pointing one way; the shape is
-// four fields and is pinned by tests on both sides.
+// descriptor is the decoded form of what a plugin resolveApp returns.
+// It lives here rather than in internal/plugins so the dependency
+// keeps pointing one way; decodeDescriptor below is the only place
+// that validates the shape.
 type descriptor struct {
 	Cmd  string
 	Args []string

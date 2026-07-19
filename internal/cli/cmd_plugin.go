@@ -43,15 +43,25 @@ func newPluginCmd() *cobra.Command {
 
 func newPluginNewCmd() *cobra.Command {
 	var local bool
+	var kind string
 	cmd := &cobra.Command{
 		Use:   "new <id>",
 		Short: "Scaffold a new plugin",
-		Long:  "Write a starter plugin.json and index.js under the global (or local, with --local) plugins dir. The plugin id must be lowercase alphanumerics/dashes, 1-40 chars.",
-		Args:  cobra.ExactArgs(1),
+		Long: "Write a starter plugin.json and index.js under the global (or local, with --local) " +
+			"plugins dir. The plugin id must be lowercase alphanumerics/dashes, 1-40 chars.\n\n" +
+			"--type=panel (the default) scaffolds a plugin that renders a list panel in the GUI.\n" +
+			"--type=app scaffolds a plugin that provides a workspace app type: it exports " +
+			"resolveApp(app) and claims a `type:` name workspaces can use. That needs the " +
+			"mutating apps:resolve capability, so grant it with `dia plugin enable <id> " +
+			"--caps apps:resolve` before the type will resolve.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			if !isValidPluginID(id) {
 				return fmt.Errorf("invalid id %q: must match ^[a-z0-9]([a-z0-9-]{1,38}[a-z0-9])?$", id)
+			}
+			if kind != "panel" && kind != "app" {
+				return fmt.Errorf("invalid --type %q: must be panel or app", kind)
 			}
 			s, err := newSetup(flagsFromCmd(cmd).StateDir, cmd.ErrOrStderr())
 			if err != nil {
@@ -72,22 +82,34 @@ func newPluginNewCmd() *cobra.Command {
 			if err := os.MkdirAll(dst, 0o755); err != nil {
 				return err
 			}
-			manifest := starterPluginManifest(id)
+			manifest, entry := starterPluginManifest(id), starterPluginEntry(id)
+			if kind == "app" {
+				manifest, entry = starterAppTypeManifest(id), starterAppTypeEntry(id)
+			}
 			if err := os.WriteFile(filepath.Join(dst, "plugin.json"), []byte(manifest), 0o644); err != nil {
 				return err
 			}
-			entry := starterPluginEntry(id)
 			if err := os.WriteFile(filepath.Join(dst, "index.js"), []byte(entry), 0o644); err != nil {
 				return err
 			}
 			out := newOutput(cmd)
 			if out.IsJSON() {
-				return out.JSON(map[string]string{"path": dst})
+				return out.JSON(map[string]string{"path": dst, "type": kind})
 			}
-			return out.Printf("wrote %s\n", dst)
+			if err := out.Printf("wrote %s\n", dst); err != nil {
+				return err
+			}
+			if kind == "app" {
+				// The type stays unresolvable until the capability is
+				// granted, and there is nothing in the scaffold to hint
+				// at that, so say it here.
+				return out.Printf("grant it with: dia plugin enable %s --caps apps:resolve\n", id)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&local, "local", false, "scaffold into ./.dia/plugins in the current directory instead of the global plugins dir")
+	cmd.Flags().StringVar(&kind, "type", "panel", "what to scaffold: panel (a GUI panel) or app (a workspace app type)")
 	return cmd
 }
 
@@ -670,4 +692,69 @@ func (h *nullHost) Fetch(ctx context.Context, url string, opts map[string]any) (
 }
 func (h *nullHost) NewWorkspace(ctx context.Context, name string) (string, error) {
 	return "", nil
+}
+
+// starterAppTypeManifest scaffolds a plugin that provides a workspace
+// app type rather than a panel. The claimed type is the plugin id, so
+// the scaffold is usable the moment apps:resolve is granted.
+func starterAppTypeManifest(id string) string {
+	return fmt.Sprintf(`{
+  "id": %q,
+  "name": %q,
+  "version": "0.1.0",
+  "description": "Provides the %s workspace app type",
+  "author": "",
+  "entry": "index.js",
+  "capabilities": [
+    "apps:resolve"
+  ],
+  "app_types": [
+    %q
+  ],
+  "ui": {
+    "type": "kv",
+    "title": %q
+  }
+}
+`, id, id, id, id, id)
+}
+
+func starterAppTypeEntry(id string) string {
+	return fmt.Sprintf(`// %s - a dia app-type plugin.
+//
+// This plugin claims the %q workspace app type. Use it like any
+// built-in type:
+//
+//   apps:
+//     - type: %s
+//       cwd: ~/projects/thing
+//
+// resolveApp runs in a restricted runtime. The only host calls
+// available are dia.getConfig() and dia.pluginDir() -- no workspaces,
+// no exec, no fetch. It must be a pure function of the app it is
+// handed, which is what keeps "dia start --dry-run" honest.
+module.exports = {
+  // Called once per app of a type this plugin claims. "app" is the
+  // workspace entry as written in YAML: type, label, cmd, args, cwd,
+  // env, url.
+  //
+  // Return { cmd, args?, cwd?, env? } to launch something, or
+  // { url } to open a URL. Exactly one of cmd/url; any other key is
+  // an error.
+  resolveApp: function (app) {
+    return {
+      cmd: "echo",
+      args: ["replace me"].concat(app.args || []),
+      cwd: app.cwd,
+      env: app.env,
+    };
+  },
+
+  // The panel is incidental for an app-type plugin, but a manifest
+  // needs a ui block and the kv panel calls getData to render.
+  getData: function () {
+    return { provides: %q };
+  },
+};
+`, id, id, id, id)
 }

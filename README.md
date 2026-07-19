@@ -221,8 +221,17 @@ panel; the host renders the result.
 ### Scaffold a plugin
 
 ```sh
-dia plugin new hello        # writes to the global plugins dir
-dia plugin new hello --local  # writes to ./.dia/plugins/ in cwd
+dia plugin new hello              # a GUI panel plugin (default)
+dia plugin new compose --type=app # a plugin providing a workspace app type
+dia plugin new hello --local      # writes to ./.dia/plugins/ in cwd
+```
+
+`--type=app` scaffolds a plugin that exports `resolveApp` and claims a
+`type:` name workspaces can use. It requests the mutating
+`apps:resolve` capability, so grant it before the type resolves:
+
+```sh
+dia plugin enable compose --caps apps:resolve
 ```
 
 This generates a `plugin.json` and a starter `index.js` you can
@@ -356,6 +365,12 @@ Grants are shared between the GUI and the CLI: Settings > Plugins
 lists each plugin's requested capabilities and lets you toggle them,
 and either side sees what the other granted. Changes apply
 immediately -- no restart needed.
+
+Settings > Plugins can also install from a git repository, update a
+git-installed plugin, and uninstall one, so the CLI is not required
+for any of it. Installing shows the plugin's identity, the app types
+it would claim, and its requested capabilities before any code is
+copied; nothing mutating is granted by installing.
 
 | Capability          | Mutating | What it gates                          |
 |---------------------|----------|----------------------------------------|

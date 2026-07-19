@@ -88,6 +88,128 @@ func (a *App) InstallPluginFromFolder() (string, error) {
 	return dst, nil
 }
 
+// InspectPluginSource resolves an install source (a local directory or
+// a git remote) and reports what would be installed, without
+// installing it. The frontend shows this so the user sees a plugin's
+// requested capabilities before its code lands on their machine --
+// the same disclosure `dia plugin install` prints.
+//
+// The clone is discarded afterwards; InstallPluginFromSource fetches
+// again. Cloning twice is the cost of not holding a temp directory
+// across two round trips from the UI, and the second clone is what
+// actually gets installed, so nothing is shown that is not fetched.
+func (a *App) InspectPluginSource(source, ref string) (PluginSourceInfo, error) {
+	out := PluginSourceInfo{Requested: []CapabilityInfo{}}
+	if a.pmgr == nil {
+		return out, errors.New("plugin manager not initialized")
+	}
+	src, err := plugins.ParseInstallSource(source, ref)
+	if err != nil {
+		return out, err
+	}
+	manifest, _, cleanup, err := a.pmgr.InspectSource(src)
+	if err != nil {
+		return out, err
+	}
+	defer cleanup()
+
+	out.ID = manifest.ID
+	out.Name = manifest.Name
+	out.Version = manifest.Version
+	out.Description = manifest.Description
+	out.Author = manifest.Author
+	out.AppTypes = manifest.AppTypes
+	if out.AppTypes == nil {
+		out.AppTypes = []string{}
+	}
+	out.IsGit = src.Kind == plugins.InstallGit
+	for _, c := range manifest.Capabilities {
+		out.Requested = append(out.Requested, CapabilityInfo{
+			Name:     c,
+			Mutating: plugins.IsMutatingCapability(c),
+		})
+	}
+	return out, nil
+}
+
+// InstallPluginFromSource installs from a local path or a git remote.
+// Capabilities are not granted here: a freshly installed plugin gets
+// the read-only defaults, and the user grants the rest from the
+// capability list. That keeps installing and authorizing separate,
+// which is the whole point of the capability model.
+func (a *App) InstallPluginFromSource(source, ref string) (string, error) {
+	if a.pmgr == nil {
+		return "", errors.New("plugin manager not initialized")
+	}
+	src, err := plugins.ParseInstallSource(source, ref)
+	if err != nil {
+		return "", err
+	}
+	dst, err := a.pmgr.InstallFrom(src, false, "")
+	if err != nil {
+		return "", err
+	}
+	a.afterPluginSetChange()
+	return dst, nil
+}
+
+// UpdatePlugin re-clones a git-installed plugin from its recorded
+// source, keeping the capabilities the user granted.
+func (a *App) UpdatePlugin(id string) (string, error) {
+	if a.pmgr == nil {
+		return "", errors.New("plugin manager not initialized")
+	}
+	dst, err := a.pmgr.Update(id)
+	if err != nil {
+		return "", err
+	}
+	a.afterPluginSetChange()
+	return dst, nil
+}
+
+// UninstallPlugin removes a plugin and forgets its persisted grants.
+// Leaving the grants behind would silently re-authorize a later
+// install of the same id.
+func (a *App) UninstallPlugin(id string) error {
+	if a.pmgr == nil {
+		return errors.New("plugin manager not initialized")
+	}
+	if err := a.pmgr.Uninstall(id); err != nil {
+		return err
+	}
+	if a.store != nil {
+		if err := a.store.Mutate(func(d *state.Data) {
+			delete(d.Plugins, id)
+		}); err != nil {
+			a.logger.Warn("forget plugin state", "id", id, "error", err)
+		}
+	}
+	a.afterPluginSetChange()
+	return nil
+}
+
+// PluginIsUpdatable reports whether a plugin records a git source, so
+// the UI can hide an update button that could only ever fail.
+func (a *App) PluginIsUpdatable(id string) bool {
+	if a.pmgr == nil {
+		return false
+	}
+	l, ok := a.pmgr.Get(id)
+	if !ok {
+		return false
+	}
+	_, hasProv, err := plugins.ReadProvenance(l.Dir)
+	return err == nil && hasProv
+}
+
+// afterPluginSetChange re-syncs everything derived from the installed
+// plugin set. Installing or removing a plugin changes which app types
+// exist, and the registry has to follow.
+func (a *App) afterPluginSetChange() {
+	a.applyPersistedPluginState(a.pmgr)
+	a.registerPluginAppTypes(a.pmgr)
+}
+
 // OpenPluginFolder reveals the global plugins directory in the file
 // manager.
 func (a *App) OpenPluginFolder() error {

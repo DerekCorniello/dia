@@ -202,50 +202,6 @@ func TestResolveApp_ConflictingClaimIsRecorded(t *testing.T) {
 	}
 }
 
-func TestDecodeDescriptor(t *testing.T) {
-	tests := []struct {
-		name    string
-		in      map[string]any
-		wantErr string
-	}{
-		{name: "cmd only", in: map[string]any{"cmd": "ls"}},
-		{name: "url only", in: map[string]any{"url": "https://example.com"}},
-		{
-			name:    "both",
-			in:      map[string]any{"cmd": "ls", "url": "https://example.com"},
-			wantErr: "exactly one",
-		},
-		{name: "neither", in: map[string]any{}, wantErr: "exactly one"},
-		{
-			name:    "url with cmd-only fields",
-			in:      map[string]any{"url": "https://example.com", "cwd": "/tmp"},
-			wantErr: "cmd-only fields",
-		},
-		{
-			name:    "unknown key",
-			in:      map[string]any{"command": "ls"},
-			wantErr: "unusable object",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := DecodeDescriptor(tt.in)
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				return
-			}
-			if err == nil {
-				t.Fatal("expected an error")
-			}
-			if !strings.Contains(err.Error(), tt.wantErr) {
-				t.Errorf("error %q does not contain %q", err.Error(), tt.wantErr)
-			}
-		})
-	}
-}
-
 func TestManifest_AppTypeValidation(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -1,5 +1,5 @@
 <script lang="ts" context="module">
-  import type { PluginInfo, CapabilityInfo } from '../api';
+  import type { PluginInfo, CapabilityInfo, PluginSourceInfo } from '../api';
 </script>
 
 <script lang="ts">
@@ -22,6 +22,39 @@
   let pending: Record<string, string[]> = {};
   let saving: string | null = null;
 
+  // Which installed plugins record a git source, so Update is only
+  // offered where it could actually work.
+  let updatable: Record<string, boolean> = {};
+  let busyId: string | null = null;
+  let confirmRemove: string | null = null;
+
+  // Install-from-URL flow. The preview is the disclosure step: the
+  // user sees what a plugin asks for before any of its code is copied,
+  // matching what `dia plugin install` prints.
+  let sourceInput = '';
+  let refInput = '';
+  let preview: PluginSourceInfo | null = null;
+  let inspecting = false;
+  let installing = false;
+
+  // Recomputed whenever the plugin list changes, so a freshly
+  // installed plugin gets its Update button without a manual refresh.
+  // The list is passed in rather than read from the closure so the
+  // reactive statement actually names its dependency.
+  $: refreshUpdatable(plugins);
+
+  async function refreshUpdatable(list: PluginInfo[]) {
+    const next: Record<string, boolean> = {};
+    for (const p of list ?? []) {
+      try {
+        next[p.id] = await api.pluginIsUpdatable(p.id);
+      } catch {
+        next[p.id] = false;
+      }
+    }
+    updatable = next;
+  }
+
   async function installFromFolder() {
     error = null;
     try {
@@ -29,6 +62,70 @@
       dispatch('refresh');
     } catch (e) {
       error = describeError(e);
+    }
+  }
+
+  async function inspectSource() {
+    error = null;
+    preview = null;
+    if (!sourceInput.trim()) return;
+    inspecting = true;
+    try {
+      preview = await api.inspectPluginSource(sourceInput.trim(), refInput.trim());
+    } catch (e) {
+      error = describeError(e);
+    } finally {
+      inspecting = false;
+    }
+  }
+
+  async function confirmInstall() {
+    error = null;
+    installing = true;
+    try {
+      await api.installPluginFromSource(sourceInput.trim(), refInput.trim());
+      sourceInput = '';
+      refInput = '';
+      preview = null;
+      dispatch('refresh');
+    } catch (e) {
+      error = describeError(e);
+    } finally {
+      installing = false;
+    }
+  }
+
+  function cancelInstall() {
+    preview = null;
+  }
+
+  async function update(id: string) {
+    error = null;
+    busyId = id;
+    try {
+      await api.updatePlugin(id);
+      // The updated manifest may request a different capability set.
+      const { [id]: _c, ...rest } = caps;
+      caps = rest;
+      dispatch('refresh');
+    } catch (e) {
+      error = describeError(e);
+    } finally {
+      busyId = null;
+    }
+  }
+
+  async function remove(id: string) {
+    error = null;
+    busyId = id;
+    try {
+      await api.uninstallPlugin(id);
+      confirmRemove = null;
+      dispatch('refresh');
+    } catch (e) {
+      error = describeError(e);
+    } finally {
+      busyId = null;
     }
   }
 
@@ -129,6 +226,96 @@
     <p class="text-xs text-accent-err">{error}</p>
   {/if}
 
+  <div class="rounded border border-bg-600 bg-bg-800 p-3">
+    <label for="plugin-source" class="text-[10px] uppercase tracking-wide text-fg-mute">
+      Install from a git repository
+    </label>
+    <div class="mt-1 flex flex-wrap gap-1.5">
+      <input
+        id="plugin-source"
+        type="text"
+        bind:value={sourceInput}
+        placeholder="github.com/user/dia-plugin"
+        class="min-w-0 flex-1 rounded border border-bg-600 bg-bg-900 px-2 py-1 text-xs text-fg placeholder:text-fg-mute"
+      />
+      <input
+        id="plugin-ref"
+        type="text"
+        bind:value={refInput}
+        placeholder="branch or tag"
+        class="w-28 rounded border border-bg-600 bg-bg-900 px-2 py-1 text-xs text-fg placeholder:text-fg-mute"
+      />
+      <button
+        type="button"
+        on:click={inspectSource}
+        disabled={!sourceInput.trim() || inspecting}
+        class="rounded bg-bg-600 px-2 py-1 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg disabled:opacity-40"
+      >
+        {inspecting ? 'checking...' : 'Check'}
+      </button>
+    </div>
+
+    {#if preview}
+      <div class="mt-2 rounded border border-primary/20 bg-bg-900 p-2">
+        <p class="text-xs text-fg">
+          <span class="font-semibold">{preview.name || preview.id}</span>
+          <span class="text-fg-mute">v{preview.version}</span>
+          {#if preview.author}<span class="text-fg-mute">by {preview.author}</span>{/if}
+        </p>
+        {#if preview.description}
+          <p class="mt-0.5 text-xs text-fg-dim">{preview.description}</p>
+        {/if}
+        {#if preview.appTypes.length > 0}
+          <p class="mt-1 text-[10px] text-fg-dim">
+            provides app types: <span class="font-mono">{preview.appTypes.join(', ')}</span>
+          </p>
+        {/if}
+
+        <p class="mt-1.5 text-[10px] uppercase tracking-wide text-fg-mute">requests</p>
+        {#if preview.requested.length === 0}
+          <p class="text-xs text-fg-mute">no capabilities</p>
+        {:else}
+          <ul class="mt-0.5 space-y-0.5">
+            {#each preview.requested as c (c.name)}
+              <li class="flex items-center gap-2">
+                <span class="font-mono text-[11px] text-fg-dim">{c.name}</span>
+                {#if c.mutating}
+                  <span
+                    class="inline-flex rounded-full bg-error/15 px-1.5 py-0.5 text-[9px] text-error"
+                  >
+                    mutating
+                  </span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        <p class="mt-1.5 text-[10px] text-fg-mute">
+          Installing runs this plugin's code. Capabilities are not granted yet -- after installing,
+          grant them from the plugin's capability list.
+        </p>
+
+        <div class="mt-2 flex gap-1.5">
+          <button
+            type="button"
+            on:click={confirmInstall}
+            disabled={installing}
+            class="rounded bg-primary/20 px-2 py-1 text-[10px] text-primary hover:bg-primary/30 disabled:opacity-40"
+          >
+            {installing ? 'installing...' : 'Install'}
+          </button>
+          <button
+            type="button"
+            on:click={cancelInstall}
+            class="rounded bg-bg-600 px-2 py-1 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    {/if}
+  </div>
+
   {#if plugins.length === 0}
     <p class="text-xs text-fg-mute">no plugins installed</p>
   {:else}
@@ -179,6 +366,45 @@
             >
               {p.dir}
             </button>
+
+            <div class="ml-auto flex shrink-0 gap-1.5">
+              {#if updatable[p.id]}
+                <button
+                  type="button"
+                  on:click={() => update(p.id)}
+                  disabled={busyId === p.id}
+                  class="rounded bg-bg-600 px-2 py-0.5 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg disabled:opacity-40"
+                  title="Re-clone from the source it was installed from"
+                >
+                  {busyId === p.id ? 'working...' : 'Update'}
+                </button>
+              {/if}
+              {#if confirmRemove === p.id}
+                <button
+                  type="button"
+                  on:click={() => remove(p.id)}
+                  disabled={busyId === p.id}
+                  class="rounded bg-error/20 px-2 py-0.5 text-[10px] text-error hover:bg-error/30 disabled:opacity-40"
+                >
+                  Confirm remove
+                </button>
+                <button
+                  type="button"
+                  on:click={() => (confirmRemove = null)}
+                  class="rounded bg-bg-600 px-2 py-0.5 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg"
+                >
+                  Cancel
+                </button>
+              {:else}
+                <button
+                  type="button"
+                  on:click={() => (confirmRemove = p.id)}
+                  class="rounded bg-bg-600 px-2 py-0.5 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-error"
+                >
+                  Uninstall
+                </button>
+              {/if}
+            </div>
           </div>
 
           <details class="mt-2" on:toggle={() => loadCaps(p.id)}>

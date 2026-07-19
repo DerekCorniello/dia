@@ -2,7 +2,9 @@ package wailsapp
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DerekCorniello/dia/internal/config"
@@ -225,5 +227,220 @@ func TestDoctor_IncludesAppTypeConflicts(t *testing.T) {
 	}
 	if !found {
 		t.Error("Doctor should report the app-type conflict")
+	}
+}
+
+// gitPluginRepo builds a real local git repo holding a plugin and
+// returns a file:// URL, exercising the clone path without a network.
+func gitPluginRepo(t *testing.T, manifest string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "plugin.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.js"),
+		[]byte(`module.exports = { getData: function () { return {}; },
+			resolveApp: function () { return { cmd: "from-git" }; } };`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q"}, {"config", "user.email", "t@e.com"}, {"config", "user.name", "T"},
+		{"add", "."}, {"commit", "-q", "-m", "initial"},
+	} {
+		c := exec.Command("git", args...)
+		c.Dir = dir
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	return "file://" + dir
+}
+
+const gitCapsManifest = `{"id":"caps-plug","name":"Caps","version":"0.2.0","entry":"index.js",` +
+	`"capabilities":["workspaces:read","apps:resolve"],"app_types":["capstype"],` +
+	`"ui":{"type":"kv","title":"T"}}`
+
+// Inspecting must disclose what the plugin wants without installing it.
+func TestInspectPluginSource_DisclosesWithoutInstalling(t *testing.T) {
+	withTempXDG(t)
+	a := startedApp(t)
+	url := gitPluginRepo(t, gitCapsManifest)
+
+	info, err := a.InspectPluginSource(url, "")
+	if err != nil {
+		t.Fatalf("InspectPluginSource: %v", err)
+	}
+	if info.ID != "caps-plug" || info.Version != "0.2.0" {
+		t.Errorf("got %+v", info)
+	}
+	if !info.IsGit {
+		t.Error("a file:// remote should be reported as a git source")
+	}
+	if len(info.AppTypes) != 1 || info.AppTypes[0] != "capstype" {
+		t.Errorf("AppTypes = %v", info.AppTypes)
+	}
+	var sawMutating bool
+	for _, c := range info.Requested {
+		if c.Name == "apps:resolve" && c.Mutating {
+			sawMutating = true
+		}
+	}
+	if !sawMutating {
+		t.Errorf("apps:resolve should be disclosed as mutating: %+v", info.Requested)
+	}
+	// Nothing installed.
+	if _, ok := a.pmgr.Get("caps-plug"); ok {
+		t.Error("InspectPluginSource must not install the plugin")
+	}
+}
+
+func TestInspectPluginSource_RejectsBadSource(t *testing.T) {
+	withTempXDG(t)
+	a := startedApp(t)
+	if _, err := a.InspectPluginSource("owner/repo", ""); err == nil {
+		t.Error("a bare owner/repo is ambiguous and must be rejected")
+	}
+}
+
+func TestInstallPluginFromSource_GitInstallsWithReadOnlyGrants(t *testing.T) {
+	withTempXDG(t)
+	a := startedApp(t)
+	url := gitPluginRepo(t, gitCapsManifest)
+
+	if _, err := a.InstallPluginFromSource(url, ""); err != nil {
+		t.Fatalf("InstallPluginFromSource: %v", err)
+	}
+	info, err := a.GetPluginCapabilities("caps-plug")
+	if err != nil {
+		t.Fatalf("GetPluginCapabilities: %v", err)
+	}
+	// Installing discloses; it does not authorize.
+	if plugins.HasCapability(info.Granted, "apps:resolve") {
+		t.Errorf("installing must not grant a mutating capability, got %v", info.Granted)
+	}
+	if !plugins.HasCapability(info.Granted, "workspaces:read") {
+		t.Errorf("read capability should be granted, got %v", info.Granted)
+	}
+	// And the app type stays unclaimed until it is granted.
+	if _, err := a.reg.Resolve(config.App{Type: "capstype"}); err == nil {
+		t.Error("app type should not resolve before apps:resolve is granted")
+	}
+}
+
+// Installing has to make the plugin's app types usable as soon as the
+// capability is granted, without restarting.
+func TestInstallPluginFromSource_TypeUsableAfterGranting(t *testing.T) {
+	withTempXDG(t)
+	a := startedApp(t)
+	url := gitPluginRepo(t, gitCapsManifest)
+
+	if _, err := a.InstallPluginFromSource(url, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetPluginCapabilities("caps-plug", []string{"apps:resolve"}); err != nil {
+		t.Fatal(err)
+	}
+	action, err := a.reg.Resolve(config.App{Type: "capstype"})
+	if err != nil {
+		t.Fatalf("app type should resolve: %v", err)
+	}
+	if action.Launch == nil || action.Launch.Cmd != "from-git" {
+		t.Errorf("unexpected action: %+v", action)
+	}
+}
+
+func TestUpdatePlugin_RequiresAGitSource(t *testing.T) {
+	withTempXDG(t)
+	writePlugin(t, capsManifest)
+	a := startedApp(t)
+
+	// Written to the plugins dir directly, so there is no provenance.
+	if a.PluginIsUpdatable("caps-plug") {
+		t.Error("a path-installed plugin is not updatable")
+	}
+	if _, err := a.UpdatePlugin("caps-plug"); err == nil {
+		t.Error("expected an error updating a plugin with no recorded source")
+	}
+}
+
+func TestUpdatePlugin_ReclonesAndKeepsGrants(t *testing.T) {
+	withTempXDG(t)
+	a := startedApp(t)
+	url := gitPluginRepo(t, gitCapsManifest)
+	repoDir := strings.TrimPrefix(url, "file://")
+
+	if _, err := a.InstallPluginFromSource(url, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !a.PluginIsUpdatable("caps-plug") {
+		t.Fatal("a git-installed plugin should be updatable")
+	}
+	if err := a.SetPluginCapabilities("caps-plug", []string{"apps:resolve"}); err != nil {
+		t.Fatal(err)
+	}
+
+	bumped := strings.Replace(gitCapsManifest, `"version":"0.2.0"`, `"version":"0.9.0"`, 1)
+	if err := os.WriteFile(filepath.Join(repoDir, "plugin.json"), []byte(bumped), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "."}, {"commit", "-q", "-m", "bump"}} {
+		c := exec.Command("git", args...)
+		c.Dir = repoDir
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	if _, err := a.UpdatePlugin("caps-plug"); err != nil {
+		t.Fatalf("UpdatePlugin: %v", err)
+	}
+	l, _ := a.pmgr.Get("caps-plug")
+	if l.Manifest.Version != "0.9.0" {
+		t.Errorf("Version = %q, want 0.9.0", l.Manifest.Version)
+	}
+	// An update is not a reinstall; the grant survives.
+	if !plugins.HasCapability(l.GrantedCaps, "apps:resolve") {
+		t.Errorf("grants should survive an update, got %v", l.GrantedCaps)
+	}
+}
+
+func TestUninstallPlugin_RemovesTypesAndForgetsGrants(t *testing.T) {
+	withTempXDG(t)
+	a := startedApp(t)
+	url := gitPluginRepo(t, gitCapsManifest)
+
+	if _, err := a.InstallPluginFromSource(url, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetPluginCapabilities("caps-plug", []string{"apps:resolve"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.reg.Resolve(config.App{Type: "capstype"}); err != nil {
+		t.Fatalf("precondition: type should resolve, got %v", err)
+	}
+
+	if err := a.UninstallPlugin("caps-plug"); err != nil {
+		t.Fatalf("UninstallPlugin: %v", err)
+	}
+	if _, ok := a.pmgr.Get("caps-plug"); ok {
+		t.Error("plugin should be gone")
+	}
+	if _, err := a.reg.Resolve(config.App{Type: "capstype"}); err == nil {
+		t.Error("the app type should be unregistered on uninstall")
+	}
+	// Leaving grants behind would silently re-authorize a reinstall.
+	if ps, ok := a.store.Snapshot().Plugins["caps-plug"]; ok && len(ps.GrantedCapabilities) > 0 {
+		t.Errorf("persisted grants should be forgotten, got %+v", ps)
+	}
+}
+
+func TestUninstallPlugin_UnknownPlugin(t *testing.T) {
+	withTempXDG(t)
+	a := startedApp(t)
+	if err := a.UninstallPlugin("nope"); err == nil {
+		t.Error("expected an error for an unknown plugin")
 	}
 }

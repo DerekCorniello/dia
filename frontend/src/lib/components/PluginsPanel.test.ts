@@ -7,6 +7,11 @@ vi.mock('../api', () => ({
     getPluginCapabilities: vi.fn(),
     setPluginCapabilities: vi.fn(),
     installPluginFromFolder: vi.fn(),
+    inspectPluginSource: vi.fn(),
+    installPluginFromSource: vi.fn(),
+    pluginIsUpdatable: vi.fn(),
+    updatePlugin: vi.fn(),
+    uninstallPlugin: vi.fn(),
   },
   describeError: (e: unknown) => (e instanceof Error ? e.message : String(e)),
 }));
@@ -17,7 +22,7 @@ vi.mock('../stores', () => ({
 
 import { api } from '../api';
 import PluginsPanel from './PluginsPanel.svelte';
-import type { PluginInfo, PluginCapabilityInfo } from '../api';
+import type { PluginInfo, PluginCapabilityInfo, PluginSourceInfo } from '../api';
 
 // PluginCapabilityInfo is a wails-generated class with a convertValues
 // method; these literals carry everything the component actually reads
@@ -70,6 +75,13 @@ beforeEach(() => {
   vi.mocked(api.getPluginCapabilities).mockReset();
   vi.mocked(api.setPluginCapabilities).mockReset();
   vi.mocked(api.installPluginFromFolder).mockReset();
+  vi.mocked(api.inspectPluginSource).mockReset();
+  vi.mocked(api.installPluginFromSource).mockReset();
+  vi.mocked(api.updatePlugin).mockReset();
+  vi.mocked(api.uninstallPlugin).mockReset();
+  // Nothing is updatable unless a test says so.
+  vi.mocked(api.pluginIsUpdatable).mockReset();
+  vi.mocked(api.pluginIsUpdatable).mockResolvedValue(false);
 });
 
 describe('PluginsPanel rendering', () => {
@@ -317,5 +329,202 @@ describe('PluginsPanel toolbar', () => {
 
     await userEvent.click(screen.getByText('Refresh'));
     expect(onRefresh).toHaveBeenCalled();
+  });
+});
+
+function sourceInfo(overrides: Record<string, unknown> = {}): PluginSourceInfo {
+  return {
+    id: 'remote-plug',
+    name: 'Remote Plugin',
+    version: '1.2.0',
+    description: 'Does a thing',
+    author: 'someone',
+    requested: [
+      { name: 'workspaces:read', mutating: false, granted: false },
+      { name: 'apps:resolve', mutating: true, granted: false },
+    ],
+    appTypes: ['compose'],
+    isGit: true,
+    ...overrides,
+  } as unknown as PluginSourceInfo;
+}
+
+describe('PluginsPanel install from git', () => {
+  it('does not inspect until Check is pressed', async () => {
+    render(PluginsPanel, { plugins: [] });
+    await userEvent.type(screen.getByPlaceholderText('github.com/user/dia-plugin'), 'x');
+    expect(api.inspectPluginSource).not.toHaveBeenCalled();
+  });
+
+  it('keeps Check disabled while the source is empty', () => {
+    render(PluginsPanel, { plugins: [] });
+    expect((screen.getByText('Check') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('previews the plugin and passes the ref through', async () => {
+    vi.mocked(api.inspectPluginSource).mockResolvedValue(sourceInfo());
+    render(PluginsPanel, { plugins: [] });
+
+    await userEvent.type(
+      screen.getByPlaceholderText('github.com/user/dia-plugin'),
+      'github.com/u/r',
+    );
+    await userEvent.type(screen.getByPlaceholderText('branch or tag'), 'v1.2.0');
+    await userEvent.click(screen.getByText('Check'));
+
+    await waitFor(() => expect(screen.getByText('Remote Plugin')).toBeTruthy());
+    expect(api.inspectPluginSource).toHaveBeenCalledWith('github.com/u/r', 'v1.2.0');
+  });
+
+  // The preview is the disclosure step; a mutating capability has to be
+  // visible before any code is copied.
+  it('discloses the requested capabilities and flags mutating ones', async () => {
+    vi.mocked(api.inspectPluginSource).mockResolvedValue(sourceInfo());
+    render(PluginsPanel, { plugins: [] });
+
+    await userEvent.type(screen.getByPlaceholderText('github.com/user/dia-plugin'), 'g/u/r');
+    await userEvent.click(screen.getByText('Check'));
+
+    await waitFor(() => expect(screen.getByText('apps:resolve')).toBeTruthy());
+    expect(screen.getByText('workspaces:read')).toBeTruthy();
+    expect(screen.getAllByText('mutating')).toHaveLength(1);
+    // The app types it would claim matter as much as the capabilities.
+    expect(screen.getByText('compose')).toBeTruthy();
+  });
+
+  it('does not install until the preview is confirmed', async () => {
+    vi.mocked(api.inspectPluginSource).mockResolvedValue(sourceInfo());
+    render(PluginsPanel, { plugins: [] });
+
+    await userEvent.type(screen.getByPlaceholderText('github.com/user/dia-plugin'), 'g/u/r');
+    await userEvent.click(screen.getByText('Check'));
+    await waitFor(() => expect(screen.getByText('Remote Plugin')).toBeTruthy());
+
+    expect(api.installPluginFromSource).not.toHaveBeenCalled();
+  });
+
+  it('installs on confirm and clears the form', async () => {
+    vi.mocked(api.inspectPluginSource).mockResolvedValue(sourceInfo());
+    vi.mocked(api.installPluginFromSource).mockResolvedValue('/plugins/remote-plug');
+    const onRefresh = vi.fn();
+    render(PluginsPanel, { props: { plugins: [] }, events: { refresh: onRefresh } });
+
+    const src = screen.getByPlaceholderText('github.com/user/dia-plugin') as HTMLInputElement;
+    await userEvent.type(src, 'github.com/u/r');
+    await userEvent.click(screen.getByText('Check'));
+    await waitFor(() => expect(screen.getByText('Remote Plugin')).toBeTruthy());
+    await userEvent.click(screen.getByText('Install'));
+
+    await waitFor(() =>
+      expect(api.installPluginFromSource).toHaveBeenCalledWith('github.com/u/r', ''),
+    );
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+    expect(src.value).toBe('');
+    expect(screen.queryByText('Remote Plugin')).toBeNull();
+  });
+
+  it('cancel dismisses the preview without installing', async () => {
+    vi.mocked(api.inspectPluginSource).mockResolvedValue(sourceInfo());
+    render(PluginsPanel, { plugins: [] });
+
+    await userEvent.type(screen.getByPlaceholderText('github.com/user/dia-plugin'), 'g/u/r');
+    await userEvent.click(screen.getByText('Check'));
+    await waitFor(() => expect(screen.getByText('Remote Plugin')).toBeTruthy());
+    await userEvent.click(screen.getByText('Cancel'));
+
+    expect(screen.queryByText('Remote Plugin')).toBeNull();
+    expect(api.installPluginFromSource).not.toHaveBeenCalled();
+  });
+
+  it('shows an inspect failure and offers no install', async () => {
+    vi.mocked(api.inspectPluginSource).mockRejectedValue(new Error('not a recognized git URL'));
+    render(PluginsPanel, { plugins: [] });
+
+    await userEvent.type(screen.getByPlaceholderText('github.com/user/dia-plugin'), 'owner/repo');
+    await userEvent.click(screen.getByText('Check'));
+
+    await waitFor(() => expect(screen.getByText('not a recognized git URL')).toBeTruthy());
+    expect(screen.queryByText('Install')).toBeNull();
+  });
+
+  it('shows an install failure', async () => {
+    vi.mocked(api.inspectPluginSource).mockResolvedValue(sourceInfo());
+    vi.mocked(api.installPluginFromSource).mockRejectedValue(new Error('clone failed'));
+    render(PluginsPanel, { plugins: [] });
+
+    await userEvent.type(screen.getByPlaceholderText('github.com/user/dia-plugin'), 'g/u/r');
+    await userEvent.click(screen.getByText('Check'));
+    await waitFor(() => expect(screen.getByText('Remote Plugin')).toBeTruthy());
+    await userEvent.click(screen.getByText('Install'));
+
+    await waitFor(() => expect(screen.getByText('clone failed')).toBeTruthy());
+  });
+});
+
+describe('PluginsPanel update and uninstall', () => {
+  // Update can only work for a git-installed plugin, so it must not be
+  // offered for one installed from a path.
+  it('hides Update for a plugin with no recorded source', async () => {
+    vi.mocked(api.pluginIsUpdatable).mockResolvedValue(false);
+    render(PluginsPanel, { plugins: [plugin()] });
+    await waitFor(() => expect(screen.getByText('Uninstall')).toBeTruthy());
+    expect(screen.queryByText('Update')).toBeNull();
+  });
+
+  it('shows Update for a git-installed plugin and calls through', async () => {
+    vi.mocked(api.pluginIsUpdatable).mockResolvedValue(true);
+    vi.mocked(api.updatePlugin).mockResolvedValue('/plugins/caps-plug');
+    const onRefresh = vi.fn();
+    render(PluginsPanel, { props: { plugins: [plugin()] }, events: { refresh: onRefresh } });
+
+    await waitFor(() => expect(screen.getByText('Update')).toBeTruthy());
+    await userEvent.click(screen.getByText('Update'));
+
+    await waitFor(() => expect(api.updatePlugin).toHaveBeenCalledWith('caps-plug'));
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+
+  it('shows an update failure', async () => {
+    vi.mocked(api.pluginIsUpdatable).mockResolvedValue(true);
+    vi.mocked(api.updatePlugin).mockRejectedValue(new Error('id mismatch'));
+    render(PluginsPanel, { plugins: [plugin()] });
+
+    await waitFor(() => expect(screen.getByText('Update')).toBeTruthy());
+    await userEvent.click(screen.getByText('Update'));
+    await waitFor(() => expect(screen.getByText('id mismatch')).toBeTruthy());
+  });
+
+  // Uninstall is destructive and irreversible, so one click must not do it.
+  it('requires confirmation before uninstalling', async () => {
+    render(PluginsPanel, { plugins: [plugin()] });
+    await waitFor(() => expect(screen.getByText('Uninstall')).toBeTruthy());
+
+    await userEvent.click(screen.getByText('Uninstall'));
+    expect(api.uninstallPlugin).not.toHaveBeenCalled();
+    expect(screen.getByText('Confirm remove')).toBeTruthy();
+  });
+
+  it('uninstalls once confirmed', async () => {
+    vi.mocked(api.uninstallPlugin).mockResolvedValue(undefined);
+    const onRefresh = vi.fn();
+    render(PluginsPanel, { props: { plugins: [plugin()] }, events: { refresh: onRefresh } });
+
+    await waitFor(() => expect(screen.getByText('Uninstall')).toBeTruthy());
+    await userEvent.click(screen.getByText('Uninstall'));
+    await userEvent.click(screen.getByText('Confirm remove'));
+
+    await waitFor(() => expect(api.uninstallPlugin).toHaveBeenCalledWith('caps-plug'));
+    await waitFor(() => expect(onRefresh).toHaveBeenCalled());
+  });
+
+  it('cancel backs out of the uninstall', async () => {
+    render(PluginsPanel, { plugins: [plugin()] });
+    await waitFor(() => expect(screen.getByText('Uninstall')).toBeTruthy());
+
+    await userEvent.click(screen.getByText('Uninstall'));
+    await userEvent.click(screen.getByText('Cancel'));
+
+    expect(api.uninstallPlugin).not.toHaveBeenCalled();
+    expect(screen.getByText('Uninstall')).toBeTruthy();
   });
 });

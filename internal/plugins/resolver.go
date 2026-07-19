@@ -1,9 +1,7 @@
 package plugins
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -17,35 +15,6 @@ import (
 // on the path to launching a workspace, so it has to be short: a
 // plugin that hangs here would hang `dia start`.
 const resolveTimeout = 5 * time.Second
-
-// AppDescriptor is what a plugin's resolveApp returns: either a
-// command to launch or a URL to open, never both. It mirrors the
-// registry's Action without coupling this package to it.
-type AppDescriptor struct {
-	Cmd  string            `json:"cmd,omitempty"`
-	Args []string          `json:"args,omitempty"`
-	Cwd  string            `json:"cwd,omitempty"`
-	Env  map[string]string `json:"env,omitempty"`
-	URL  string            `json:"url,omitempty"`
-}
-
-// Validate enforces the one-of rule. A descriptor that sets both, or
-// neither, is a plugin bug, and saying so precisely beats launching
-// something the author did not intend.
-func (d AppDescriptor) Validate() error {
-	hasCmd := d.Cmd != ""
-	hasURL := d.URL != ""
-	switch {
-	case hasCmd && hasURL:
-		return errors.New(`resolveApp returned both "cmd" and "url"; it must return exactly one`)
-	case !hasCmd && !hasURL:
-		return errors.New(`resolveApp returned neither "cmd" nor "url"; it must return exactly one`)
-	}
-	if hasURL && (len(d.Args) > 0 || d.Cwd != "" || len(d.Env) > 0) {
-		return errors.New(`resolveApp returned "url" alongside cmd-only fields (args/cwd/env)`)
-	}
-	return nil
-}
 
 // NewResolverRuntime builds a goja runtime for resolving app types.
 //
@@ -155,27 +124,6 @@ func (m *Manager) resolverFor(id string, l *Loaded) (*Runtime, error) {
 	}
 	m.resolvers[id] = rt
 	return rt, nil
-}
-
-// DecodeDescriptor converts a resolveApp result into a typed
-// descriptor and validates it.
-func DecodeDescriptor(m map[string]any) (AppDescriptor, error) {
-	data, err := json.Marshal(m)
-	if err != nil {
-		return AppDescriptor{}, err
-	}
-	var d AppDescriptor
-	dec := json.NewDecoder(bytes.NewReader(data))
-	// Reject unknown keys: a typo like "command" would otherwise be
-	// silently dropped and surface as "returned neither cmd nor url".
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&d); err != nil {
-		return AppDescriptor{}, fmt.Errorf("resolveApp returned an unusable object: %w", err)
-	}
-	if err := d.Validate(); err != nil {
-		return AppDescriptor{}, err
-	}
-	return d, nil
 }
 
 // AppTypes returns the app types currently claimed, mapped to the

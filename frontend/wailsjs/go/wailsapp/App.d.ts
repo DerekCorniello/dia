@@ -28,6 +28,8 @@ export function GetWorkspace(arg1:string):Promise<wailsapp.WorkspaceDetail>;
 
 export function GetWorkspaceEditor(arg1:string):Promise<wailsapp.WorkspaceEditor>;
 
+export function InstallPluginFromSource(arg1:string,arg2:string):Promise<string>;
+
 export function ListCustomThemes():Promise<Array<wailsapp.CustomThemeInfo>>;
 
 export function ListInstances():Promise<Array<wailsapp.InstanceInfo>>;
@@ -39,6 +41,8 @@ export function ListWorkspaces():Promise<Array<wailsapp.WorkspaceInfo>>;
 export function NewWorkspace(arg1:string,arg2:boolean):Promise<string>;
 
 export function OpenConfigFolder():Promise<void>;
+
+export function InspectPluginSource(arg1:string,arg2:string):Promise<wailsapp.PluginSourceInfo>;
 
 export function InstallPluginFromFolder():Promise<string>;
 
@@ -53,6 +57,8 @@ export function OpenStateFolder():Promise<void>;
 export function Paths():Promise<wailsapp.PathsInfo>;
 
 export function PluginCall(arg1:string,arg2:string,arg3:string):Promise<string>;
+
+export function PluginIsUpdatable(arg1:string):Promise<boolean>;
 
 export function PluginPaths():Promise<wailsapp.PluginPathsInfo>;
 
@@ -85,3 +91,7 @@ export function StopAll():Promise<number>;
 export function StopInstance(arg1:string):Promise<void>;
 
 export function StopWorkspace(arg1:string):Promise<void>;
+
+export function UninstallPlugin(arg1:string):Promise<void>;
+
+export function UpdatePlugin(arg1:string):Promise<string>;

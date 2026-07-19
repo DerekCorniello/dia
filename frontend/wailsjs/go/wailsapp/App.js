@@ -50,6 +50,10 @@ export function GetWorkspaceEditor(arg1) {
   return window['go']['wailsapp']['App']['GetWorkspaceEditor'](arg1);
 }
 
+export function InstallPluginFromSource(arg1, arg2) {
+  return window['go']['wailsapp']['App']['InstallPluginFromSource'](arg1, arg2);
+}
+
 export function ListCustomThemes() {
   return window['go']['wailsapp']['App']['ListCustomThemes']();
 }
@@ -72,6 +76,10 @@ export function NewWorkspace(arg1, arg2) {
 
 export function OpenConfigFolder() {
   return window['go']['wailsapp']['App']['OpenConfigFolder']();
+}
+
+export function InspectPluginSource(arg1, arg2) {
+  return window['go']['wailsapp']['App']['InspectPluginSource'](arg1, arg2);
 }
 
 export function InstallPluginFromFolder() {
@@ -100,6 +108,10 @@ export function Paths() {
 
 export function PluginCall(arg1, arg2, arg3) {
   return window['go']['wailsapp']['App']['PluginCall'](arg1, arg2, arg3);
+}
+
+export function PluginIsUpdatable(arg1) {
+  return window['go']['wailsapp']['App']['PluginIsUpdatable'](arg1);
 }
 
 export function PluginPaths() {
@@ -164,4 +176,12 @@ export function StopInstance(arg1) {
 
 export function StopWorkspace(arg1) {
   return window['go']['wailsapp']['App']['StopWorkspace'](arg1);
+}
+
+export function UninstallPlugin(arg1) {
+  return window['go']['wailsapp']['App']['UninstallPlugin'](arg1);
+}
+
+export function UpdatePlugin(arg1) {
+  return window['go']['wailsapp']['App']['UpdatePlugin'](arg1);
 }
