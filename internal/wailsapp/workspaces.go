@@ -237,6 +237,9 @@ func (a *App) enableWorkspacePlugin(id string, cfg map[string]any) error {
 	if !ok {
 		return fmt.Errorf("plugin %q not found", id)
 	}
+	if loaded.Manifest == nil {
+		return fmt.Errorf("plugin %q has no valid manifest: %s", id, loaded.LastError)
+	}
 	granted := plugins.GrantCapabilities(loaded.Manifest.Capabilities, plugins.DefaultReadCapabilities())
 	if err := a.pmgr.SetConfig(id, cfg); err != nil {
 		a.logger.Warn("set plugin config", "id", id, "error", err)

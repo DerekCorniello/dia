@@ -6,6 +6,11 @@ PKG := github.com/DerekCorniello/dia
 WAILS := $(shell go env GOPATH)/bin/wails
 GOLANGCI := $(shell go env GOPATH)/bin/golangci-lint
 GOLANGCI_VERSION := v1.64.8
+# Derived from go.mod rather than pinned separately: a CLI older than
+# the runtime in go.mod builds against a different Wails than the one
+# compiled in, and the only warning is a line the build prints and
+# nobody reads. These drifted to v2.10.1 vs v2.12.0 once already.
+WAILS_VERSION := $(shell go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2 2>/dev/null)
 LDFLAGS := -s -w \
 	-X $(PKG)/internal/version.Version=$(VERSION) \
 	-X $(PKG)/internal/version.Commit=$(COMMIT) \
@@ -41,7 +46,7 @@ clean:
 	rm -rf build/bin frontend/dist
 
 install-tools:
-	go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.1
+	go install github.com/wailsapp/wails/v2/cmd/wails@$(WAILS_VERSION)
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_VERSION)
 
 # install-hooks symlinks the version-controlled pre-commit hook into

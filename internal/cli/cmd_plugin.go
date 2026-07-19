@@ -532,11 +532,19 @@ func newPluginInfoCmd() *cobra.Command {
 					"last_error": loaded.LastError,
 				})
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "id:      %s\n", loaded.Manifest.ID)
-			fmt.Fprintf(cmd.OutOrStdout(), "name:    %s\n", loaded.Manifest.Name)
-			fmt.Fprintf(cmd.OutOrStdout(), "version: %s\n", loaded.Manifest.Version)
+			fmt.Fprintf(cmd.OutOrStdout(), "id:      %s\n", loaded.ID)
 			fmt.Fprintf(cmd.OutOrStdout(), "source:  %s\n", loaded.Source)
 			fmt.Fprintf(cmd.OutOrStdout(), "dir:     %s\n", loaded.Dir)
+			// `plugin info` is how you diagnose a plugin that is not
+			// working, so it has to survive a broken manifest and say
+			// what is wrong with it.
+			if loaded.Manifest == nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "status:  %s\n", loaded.Status)
+				fmt.Fprintf(cmd.OutOrStdout(), "error:   %s\n", loaded.LastError)
+				return nil
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "name:    %s\n", loaded.Manifest.Name)
+			fmt.Fprintf(cmd.OutOrStdout(), "version: %s\n", loaded.Manifest.Version)
 			fmt.Fprintf(cmd.OutOrStdout(), "ui:      %s (%s)\n", loaded.Manifest.UI.Type, loaded.Manifest.UI.Title)
 			fmt.Fprintf(cmd.OutOrStdout(), "caps:    %s\n", strings.Join(loaded.Manifest.Capabilities, ", "))
 			fmt.Fprintf(cmd.OutOrStdout(), "enabled: %v\n", ps.Enabled)
@@ -574,16 +582,21 @@ func discoverForCLI(globalDir, cwd string) ([]cliPluginInfo, error) {
 	}
 	out := []cliPluginInfo{}
 	for _, l := range mgr.List() {
-		if l.Manifest == nil {
-			continue
+		info := cliPluginInfo{
+			ID:     l.ID,
+			Source: string(l.Source),
+			Status: string(l.Status),
 		}
-		out = append(out, cliPluginInfo{
-			ID:      l.Manifest.ID,
-			Name:    l.Manifest.Name,
-			Version: l.Manifest.Version,
-			Source:  string(l.Source),
-			Status:  string(l.Status),
-		})
+		// A plugin whose manifest is broken still gets listed: hiding
+		// it leaves the user with a directory that does nothing and no
+		// indication why.
+		if l.Manifest != nil {
+			info.Name = l.Manifest.Name
+			info.Version = l.Manifest.Version
+		} else {
+			info.Name = "(invalid manifest)"
+		}
+		out = append(out, info)
 	}
 	return out, nil
 }

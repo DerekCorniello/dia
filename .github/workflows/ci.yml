@@ -106,7 +106,10 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install Wails CLI
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.10.1
+        shell: bash
+        # Version comes from go.mod so the CLI and the compiled-in
+        # runtime cannot drift; a mismatch only warns at build time.
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2)
 
       - name: Install Linux deps
         run: |

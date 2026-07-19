@@ -50,6 +50,14 @@ export function GetWorkspaceEditor(arg1) {
   return window['go']['wailsapp']['App']['GetWorkspaceEditor'](arg1);
 }
 
+export function InspectPluginSource(arg1, arg2) {
+  return window['go']['wailsapp']['App']['InspectPluginSource'](arg1, arg2);
+}
+
+export function InstallPluginFromFolder() {
+  return window['go']['wailsapp']['App']['InstallPluginFromFolder']();
+}
+
 export function InstallPluginFromSource(arg1, arg2) {
   return window['go']['wailsapp']['App']['InstallPluginFromSource'](arg1, arg2);
 }
@@ -76,14 +84,6 @@ export function NewWorkspace(arg1, arg2) {
 
 export function OpenConfigFolder() {
   return window['go']['wailsapp']['App']['OpenConfigFolder']();
-}
-
-export function InspectPluginSource(arg1, arg2) {
-  return window['go']['wailsapp']['App']['InspectPluginSource'](arg1, arg2);
-}
-
-export function InstallPluginFromFolder() {
-  return window['go']['wailsapp']['App']['InstallPluginFromFolder']();
 }
 
 export function OpenPluginFolder() {

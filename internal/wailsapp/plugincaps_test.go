@@ -444,3 +444,69 @@ func TestUninstallPlugin_UnknownPlugin(t *testing.T) {
 		t.Error("expected an error for an unknown plugin")
 	}
 }
+
+// The reported crash: dia would not start at all when one installed
+// plugin had an unloadable manifest, panicking in
+// applyPersistedPluginState -> Manager.List.
+func TestStartup_SurvivesABrokenPlugin(t *testing.T) {
+	withTempXDG(t)
+	writePlugin(t, capsManifest)
+
+	stateHome := os.Getenv("XDG_STATE_HOME")
+	broken := filepath.Join(stateHome, "dia", "plugins", "brokenplug")
+	if err := os.MkdirAll(broken, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(broken, "plugin.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := startedApp(t)
+
+	list := a.ListPlugins()
+	if len(list) != 2 {
+		t.Fatalf("got %d plugins, want 2: %+v", len(list), list)
+	}
+	var brokenInfo *PluginInfo
+	for i := range list {
+		if list[i].ID == "brokenplug" {
+			brokenInfo = &list[i]
+		}
+	}
+	if brokenInfo == nil {
+		t.Fatalf("the broken plugin should be listed with its id: %+v", list)
+	}
+	if brokenInfo.Status != "errored" || brokenInfo.LastError == "" {
+		t.Errorf("it should carry its error: %+v", brokenInfo)
+	}
+	// The healthy plugin still works.
+	if err := a.SetPluginCapabilities("caps-plug", []string{"apps:resolve"}); err != nil {
+		t.Fatalf("the healthy plugin should still be grantable: %v", err)
+	}
+	if _, err := a.reg.Resolve(config.App{Type: "capstype"}); err != nil {
+		t.Errorf("its app type should still resolve: %v", err)
+	}
+}
+
+func TestGetPluginCapabilities_BrokenPluginFailsCleanly(t *testing.T) {
+	withTempXDG(t)
+	stateHome := os.Getenv("XDG_STATE_HOME")
+	broken := filepath.Join(stateHome, "dia", "plugins", "brokenplug")
+	if err := os.MkdirAll(broken, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(broken, "plugin.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := startedApp(t)
+
+	if _, err := a.GetPluginCapabilities("brokenplug"); err == nil {
+		t.Error("expected an error, not a panic")
+	}
+	if err := a.SetPluginCapabilities("brokenplug", []string{"cmd:exec"}); err == nil {
+		t.Error("expected an error, not a panic")
+	}
+	if pids := a.Doctor(); len(pids) == 0 {
+		t.Error("doctor should still run")
+	}
+}

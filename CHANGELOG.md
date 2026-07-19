@@ -96,6 +96,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `state.json` existed yet, so the first write to `d.Plugins[id]`
   panicked with "assignment to entry in nil map". Pre-existing; the
   GUI's plugin-config save path could hit it on a first run.
+- **One plugin with an unloadable manifest crashed dia at startup.**
+  `Manager.List` sorted on `Manifest.ID`, but a plugin whose manifest
+  fails to parse or validate is recorded with a nil manifest, so the
+  GUI died with a SIGSEGV in `applyPersistedPluginState` before the
+  window appeared. `dia plugin list` and `dia plugin info` hit the
+  same nil dereference. A broken plugin is now listed with its
+  directory name, an `errored` status, and the parse error, instead of
+  taking the app down or being silently hidden. Pre-existing.
+- **The Wails CLI and runtime had drifted apart** (`go.mod` at v2.12.0,
+  the pinned CLI at v2.10.1 in the Makefile, CI, and the release
+  workflow), which only surfaced as a warning line during `make build`.
+  All three now derive the CLI version from `go.mod` so they cannot
+  drift again.
 - An app with no `type` failed at launch with `unknown app type ""`,
   despite being documented as "runs `cmd`" and accepted by the config
   validator. The registry had no handler registered for the empty

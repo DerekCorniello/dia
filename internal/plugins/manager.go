@@ -28,6 +28,11 @@ const (
 )
 
 type Loaded struct {
+	// ID is the plugin's directory name, which is authoritative even
+	// when the manifest fails to load. Everything downstream needs an
+	// identity for a broken plugin: to sort it, to show it, and to
+	// tell the user which one is broken.
+	ID          string
 	Manifest    *Manifest
 	Dir         string
 	Source      Source
@@ -143,6 +148,7 @@ func (m *Manager) scanDir(dir string, source Source, seen map[string]bool) error
 				existing.LastError = err.Error()
 			} else if !ok {
 				m.loaded[id] = &Loaded{
+					ID:        id,
 					Dir:       full,
 					Source:    source,
 					Status:    StatusErrored,
@@ -153,8 +159,9 @@ func (m *Manager) scanDir(dir string, source Source, seen map[string]bool) error
 		}
 		existing, ok := m.loaded[id]
 		if !ok {
-			existing = &Loaded{Dir: full, Source: source}
+			existing = &Loaded{ID: id, Dir: full, Source: source}
 		}
+		existing.ID = id
 		existing.Manifest = manifest
 		existing.Dir = full
 		existing.Source = source
@@ -168,6 +175,10 @@ func (m *Manager) scanDir(dir string, source Source, seen map[string]bool) error
 	}
 	return nil
 }
+
+// Enable starts a plugin with the read-only default capabilities,
+// discarding any grants it already had. Use EnableWithGrants to apply
+// a specific set; this is the "no opinion" path.
 func (m *Manager) Enable(id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -288,9 +299,12 @@ func (m *Manager) List() []Loaded {
 		snap := *l
 		out = append(out, snap)
 	}
+	// Sorted by ID, not Manifest.ID: a plugin whose manifest failed to
+	// load has no manifest at all, and dereferencing it here crashed
+	// the GUI at startup for anyone with one broken plugin installed.
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].Manifest.ID != out[j].Manifest.ID {
-			return out[i].Manifest.ID < out[j].Manifest.ID
+		if out[i].ID != out[j].ID {
+			return out[i].ID < out[j].ID
 		}
 		return string(out[i].Source) < string(out[j].Source)
 	})
@@ -471,6 +485,7 @@ func (m *Manager) Update(id string) (string, error) {
 	// would break a working plugin.
 	granted := GrantCapabilities(manifest.Capabilities, l.GrantedCaps)
 	m.loaded[id] = &Loaded{
+		ID:          id,
 		Manifest:    manifest,
 		Dir:         dir,
 		Source:      l.Source,
@@ -497,6 +512,7 @@ func (m *Manager) installAt(srcDir, dstBase string) (string, error) {
 		return "", fmt.Errorf("copy plugin: %w", err)
 	}
 	m.loaded[manifest.ID] = &Loaded{
+		ID:          manifest.ID,
 		Manifest:    manifest,
 		Dir:         dst,
 		Source:      SourceOfDir(dstBase),

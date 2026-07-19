@@ -366,6 +366,7 @@ func (a *App) SetPluginCapabilities(id string, caps []string) error {
 
 func loadedToInfo(l plugins.Loaded) PluginInfo {
 	out := PluginInfo{
+		ID:                  l.ID,
 		Source:              string(l.Source),
 		Dir:                 l.Dir,
 		Enabled:             true,

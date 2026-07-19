@@ -253,3 +253,94 @@ func TestDoctor_WarnsOnAppTypeConflict(t *testing.T) {
 		t.Errorf("doctor should warn about the conflict:\n%s", out.String())
 	}
 }
+
+// writeBrokenPluginDir drops a plugin with an unloadable manifest into
+// the global plugins dir.
+func writeBrokenPluginDir(t *testing.T, stateDir, id string) {
+	t.Helper()
+	dir := filepath.Join(stateDir, "dia", "plugins", id)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "plugin.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// `dia plugin list` crashed on a broken manifest: its nil check ran
+// after Manager.List had already panicked sorting on Manifest.ID.
+func TestPluginList_SurvivesABrokenManifest(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateDir)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	writeBrokenPluginDir(t, stateDir, "brokenplug")
+	installAppTypePlugin(t, stateDir)
+
+	var out, errOut bytes.Buffer
+	code := runWithIO([]string{"plugin", "list"}, strings.NewReader(""), &out, &errOut)
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	// The broken plugin has to be visible, not silently dropped.
+	if !strings.Contains(out.String(), "brokenplug") {
+		t.Errorf("broken plugin should be listed:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "errored") {
+		t.Errorf("its status should say errored:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "compose-type") {
+		t.Errorf("the healthy plugin should still be listed:\n%s", out.String())
+	}
+}
+
+// `plugin info` is how you diagnose a broken plugin, so it has to work
+// on one and report the reason.
+func TestPluginInfo_ReportsABrokenManifest(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateDir)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	writeBrokenPluginDir(t, stateDir, "brokenplug")
+
+	var out, errOut bytes.Buffer
+	code := runWithIO([]string{"plugin", "info", "brokenplug"}, strings.NewReader(""), &out, &errOut)
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "brokenplug") {
+		t.Errorf("should report the id:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "error:") {
+		t.Errorf("should report why it failed to load:\n%s", out.String())
+	}
+}
+
+// A broken plugin must not stop an unrelated workspace from resolving.
+func TestDryRun_UnaffectedByABrokenPlugin(t *testing.T) {
+	stateDir := t.TempDir()
+	configHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateDir)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	writeBrokenPluginDir(t, stateDir, "brokenplug")
+	installAppTypePlugin(t, stateDir)
+	writeGlobalWorkspace(t, configHome, "svc", "name: svc\napps:\n  - type: compose\n")
+
+	var out, errOut bytes.Buffer
+	code := runWithIO([]string{"start", "svc", "--dry-run"}, strings.NewReader(""), &out, &errOut)
+	if code != ExitOK {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "via plugin compose-type") {
+		t.Errorf("the healthy plugin's type should still resolve:\n%s", out.String())
+	}
+}
+
+func TestDoctor_SurvivesABrokenPlugin(t *testing.T) {
+	stateDir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateDir)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	writeBrokenPluginDir(t, stateDir, "brokenplug")
+
+	if code := Run([]string{"doctor"}); code != ExitOK {
+		t.Errorf("doctor returned %d", code)
+	}
+}
