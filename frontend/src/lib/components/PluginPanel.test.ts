@@ -126,6 +126,24 @@ describe('PluginPanel list/grid/table/kv/text', () => {
   });
 });
 
+describe('PluginPanel description', () => {
+  it('says so when a plugin has no description', async () => {
+    vi.mocked(PluginCall).mockResolvedValue(JSON.stringify([]));
+    render(PluginPanel, { plugin: basePlugin({ description: '' }) });
+    await waitFor(() => expect(screen.getByText('No description')).toBeTruthy());
+  });
+
+  it('shows the description without a duplicate expand toggle', async () => {
+    vi.mocked(PluginCall).mockResolvedValue(JSON.stringify([]));
+    render(PluginPanel, { plugin: basePlugin({ description: 'Does a thing' }) });
+    await waitFor(() => expect(screen.getByText('Does a thing')).toBeTruthy());
+    // The old toggle expanded to `longDescription || description`, so a
+    // plugin without a long description rendered the same text twice
+    // and grew the card inside the grid.
+    expect(screen.queryByText('more details')).toBeNull();
+  });
+});
+
 describe('PluginPanel canvas', () => {
   it('still calls getData on mount even though canvas does not draw the value', async () => {
     vi.mocked(PluginCall).mockResolvedValue(JSON.stringify({ color: '#111111', width: 5 }));

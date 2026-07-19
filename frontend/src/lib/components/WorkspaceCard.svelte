@@ -99,7 +99,7 @@
         ? 'bg-info'
         : 'bg-accent-secondary'}"
   ></div>
-  <header class="mb-2 flex items-center justify-between gap-2">
+  <header class="flex items-center justify-between gap-2">
     <button
       type="button"
       on:click={toggleExpand}
@@ -123,7 +123,11 @@
         {/if}
       </div>
       {#if workspace.description}
-        <p class="mt-0.5 text-xs text-fg-mute line-clamp-2">{workspace.description}</p>
+        <p class="mt-0.5 text-xs text-fg-mute line-clamp-2" title={workspace.description}>
+          {workspace.description}
+        </p>
+      {:else}
+        <p class="mt-0.5 text-xs italic text-fg-mute/60">No description</p>
       {/if}
       <p class="mt-0.5 text-xs text-fg-mute">
         {workspace.apps} app{workspace.apps === 1 ? '' : 's'}{workspace.plugins &&

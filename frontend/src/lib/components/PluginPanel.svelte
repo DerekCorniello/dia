@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
-  import { slide } from 'svelte/transition';
   import { api, describeError, type PluginInfo, type PluginActionDef } from '../api';
   import { pushToast } from '../stores';
   import ConfirmDialog from './ConfirmDialog.svelte';
@@ -14,7 +13,6 @@
   let data: any = null;
   let loading = false;
   let error: string | null = null;
-  let showDetails = false;
   let showActionConfirm = false;
   let pendingAction: PluginActionDef | null = null;
   let mountedAt = 0;
@@ -266,7 +264,7 @@
       ? 'bg-info'
       : 'bg-accent-secondary'}"
   ></div>
-  <header class="mb-2 flex items-center justify-between gap-2">
+  <header class="flex items-center justify-between gap-2">
     <div class="min-w-0">
       <div class="flex flex-wrap items-center gap-2">
         <h3 class="text-sm font-semibold text-fg truncate">{plugin.ui.title || plugin.name}</h3>
@@ -279,27 +277,14 @@
         </span>
       </div>
       {#if plugin.description}
-        <p class="mt-0.5 text-xs text-fg-mute">{plugin.description}</p>
-      {/if}
-      {#if plugin.description || plugin.longDescription}
-        <button
-          type="button"
-          on:click={() => (showDetails = !showDetails)}
-          class="mt-0.5 inline-flex items-center gap-1 text-[10px] text-fg-mute hover:text-primary transition-colors"
+        <p
+          class="mt-0.5 text-xs text-fg-mute line-clamp-2"
+          title={plugin.longDescription || plugin.description}
         >
-          {showDetails ? 'less' : 'more details'}
-          <svg
-            class="h-3 w-3 transition-transform {showDetails ? 'rotate-180' : ''}"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-              clip-rule="evenodd"
-            />
-          </svg>
-        </button>
+          {plugin.description}
+        </p>
+      {:else}
+        <p class="mt-0.5 text-xs italic text-fg-mute/60">No description</p>
       {/if}
     </div>
     <div class="flex items-center gap-2">
@@ -421,14 +406,6 @@
           clear
         </button>
       </div>
-    </div>
-  {/if}
-
-  {#if showDetails}
-    <div class="mt-3 border-t border-bg-600 pt-3" transition:slide={{ duration: 200 }}>
-      <p class="text-xs text-fg-dim whitespace-pre-line">
-        {plugin.longDescription || plugin.description}
-      </p>
     </div>
   {/if}
 </section>

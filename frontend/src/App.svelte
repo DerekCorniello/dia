@@ -615,7 +615,7 @@
             </div>
           {/if}
         {:else}
-          <div class="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3 items-start">
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3 items-start">
             {#each filtered as w (w.path)}
               <WorkspaceCard workspace={w} onChanged={refresh} />
             {/each}
@@ -643,7 +643,7 @@
               </div>
             {/if}
           {:else}
-            <div class="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3 items-start">
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3 items-start">
               {#each filteredPlugins as p (p.id)}
                 <PluginPanel plugin={p} on:refresh={refresh} />
               {/each}

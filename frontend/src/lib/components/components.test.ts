@@ -155,6 +155,25 @@ describe('WorkspaceCard', () => {
     expect(screen.getByText('start')).toBeTruthy();
   });
 
+  it('says so when a workspace has no description', () => {
+    render(WorkspaceCard, {
+      workspace: {
+        name: 'bare-project',
+        apps: 0,
+        source: 'global',
+        running: false,
+        path: '/tmp/bare-project.yaml',
+        plugins: [],
+        useCount: 0,
+        description: '',
+      },
+      onChanged: vi.fn(),
+    });
+    // An empty line would leave the card a different height from its
+    // neighbours and read as a rendering glitch.
+    expect(screen.getByText('No description')).toBeTruthy();
+  });
+
   it('renders description when provided', () => {
     render(WorkspaceCard, {
       workspace: {
