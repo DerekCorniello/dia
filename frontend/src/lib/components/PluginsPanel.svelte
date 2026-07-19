@@ -51,12 +51,27 @@
     };
   }
 
-  function dirty(id: string): boolean {
-    const next = pending[id];
-    const list = caps[id];
-    if (!next || !list) return false;
-    const prev = list.filter((c) => c.granted).map((c) => c.name);
-    return next.length !== prev.length || next.some((c) => !prev.includes(c));
+  // Which plugins have unsaved capability edits.
+  //
+  // This has to be a reactive statement naming `pending` and `caps`,
+  // not a function called from the markup. A template expression only
+  // re-evaluates when an identifier it *names* changes, so
+  // `disabled={!isDirty(p.id)}` would name `p` and never `pending` --
+  // toggling a checkbox would leave Save disabled forever.
+  $: dirtyIds = computeDirty(pending, caps);
+
+  function computeDirty(
+    edits: Record<string, string[]>,
+    loaded: Record<string, CapabilityInfo[]>,
+  ): Record<string, boolean> {
+    const out: Record<string, boolean> = {};
+    for (const [id, next] of Object.entries(edits)) {
+      const list = loaded[id];
+      if (!list) continue;
+      const prev = list.filter((c) => c.granted).map((c) => c.name);
+      out[id] = next.length !== prev.length || next.some((c) => !prev.includes(c));
+    }
+    return out;
   }
 
   async function save(id: string) {
@@ -200,7 +215,7 @@
                 </ul>
                 <button
                   type="button"
-                  disabled={!dirty(p.id) || saving === p.id}
+                  disabled={!dirtyIds[p.id] || saving === p.id}
                   on:click={() => save(p.id)}
                   class="mt-2 rounded bg-bg-600 px-2 py-0.5 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg disabled:opacity-40 disabled:hover:bg-bg-600"
                 >
