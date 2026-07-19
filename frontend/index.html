@@ -13,6 +13,54 @@
   </head>
   <body>
     <div id="app"></div>
+    <!--
+      Boot error overlay. If the app fails before Svelte mounts, the
+      window is otherwise just the background colour with no way to
+      tell why: a desktop webview has no visible console, and Wails
+      does not forward one to stderr. Show the error in the window,
+      and mirror it to the Go log when the runtime is far enough along
+      to have one.
+    -->
+    <script>
+      (function () {
+        var shown = false;
+        function report(what, err) {
+          var msg = (err && (err.stack || err.message)) || String(err);
+          try {
+            if (window.runtime && window.runtime.LogError) {
+              window.runtime.LogError('frontend ' + what + ': ' + msg);
+            }
+          } catch (e) {
+            /* the runtime may not be injected yet */
+          }
+          if (shown) return;
+          shown = true;
+          var el = document.getElementById('app') || document.body;
+          el.innerHTML = '';
+          var pre = document.createElement('pre');
+          pre.style.cssText =
+            'margin:0;padding:16px;font:12px/1.5 ui-monospace,monospace;' +
+            'color:#ff8080;background:#1b2636;white-space:pre-wrap;' +
+            'word-break:break-word;height:100vh;overflow:auto';
+          pre.textContent = 'dia failed to start (' + what + ')\n\n' + msg;
+          el.appendChild(pre);
+        }
+        window.addEventListener('error', function (e) {
+          report('error', e.error || e.message);
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          report('unhandled rejection', e.reason);
+        });
+        // If nothing has rendered a few seconds in, the app silently
+        // failed to mount; say so rather than showing an empty window.
+        setTimeout(function () {
+          var app = document.getElementById('app');
+          if (app && app.children.length === 0) {
+            report('timeout', new Error('the UI did not mount within 5s'));
+          }
+        }, 5000);
+      })();
+    </script>
     <script src="./src/main.ts" type="module"></script>
   </body>
 </html>

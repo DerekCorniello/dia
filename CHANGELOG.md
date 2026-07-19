@@ -96,6 +96,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `state.json` existed yet, so the first write to `d.Plugins[id]`
   panicked with "assignment to entry in nil map". Pre-existing; the
   GUI's plugin-config save path could hit it on a first run.
+- **The GUI came up as an empty window.** `main.ts` mounted the root
+  component with `new App({ target })`, the Svelte 4 API. Under
+  Svelte 5 that does not establish the component context legacy
+  lifecycle needs, so `App` threw `effect_orphan` during
+  initialisation and nothing rendered. Now mounts via Svelte 5's
+  `mount()`. Pre-existing since the frontend dependency bump; the
+  component tests passed throughout because Testing Library mounts
+  correctly, so only running the app could catch it.
+- **A frontend boot failure showed no error at all**, just the window
+  background: a desktop webview has no visible console and Wails does
+  not forward one to stderr. `index.html` now installs an error and
+  unhandled-rejection handler that renders the failure into the window
+  and mirrors it to the Go log, plus a check that reports when the UI
+  has not mounted after five seconds.
+- **`make dev` could not link** on a webkit2gtk-4.1-only system: it ran
+  `wails dev` without the `webkit2_41` tag that `make build` passes, so
+  it fell back to 4.0 and failed on missing libjxl symbols.
 - **One plugin with an unloadable manifest crashed dia at startup.**
   `Manager.List` sorted on `Manifest.ID`, but a plugin whose manifest
   fails to parse or validate is recorded with a nil manifest, so the
