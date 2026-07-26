@@ -205,7 +205,10 @@
   }
 
   function applyZoom() {
-    document.documentElement.style.zoom = String(zoomLevel);
+    document.documentElement.style.transform = 'scale(' + zoomLevel + ')';
+    document.documentElement.style.transformOrigin = 'top left';
+    document.documentElement.style.width = 100 / zoomLevel + '%';
+    document.documentElement.style.height = 100 / zoomLevel + '%';
   }
 
   function zoomIn() {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
   import { editableSlots, buildCustomThemeCss } from '../colors';
   import { findTheme, type ThemeMeta } from '../themes';
   import type { CustomThemeInfo } from '../api';
@@ -23,8 +23,6 @@
   let colors: Record<string, string> = { ...(initial?.colors ?? seedFromBase(baseThemeId)) };
   let nameError = '';
   let hexErrors: Record<string, string> = {};
-
-  $: colorScheme = colorScheme;
 
   function groupSlots(slots: typeof editableSlots) {
     const groups: Record<string, typeof editableSlots> = { brand: [], base: [], state: [] };
@@ -152,10 +150,10 @@
     previewStyleEl.textContent = previewCss;
   }
 
-  export function destroy() {
+  onDestroy(() => {
     previewStyleEl?.remove();
     previewStyleEl = null;
-  }
+  });
 </script>
 
 <div class="flex flex-col gap-4">

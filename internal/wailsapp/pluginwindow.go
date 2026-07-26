@@ -383,10 +383,12 @@ func (h *pluginWindowHost) dispatch(method string, args []any) (any, error) {
 		return t, nil
 	case "listCustomThemes":
 		return pluginWindowListCustomThemes(h.store), nil
-	case "exec":
+	case "exec", "fetch":
+		// Handled by the goja runtime's capability-gated bridge
+		// when it falls through (see DiaCall). Keeping them out
+		// of the host dispatch means the capability model is
+		// enforced even if the manifest did not request them.
 		return nil, errHostUnhandled
-	case "fetch":
-		return h.dispatchFetch(args)
 	}
 	return nil, errHostUnhandled
 }

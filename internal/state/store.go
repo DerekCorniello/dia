@@ -220,7 +220,9 @@ func (s *Store) Snapshot() Data {
 }
 
 // Mutate runs fn with exclusive access to the state, then persists the
-// result. If fn returns an error the state is not written.
+// result. If fn returns an error the state is not written. On write
+// failure the in-memory and on-disk states may diverge; restarting dia
+// recovers the last persisted state.
 func (s *Store) Mutate(fn func(d *Data)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

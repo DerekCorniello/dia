@@ -101,6 +101,10 @@ be dropped whenever a plugin's code or grants change.
 `registry/plugin.go` states what it needs as a local `AppResolver`
 interface over plain maps; the dependency points one way.
 
+`pluginwindow.go` has a second path-containment check, `underDir`,
+that predates and duplicates `ContainedRelPath`. Both are correct;
+keep them in sync if either is modified.
+
 `registry.SyncPluginTypes` *reconciles* rather than only adding: it
 unregisters plugin-claimed types that are no longer claimed. Grants can
 change at runtime (Settings > Plugins), and revoking `apps:resolve` has
@@ -121,3 +125,25 @@ has bitten both `require()` and `ui.entry`; the rule lives in one place
 so it only has to be right once. Code that reads a plugin path and
 hands the bytes somewhere the plugin can observe them (the plugin
 window asset server, for one) should re-check containment itself.
+
+## Window plugins and capabilities
+
+A window plugin (`ui.type=window`) runs in a separate dia process
+that starts with the read-only capability subset. Mutating calls
+(`exec`, `fetch`, `startWorkspace`) fall through from the
+`pluginWindowHost.dispatch` to the goja runtime bridge, which
+enforces capability gating. The host dispatch explicitly rejects
+`exec` and `fetch` so they go through the bridge; do not handle them
+directly in the host dispatch or the capability model is bypassed.
+
+## $EDITOR / $VISUAL splitting
+
+Both `cmd_edit.go` and `detect.go` read `$EDITOR`/`$VISUAL` from the
+environment. These can contain arguments (e.g. `code --wait`), so
+split the raw value with `strings.Fields` before passing to
+`exec.Command`. `filepath.Base` is only correct for `LookPath`.
+
+## UI zoom
+
+`App.svelte` uses CSS `transform: scale()` instead of the
+non-standard `zoom` property for cross-engine compatibility.

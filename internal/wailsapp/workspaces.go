@@ -18,6 +18,9 @@ import (
 // ListWorkspaces returns the discovered workspaces with a running
 // flag attached. Errors during discovery are returned to the UI.
 func (a *App) ListWorkspaces() ([]WorkspaceInfo, error) {
+	if a.store == nil || a.rt == nil {
+		return nil, errors.New("not initialized")
+	}
 	cwd, _ := os.Getwd()
 	if pd := a.GetProjectDir(); pd != "" {
 		cwd = pd
@@ -99,6 +102,9 @@ func (a *App) runningWorkspaces() map[string]bool {
 // GetWorkspace returns the full detail of one workspace, including
 // the list of apps.
 func (a *App) GetWorkspace(name string) (*WorkspaceDetail, error) {
+	if a.rt == nil {
+		return nil, errors.New("not initialized")
+	}
 	sources, err := config.Discover(config.DiscoverOptions{
 		GlobalDir: config.DefaultGlobalDir(),
 	})
@@ -140,6 +146,9 @@ func (a *App) GetWorkspace(name string) (*WorkspaceDetail, error) {
 // window-type plugins, a dia --plugin-window process is spawned and
 // tracked alongside the apps so it is killed on stop.
 func (a *App) StartWorkspace(name string) error {
+	if a.rt == nil {
+		return errors.New("not initialized")
+	}
 	ws, src, err := a.findWorkspace(name)
 	if err != nil {
 		return err

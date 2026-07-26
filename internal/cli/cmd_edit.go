@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -22,19 +22,20 @@ func newEditCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			editor := os.Getenv("VISUAL")
-			if editor == "" {
-				editor = os.Getenv("EDITOR")
+			editorRaw := os.Getenv("VISUAL")
+			if editorRaw == "" {
+				editorRaw = os.Getenv("EDITOR")
 			}
-			if editor == "" {
-				editor = defaultEditor()
+			if editorRaw == "" {
+				editorRaw = defaultEditor()
 			}
-			c := exec.Command(editor, src.Path)
+			editorParts := strings.Fields(editorRaw)
+			c := exec.Command(editorParts[0], append(editorParts[1:], src.Path)...)
 			c.Stdin = os.Stdin
 			c.Stdout = os.Stdout
 			c.Stderr = os.Stderr
 			if err := c.Run(); err != nil {
-				return fmt.Errorf("%s: %w", filepath.Base(editor), err)
+				return fmt.Errorf("%s: %w", editorParts[0], err)
 			}
 			return out.Println("ok")
 		},

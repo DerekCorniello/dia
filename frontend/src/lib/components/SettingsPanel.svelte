@@ -549,16 +549,6 @@
                     {:else}
                       {current}
                     {/if}
-
-                    {#if showDeleteThemeConfirm}
-                      <ConfirmDialog
-                        title="Delete theme"
-                        message="Delete custom theme &quot;{deleteThemeName}&quot;? This cannot be undone."
-                        confirmLabel="Delete"
-                        on:confirm={confirmDeleteTheme}
-                        on:cancel={() => (showDeleteThemeConfirm = false)}
-                      />
-                    {/if}
                   </button>
                   {#if current !== def}
                     <button
@@ -630,6 +620,15 @@
               {reconciling ? 'reconciling...' : 'Reconcile'}
             </button>
           </section>
+          {#if showDeleteThemeConfirm}
+            <ConfirmDialog
+              title="Delete theme"
+              message="Delete custom theme &quot;{deleteThemeName}&quot;? This cannot be undone."
+              confirmLabel="Delete"
+              on:confirm={confirmDeleteTheme}
+              on:cancel={() => (showDeleteThemeConfirm = false)}
+            />
+          {/if}
         {:else if activeTab === 'plugins'}
           <PluginsPanel {plugins} on:refresh={() => dispatch('refresh')} />
         {:else if activeTab === 'about'}

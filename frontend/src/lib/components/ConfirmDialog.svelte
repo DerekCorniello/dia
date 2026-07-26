@@ -1,11 +1,10 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { fly, fade } from 'svelte/transition';
 
   export let title = 'Confirm';
   export let message = '';
   export let confirmLabel = 'Delete';
-  export let danger = true;
+  export let danger = false;
 
   const dispatch = createEventDispatcher<{ confirm: void; cancel: void }>();
 
