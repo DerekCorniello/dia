@@ -93,6 +93,149 @@ func TestResolve_Browser(t *testing.T) {
 	}
 }
 
+func TestResolve_BrowserMultipleURLsWithoutBrowserFails(t *testing.T) {
+	r := New()
+	app := config.App{Type: "browser", Urls: []string{"https://a.example.com", "https://b.example.com"}}
+	if _, err := r.Resolve(app); err == nil {
+		t.Fatal("expected error for multiple urls without a browser binary")
+	}
+}
+
+func TestResolve_BrowserWithBrowserLaunchesFirefoxFamilyWithNewTabFlags(t *testing.T) {
+	r := New()
+	app := config.App{
+		Type:    "browser",
+		Browser: "zen-browser",
+		Urls:    []string{"dc/gh/mux/prs", "dc/gh/mux/issues"},
+	}
+	a, err := r.Resolve(app)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if a.Kind != ActionLaunch {
+		t.Fatalf("Kind = %v, want ActionLaunch", a.Kind)
+	}
+	if a.Launch.Cmd != "zen-browser" {
+		t.Errorf("Cmd = %q, want zen-browser", a.Launch.Cmd)
+	}
+	want := []string{"-new-tab", "dc/gh/mux/prs", "-new-tab", "dc/gh/mux/issues"}
+	if strings.Join(a.Launch.Args, ",") != strings.Join(want, ",") {
+		t.Errorf("Args = %v, want %v", a.Launch.Args, want)
+	}
+}
+
+func TestResolve_BrowserWithBrowserChromiumFamilyUsesPlainArgs(t *testing.T) {
+	r := New()
+	app := config.App{
+		Type:    "browser",
+		Browser: "google-chrome",
+		Urls:    []string{"https://a.example.com", "https://b.example.com"},
+	}
+	a, err := r.Resolve(app)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	want := []string{"https://a.example.com", "https://b.example.com"}
+	if strings.Join(a.Launch.Args, ",") != strings.Join(want, ",") {
+		t.Errorf("Args = %v, want %v", a.Launch.Args, want)
+	}
+}
+
+// TestResolve_BrowserNewWindowFirefoxFamilyMultiURL pins the fix for a
+// real Firefox/Zen remoting race: bundling "-new-window <a> -new-tab <b>"
+// into a single remote command let "-new-tab" land in an unrelated
+// pre-existing window instead of the one "-new-window" just opened
+// (confirmed against a real zen-browser instance). The fix splits it into
+// two remote calls via a shell, with a pause in between.
+func TestResolve_BrowserNewWindowFirefoxFamilyMultiURL(t *testing.T) {
+	r := New()
+	app := config.App{
+		Type:      "browser",
+		Browser:   "zen-browser",
+		NewWindow: true,
+		Urls:      []string{"dc/gh/mux/prs", "dc/gh/mux/issues"},
+	}
+	a, err := r.Resolve(app)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if a.Launch.Cmd != "sh" {
+		t.Fatalf("Cmd = %q, want sh (shell wrapper for the two-call split)", a.Launch.Cmd)
+	}
+	if len(a.Launch.Args) != 2 || a.Launch.Args[0] != "-c" {
+		t.Fatalf("Args = %v, want [-c, <script>]", a.Launch.Args)
+	}
+	script := a.Launch.Args[1]
+	for _, want := range []string{"-new-window", "dc/gh/mux/prs", "sleep", "-new-tab", "dc/gh/mux/issues"} {
+		if !strings.Contains(script, want) {
+			t.Errorf("script = %q, missing %q", script, want)
+		}
+	}
+	if strings.Index(script, "-new-window") > strings.Index(script, "-new-tab") {
+		t.Errorf("script = %q, want -new-window before -new-tab", script)
+	}
+}
+
+// TestResolve_BrowserNewWindowFirefoxFamilySingleURL covers the simple
+// case (one URL, new window) which doesn't hit the race above and so
+// stays a single direct exec, no shell needed.
+func TestResolve_BrowserNewWindowFirefoxFamilySingleURL(t *testing.T) {
+	r := New()
+	app := config.App{
+		Type:      "browser",
+		Browser:   "zen-browser",
+		NewWindow: true,
+		Url:       "dc/gh/mux/prs",
+	}
+	a, err := r.Resolve(app)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if a.Launch.Cmd != "zen-browser" {
+		t.Fatalf("Cmd = %q, want zen-browser", a.Launch.Cmd)
+	}
+	want := []string{"-new-window", "dc/gh/mux/prs"}
+	if strings.Join(a.Launch.Args, ",") != strings.Join(want, ",") {
+		t.Errorf("Args = %v, want %v", a.Launch.Args, want)
+	}
+}
+
+func TestResolve_BrowserNewWindowChromiumFamily(t *testing.T) {
+	r := New()
+	app := config.App{
+		Type:      "browser",
+		Browser:   "google-chrome",
+		NewWindow: true,
+		Urls:      []string{"https://a.example.com", "https://b.example.com"},
+	}
+	a, err := r.Resolve(app)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	want := []string{"--new-window", "https://a.example.com", "https://b.example.com"}
+	if strings.Join(a.Launch.Args, ",") != strings.Join(want, ",") {
+		t.Errorf("Args = %v, want %v", a.Launch.Args, want)
+	}
+}
+
+func TestResolve_BrowserUrlAndUrlsCombine(t *testing.T) {
+	r := New()
+	app := config.App{
+		Type:    "browser",
+		Browser: "firefox",
+		Url:     "https://first.example.com",
+		Urls:    []string{"https://second.example.com"},
+	}
+	a, err := r.Resolve(app)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	want := []string{"-new-tab", "https://first.example.com", "-new-tab", "https://second.example.com"}
+	if strings.Join(a.Launch.Args, ",") != strings.Join(want, ",") {
+		t.Errorf("Args = %v, want %v", a.Launch.Args, want)
+	}
+}
+
 func TestResolve_GH(t *testing.T) {
 	r := New()
 	app := config.App{Type: "gh", Cmd: "pr", Args: []string{"view", "123", "--web"}}

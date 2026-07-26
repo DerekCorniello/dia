@@ -59,10 +59,35 @@ func resolveOpen(app config.App) (Action, error) {
 }
 
 func resolveBrowser(app config.App) (Action, error) {
-	if app.Url == "" {
+	urls := collectURLs(app)
+	if len(urls) == 0 {
 		return Action{}, fmt.Errorf("type \"browser\": url is required")
 	}
-	return Action{Kind: ActionOpenURL, URL: app.Url}, nil
+	if app.Browser == "" {
+		if len(urls) > 1 {
+			return Action{}, fmt.Errorf("type \"browser\": urls requires \"browser\" to be set; the OS default handler can only open one url at a time")
+		}
+		return Action{Kind: ActionOpenURL, URL: urls[0]}, nil
+	}
+	cmd, args := browserLaunch(app.Browser, urls, app.NewWindow)
+	opts := buildLaunch(app, cmd, args...)
+	return Action{Kind: ActionLaunch, Launch: &opts}, nil
+}
+
+// collectURLs merges an app's singular Url and its Urls list, in that
+// order, dropping any blanks that validation didn't already catch (e.g.
+// when Resolve is called directly in tests, bypassing Validate).
+func collectURLs(app config.App) []string {
+	urls := make([]string, 0, len(app.Urls)+1)
+	if app.Url != "" {
+		urls = append(urls, app.Url)
+	}
+	for _, u := range app.Urls {
+		if u != "" {
+			urls = append(urls, u)
+		}
+	}
+	return urls
 }
 
 func resolveGH(app config.App) (Action, error) {

@@ -104,7 +104,7 @@ back to treating the entry like `local` (needs `cmd`).
 | `custom` | `cmd` | Alias for `local`, generic icon. |
 | `ai` | `cmd` | Alias for `local`. **Not documented in the README's app-type table** — exists in the registry (`registry.go`) as an icon-only label like the others. |
 | `open` | `url` | Opens `url` in the OS's default handler for that scheme. Any scheme is accepted (`mailto:`, `file://`, `ssh://`, custom schemes) — validation only checks that `url` is non-empty, not that it's http(s). |
-| `browser` | `url` | Opens a URL in the browser. `url` **must** start with `http://` or `https://` (checked at validation time, unlike `open`) and is required unconditionally — `cmd` is not read by this type at all, so don't set it here; use `local`/`custom` if you need to shell out to a specific browser binary. |
+| `browser` | `url` or `urls` | Opens one or more URLs in a browser. Two modes, see below: without `browser` set, opens a single `url` (must be `http://`/`https://`) in the OS default handler; with `browser` set to a binary name, launches that binary directly with each of `url`/`urls` as its own tab, and the http(s) restriction is lifted. `cmd` is never read by this type — use `local`/`custom` instead if you need lower-level control over the launched process. |
 | `gh` | `cmd` | Wraps the `gh` CLI: `cmd` is the subcommand (e.g. `pr`), `args` are appended. Runs `gh <cmd> <args...>`. |
 | `gh:pr` | — | Sugar for `gh pr <args...>`. No required fields. |
 | `gh:issue` | — | Sugar for `gh issue <args...>`. |
@@ -122,15 +122,97 @@ eye** — dry-run will not catch it.
 If `type`, `cmd`, and `url` are *all* empty on an entry, that's a real
 validation error (`"must have type, cmd, or url"`) and dry-run does catch it.
 
-`type: browser` requires `url` unconditionally — `validateApp`'s
-`case "browser"` and the runtime resolver (`resolveBrowser` in
-`internal/registry/handlers.go`) agree on this now. (They didn't always:
+`type: browser` requires at least one of `url`/`urls` unconditionally —
+`validateApp`'s `case "browser"` and the runtime resolver (`resolveBrowser`
+in `internal/registry/handlers.go`) agree on this now. (They didn't always:
 the validator used to also accept a `cmd`-only entry, which passed
 `Validate()`/`--dry-run` but then always failed at a real `dia start`
 with `type "browser": url is required`, since `resolveBrowser` never
 read `cmd`. Fixed by tightening the validator to match the handler it's
 supposed to be gatekeeping — mentioned here in case you're looking at
 an older dia checkout that still has the mismatch.)
+
+### `type: browser` in "specific binary" mode — multiple tabs, non-http shortcuts
+
+Setting `browser` on a `type: browser` entry switches it from "hand a URL
+to the OS's default-handler dispatcher" (`xdg-open` and equivalents,
+which only takes one URL and only really wants http(s)) to "launch this
+exact binary myself." This is a `type: local` launch under the hood
+(`ActionLaunch`, not `ActionOpenURL`), so:
+
+- `browser` is a binary name looked up on `$PATH`, same convention as
+  `cmd` elsewhere (e.g. `zen-browser`, `firefox`, `google-chrome`). It is
+  **not** validated against an allowlist — a typo here is a `dia start`-time
+  "executable not found" error, not a load-time one.
+- `url` (singular) and `urls` (list) are merged, in that order, into one
+  list of destinations. Each one opens as its own tab in a single launch
+  of `browser` — not a new window per URL, and not N separate process
+  launches.
+- Without `browser` set, `urls` (plural, more than one destination) is a
+  validation error: the OS-default-handler path has no way to open more
+  than one URL per entry.
+- With `browser` set, the http(s)-prefix requirement is lifted. Each
+  entry is passed straight to the browser binary's own address-bar
+  resolution — the same thing that would happen if you typed it into
+  that browser's URL bar by hand. This is what makes internal go-link-style
+  shortcuts (e.g. a hostname-only string like `dc/gh/mux/prs` that
+  resolves via a hosts-file/DNS-search-domain entry or a keyword search)
+  work as a workspace entry, where they'd be rejected as an invalid URL
+  under the default OS-handler path.
+- The actual CLI flags used to open multiple tabs in one launch differ by
+  browser engine, so there's a small compat layer,
+  `browserTabArgs` in `internal/registry/browsercompat.go`: Firefox-family
+  binaries (`firefox`, `zen`/`zen-browser`, `librewolf`, `waterfox`,
+  `floorp`, `icecat`, `firefox-esr`) get each URL wrapped in its own
+  `-new-tab <url>` flag, because bare positional URLs after the first are
+  otherwise dropped rather than opened as tabs. Everything else
+  (Chromium-family browsers, and any binary this layer doesn't recognize)
+  gets plain positional URL arguments, which is the documented Chromium
+  convention and a reasonable default for the unknown case. If you hit a
+  browser that doesn't fit either bucket, add it to `firefoxFamily` in
+  that file (or extend the function) rather than fighting it via YAML.
+- Because this is a real process launch, dia tracks its PID like any other
+  `local` app. For single-instance browsers this is harmless in practice:
+  a launch against an already-running instance just forwards the request
+  to that instance and exits almost immediately, which dia treats as a
+  normal stop rather than a crash — the same pattern `gh:pr`/`gh:issue`
+  already rely on.
+
+```yaml
+- type: browser
+  browser: zen-browser
+  new_window: true
+  urls:
+    - "dc/gh/mux/prs"
+    - "dc/gh/mux/issues"
+```
+
+`new_window: true` additionally forces those tabs into a brand-new
+browser window rather than appending to whatever window the user already
+has open — useful when a workspace's tabs are meant to be a self-contained
+group the user can close together, not mixed into their general browsing.
+Per-family mechanics, in `browserLaunch` (`internal/registry/browsercompat.go`):
+
+- Chromium family / fallback: `--new-window` is prepended once, ahead of
+  the plain positional URL list — Chromium documents the same "force a
+  new window" semantics, applied to the whole list that follows rather
+  than needing to be repeated per URL.
+- Firefox family, single URL: a plain `-new-window <url>` direct exec —
+  no complications with only one destination.
+- Firefox family, multiple URLs: **not** a single `-new-window <a>
+  -new-tab <b> -new-tab <c>` call, despite that looking like the obvious
+  translation of the single-URL case. Confirmed against a real
+  zen-browser instance: bundling those into one remote command is racy
+  — the already-running instance can dispatch the `-new-tab` calls to
+  whatever window currently holds focus rather than the one
+  `-new-window` just created moments earlier in the same command, so
+  they land in an unrelated pre-existing window instead of the fresh
+  one. The fix is to split it into two remote calls through a shell,
+  with a short `sleep` between them so the new window has time to take
+  focus before the rest arrive: `sh -c "<bin> -new-window <a>; sleep
+  0.6; <bin> -new-tab <b> -new-tab <c>"` (each argument shell-quoted).
+  If you're debugging a `browser` app that isn't behaving, check
+  `a.Launch.Cmd` — `"sh"` means this path was taken.
 
 ### Common fields on every app entry
 
@@ -142,6 +224,9 @@ an older dia checkout that still has the mismatch.)
 | `env` | process types | `map[string]string`, merged into the *child process's* environment when it launches. Does **not** affect `$VAR` expansion in `cwd`/`args` for this same entry — that expansion already happened using dia's own environment before the child is spawned. |
 | `label` | all | Free-text display label; purely cosmetic. |
 | `url` | `open`/`browser`/`gh:repo-clone` | See per-type table above for exact requirements. |
+| `urls` | `browser` | List of additional destinations, merged after `url`. Requires `browser` to be set — see the "specific binary" mode section below. |
+| `browser` | `browser` | Names the browser binary to launch directly instead of going through the OS default handler. See the "specific binary" mode section below. |
+| `new_window` | `browser` | Boolean. Forces the tabs into a fresh browser window instead of landing in whatever window the user already has open. No-op unless `browser` is also set — the OS default handler gives no control over window placement. See below. |
 | `open` | — | Boolean field exists in the schema (`App.Open`) but is not read by any current handler — leave it unset. |
 | `wait` | — | Boolean field exists in the schema (`App.Wait`) but is not read by any current handler — leave it unset. |
 

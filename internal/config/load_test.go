@@ -168,6 +168,43 @@ func TestValidateBrowserRequiresURL(t *testing.T) {
 	}
 }
 
+func TestValidateBrowserMultiUrlsRequiresBrowser(t *testing.T) {
+	w := &Workspace{
+		Version: 1,
+		Name:    "x",
+		Apps:    []App{{Type: "browser", Urls: []string{"https://a.example.com", "https://b.example.com"}}},
+	}
+	if err := Validate(w); err == nil {
+		t.Fatal("expected error for multiple urls without browser set")
+	}
+}
+
+func TestValidateBrowserWithBrowserAllowsNonHTTPShortcut(t *testing.T) {
+	w := &Workspace{
+		Version: 1,
+		Name:    "x",
+		Apps: []App{{
+			Type:    "browser",
+			Browser: "zen-browser",
+			Urls:    []string{"dc/gh/mux/prs", "dc/gh/mux/issues"},
+		}},
+	}
+	if err := Validate(w); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateBrowserUrlsEmptyEntryRejected(t *testing.T) {
+	w := &Workspace{
+		Version: 1,
+		Name:    "x",
+		Apps:    []App{{Type: "browser", Browser: "firefox", Urls: []string{"https://a.example.com", ""}}},
+	}
+	if err := Validate(w); err == nil {
+		t.Fatal("expected error for blank entry in urls")
+	}
+}
+
 func TestValidName(t *testing.T) {
 	cases := []struct {
 		in   string

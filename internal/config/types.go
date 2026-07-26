@@ -68,12 +68,28 @@ type PluginRef struct {
 // App is a single component of a workspace. The Type field picks a
 // built-in launcher or a gh CLI wrapper. Cmd and Url are mutually
 // exclusive entry points; the runtime picks based on Type.
+//
+// Browser, Urls, and NewWindow only apply to type "browser". By default
+// (Browser unset) a browser app opens a single http(s) Url in the OS's
+// default handler, same as before. Setting Browser to a binary name
+// (e.g. "zen-browser", "firefox", "google-chrome") launches that browser
+// directly instead, which unlocks things the OS-handler path can't do:
+// opening several Urls as tabs in one window, passing a raw, non-http(s)
+// string (e.g. an internal go-link shortcut) straight to the browser's
+// own address-bar resolution instead of the stricter generic URL
+// validation, and (via NewWindow) forcing a fresh window instead of
+// landing tabs in whatever window the user already has open. NewWindow
+// is a no-op when Browser is unset, since the OS default handler gives
+// no control over window placement.
 type App struct {
-	Type  string            `yaml:"type,omitempty"`
-	Label string            `yaml:"label,omitempty"`
-	Cmd   string            `yaml:"cmd,omitempty"`
-	Args  []string          `yaml:"args,omitempty"`
-	Cwd   string            `yaml:"cwd,omitempty"`
-	Env   map[string]string `yaml:"env,omitempty"`
-	Url   string            `yaml:"url,omitempty"`
+	Type      string            `yaml:"type,omitempty"`
+	Label     string            `yaml:"label,omitempty"`
+	Cmd       string            `yaml:"cmd,omitempty"`
+	Args      []string          `yaml:"args,omitempty"`
+	Cwd       string            `yaml:"cwd,omitempty"`
+	Env       map[string]string `yaml:"env,omitempty"`
+	Url       string            `yaml:"url,omitempty"`
+	Browser   string            `yaml:"browser,omitempty"`
+	Urls      []string          `yaml:"urls,omitempty"`
+	NewWindow bool              `yaml:"new_window,omitempty"`
 }

@@ -154,16 +154,39 @@ func validateApp(a *App, prefix string, errs *ValidationErrors) {
 		// invalid cmd-only entry is rejected here instead of passing
 		// validation and --dry-run, then always failing at a real
 		// `dia start` with "url is required".
-		if a.Url == "" {
+		for i, u := range a.Urls {
+			if strings.TrimSpace(u) == "" {
+				*errs = append(*errs, ValidationError{
+					Path: fmt.Sprintf("%s.urls[%d]", prefix, i),
+					Msg:  "must not be empty",
+				})
+			}
+		}
+		if a.Url == "" && len(a.Urls) == 0 {
 			*errs = append(*errs, ValidationError{
 				Path: prefix + ".url",
-				Msg:  "required for type \"browser\"",
+				Msg:  "required for type \"browser\" (url or urls)",
 			})
-		} else if !strings.HasPrefix(a.Url, "http://") && !strings.HasPrefix(a.Url, "https://") {
-			*errs = append(*errs, ValidationError{
-				Path: prefix + ".url",
-				Msg:  "must start with http:// or https://",
-			})
+			break
+		}
+		if a.Browser == "" {
+			// No specific browser binary named: the runtime opens
+			// this through the OS's default-handler path (xdg-open
+			// and friends), which only takes one URL at a time and
+			// needs a real http(s) URL rather than an arbitrary
+			// string it might otherwise try to resolve as a local
+			// file path.
+			if len(a.Urls) > 0 {
+				*errs = append(*errs, ValidationError{
+					Path: prefix + ".urls",
+					Msg:  "requires \"browser\" to be set; the OS default handler can only open one url at a time",
+				})
+			} else if !strings.HasPrefix(a.Url, "http://") && !strings.HasPrefix(a.Url, "https://") {
+				*errs = append(*errs, ValidationError{
+					Path: prefix + ".url",
+					Msg:  "must start with http:// or https://",
+				})
+			}
 		}
 	case "gh":
 		// `gh` is a thin wrapper around the gh CLI. The first
