@@ -474,7 +474,9 @@
     >
       <span class="text-fg-mute mr-1">Roots:</span>
       {#each $roots as root (root)}
-        <span class="inline-flex items-center gap-1 rounded bg-bg-600 px-1.5 py-0.5 font-mono text-fg-dim">
+        <span
+          class="inline-flex items-center gap-1 rounded bg-bg-600 px-1.5 py-0.5 font-mono text-fg-dim"
+        >
           {root}
           <button
             type="button"
