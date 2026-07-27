@@ -1,4 +1,5 @@
-BINARY := dia
+GO ?= go
+BIN := dia
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -16,7 +17,9 @@ LDFLAGS := -s -w \
 	-X $(PKG)/internal/version.Commit=$(COMMIT) \
 	-X $(PKG)/internal/version.BuildTime=$(BUILD_TIME)
 
-.PHONY: dev build run test vet lint fmt tidy release clean install-tools install-hooks check
+.PHONY: all dev build run test vet lint fmt tidy clean install-tools hooks check
+
+all: hooks build
 
 # The webkit2_41 tag has to match `build`: without it wails links
 # against webkit2gtk-4.0, which on a 4.1-only system fails at the
@@ -26,19 +29,25 @@ dev:
 
 build:
 	$(WAILS) build -clean -trimpath -ldflags "$(LDFLAGS)" -tags webkit2_41
-	@echo "built build/bin/$(BINARY) -- run it with 'make run' or './build/bin/$(BINARY)'"
+	@echo "built build/bin/$(BIN) -- run it with 'make run' or './build/bin/$(BIN)'"
 
 # run launches the binary make build produced. wails writes to
 # build/bin/, not the repo root, which is easy to miss when a stale
 # binary is sitting in the root from an older build.
 run: build
-	./build/bin/$(BINARY)
+	./build/bin/$(BIN)
+
+# install builds and copies the binary to GOPATH/bin, making it
+# available as a system-wide command.
+install: build
+	cp build/bin/$(BIN) $(shell go env GOPATH)/bin/$(BIN)
+	@echo "installed to $(shell go env GOPATH)/bin/$(BIN)"
 
 test:
-	go test -count=1 -timeout 60s ./...
+	$(GO) test -count=1 -timeout 60s ./...
 
 vet:
-	go vet ./...
+	$(GO) vet ./...
 
 lint:
 	$(GOLANGCI) run ./...
@@ -47,10 +56,11 @@ fmt:
 	gofmt -l -w .
 
 tidy:
-	go mod tidy
+	$(GO) mod tidy
 
 # check runs the same gates as the pre-commit hook and CI.
 check: fmt vet lint test
+	@echo "all checks passed"
 
 clean:
 	rm -rf build/bin frontend/dist
@@ -59,12 +69,8 @@ install-tools:
 	go install github.com/wailsapp/wails/v2/cmd/wails@$(WAILS_VERSION)
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_VERSION)
 
-# install-hooks symlinks the version-controlled pre-commit hook into
-# the local .git/hooks dir. Run once after cloning.
-install-hooks:
-	ln -sf ../../scripts/hooks/pre-commit .git/hooks/pre-commit
-	@echo "pre-commit hook installed"
-
-release:
-	@echo "release: push a tag matching v*, e.g. git tag v0.3.0 && git push origin v0.3.0"
-	@echo "see .github/workflows/release.yml for the build/archive/publish steps"
+hooks:
+	@if [ "$(shell git config core.hooksPath)" != ".githooks" ]; then \
+		git config core.hooksPath .githooks; \
+		echo "configured git hooks (.githooks/)"; \
+	fi

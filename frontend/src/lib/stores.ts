@@ -20,7 +20,7 @@ export const customThemes: Writable<CustomThemeInfo[]> = writable([]);
 export const plugins: Writable<PluginInfo[]> = writable([]);
 export const pluginPaths: Writable<PluginPathsInfo | null> = writable(null);
 export const keybinds: Writable<Record<string, string>> = writable({});
-export const projectDir: Writable<string> = writable('');
+export const roots: Writable<string[]> = writable([]);
 
 // Unified toast feedback. Success/info toasts auto-dismiss; error
 // toasts persist until dismissed so a failure is never missed.

@@ -40,14 +40,20 @@ type DiscoverOptions struct {
 	// If empty, the default XDG path is used.
 	GlobalDir string
 
+	// Roots are additional directories to scan for .dia.yaml and
+	// .dia/*.yaml files. Every root is scanned unconditionally,
+	// so workspaces are visible regardless of the current directory.
+	Roots []string
+
 	// StopAt is a directory at which to stop the project-local walk
 	// (typically the filesystem root or a git toplevel). Optional.
 	StopAt string
 }
 
-// Discover loads global workspaces and, if a .dia.yaml is found by
-// walking up from CWD, the project-local workspace. Project-local
-// shadows global on name collision.
+// Discover loads all workspaces from the global dir, every root,
+// and the CWD walk-up. Every discovered workspace is returned;
+// name collisions are not shadowed -- each Source carries its full
+// path so callers can disambiguate.
 func Discover(opts DiscoverOptions) ([]Source, error) {
 	if opts.CWD == "" {
 		cwd, err := os.Getwd()
@@ -60,35 +66,17 @@ func Discover(opts DiscoverOptions) ([]Source, error) {
 		opts.GlobalDir = defaultGlobalDir()
 	}
 
-	byName := make(map[string]Source)
-	var paths []string
+	seen := map[string]bool{}
+	var sources []Source
 
-	// Global: glob *.yaml in opts.GlobalDir.
-	entries, err := os.ReadDir(opts.GlobalDir)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("read global dir %s: %w", opts.GlobalDir, err)
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
+	// collect scans a directory for .yaml/.yml workspace files and
+	// appends them as sources. The Local flag is set when the path
+	// falls under one of the roots or the CWD walk-up.
+	collect := func(dir string, local bool) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
 		}
-		name := e.Name()
-		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
-			continue
-		}
-		paths = append(paths, filepath.Join(opts.GlobalDir, name))
-	}
-
-	// Project-local: walk up from CWD looking for .dia.yaml.
-	localPaths := map[string]bool{}
-	if local := findProjectLocal(opts.CWD, opts.StopAt); local != "" {
-		paths = append(paths, local)
-		localPaths[local] = true
-	}
-
-	// Project-local: glob .dia/*.yaml in CWD.
-	diaDir := filepath.Join(opts.CWD, LocalDirName)
-	if entries, err := os.ReadDir(diaDir); err == nil {
 		for _, e := range entries {
 			if e.IsDir() {
 				continue
@@ -97,37 +85,59 @@ func Discover(opts DiscoverOptions) ([]Source, error) {
 			if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
 				continue
 			}
-			p := filepath.Join(diaDir, name)
-			paths = append(paths, p)
-			localPaths[p] = true
+			p := filepath.Join(dir, name)
+			if seen[p] {
+				continue
+			}
+			seen[p] = true
+			w, err := Load(p)
+			if err != nil {
+				return
+			}
+			sources = append(sources, Source{Workspace: w, Path: p, Local: local})
 		}
 	}
 
-	// Load and dedupe.
-	for _, p := range paths {
-		w, err := Load(p)
+	// Global: glob *.yaml in opts.GlobalDir.
+	collect(opts.GlobalDir, false)
+
+	// Roots: every root is scanned for .dia.yaml and .dia/*.yaml.
+	for _, root := range opts.Roots {
+		absRoot, err := filepath.Abs(root)
 		if err != nil {
-			return nil, fmt.Errorf("load %s: %w", p, err)
+			continue
 		}
-		// Project-local wins on collision. Local files always come
-		// after global in the path list, so when both define the
-		// same name, the local one overwrites the global entry.
-		src := Source{Workspace: w, Path: p, Local: localPaths[p]}
-		byName[w.Name] = src
+		// .dia.yaml at the root itself.
+		localPath := filepath.Join(absRoot, ProjectLocalFile)
+		if _, err := os.Stat(localPath); err == nil && !seen[localPath] {
+			seen[localPath] = true
+			w, err := Load(localPath)
+			if err != nil {
+				continue
+			}
+			sources = append(sources, Source{Workspace: w, Path: localPath, Local: true})
+		}
+		// .dia/*.yaml inside the root.
+		collect(filepath.Join(absRoot, LocalDirName), true)
 	}
+
+	// Project-local: walk up from CWD looking for .dia.yaml.
+	if local := findProjectLocal(opts.CWD, opts.StopAt); local != "" && !seen[local] {
+		seen[local] = true
+		w, err := Load(local)
+		if err == nil {
+			sources = append(sources, Source{Workspace: w, Path: local, Local: true})
+		}
+	}
+
+	// Project-local: glob .dia/*.yaml in CWD.
+	collect(filepath.Join(opts.CWD, LocalDirName), true)
 
 	// Stable, sorted output.
-	names := make([]string, 0, len(byName))
-	for n := range byName {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-
-	out := make([]Source, 0, len(byName))
-	for _, n := range names {
-		out = append(out, byName[n])
-	}
-	return out, nil
+	sort.Slice(sources, func(i, j int) bool {
+		return sources[i].Workspace.Name < sources[j].Workspace.Name
+	})
+	return sources, nil
 }
 
 // FindLocal returns the path of the .dia.yaml walking up from dir, or

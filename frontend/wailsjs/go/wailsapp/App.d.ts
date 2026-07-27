@@ -4,7 +4,7 @@ import {wailsapp} from '../models';
 import {state} from '../models';
 import {context} from '../models';
 
-export function ClearProjectDir():Promise<void>;
+export function AddRoot(arg1:string):Promise<void>;
 
 export function DeleteCustomTheme(arg1:string):Promise<void>;
 
@@ -17,8 +17,6 @@ export function Doctor():Promise<Array<wailsapp.CheckInfo>>;
 export function GetKeybindings():Promise<Record<string, string>>;
 
 export function GetPluginCapabilities(arg1:string):Promise<wailsapp.PluginCapabilityInfo>;
-
-export function GetProjectDir():Promise<string>;
 
 export function GetRecent():Promise<Array<state.RecentEntry>>;
 
@@ -39,6 +37,8 @@ export function ListCustomThemes():Promise<Array<wailsapp.CustomThemeInfo>>;
 export function ListInstances():Promise<Array<wailsapp.InstanceInfo>>;
 
 export function ListPlugins():Promise<Array<wailsapp.PluginInfo>>;
+
+export function ListRoots():Promise<Array<string>>;
 
 export function ListWorkspaces():Promise<Array<wailsapp.WorkspaceInfo>>;
 
@@ -64,13 +64,13 @@ export function PluginPaths():Promise<wailsapp.PluginPathsInfo>;
 
 export function Reconcile():Promise<wailsapp.ReconcileInfo>;
 
+export function RemoveRoot(arg1:string):Promise<void>;
+
 export function ResetKeybindings():Promise<void>;
 
 export function RevealPath(arg1:string):Promise<void>;
 
 export function SaveWorkspaceEditor(arg1:wailsapp.WorkspaceEditor):Promise<void>;
-
-export function SelectProjectDir():Promise<string>;
 
 export function SetCustomTheme(arg1:wailsapp.CustomThemeInfo):Promise<void>;
 

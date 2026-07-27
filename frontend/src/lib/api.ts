@@ -40,9 +40,9 @@ import {
   GetKeybindings as _GetKeybindings,
   SetKeybinding as _SetKeybinding,
   ResetKeybindings as _ResetKeybindings,
-  SelectProjectDir as _SelectProjectDir,
-  GetProjectDir as _GetProjectDir,
-  ClearProjectDir as _ClearProjectDir,
+  AddRoot as _AddRoot,
+  RemoveRoot as _RemoveRoot,
+  ListRoots as _ListRoots,
 } from '../../wailsjs/go/wailsapp/App';
 import { wailsapp } from '../../wailsjs/go/models';
 
@@ -149,9 +149,9 @@ export const api = {
   getKeybindings: (): Promise<Record<string, string>> => _GetKeybindings(),
   setKeybinding: (action: string, keys: string): Promise<void> => _SetKeybinding(action, keys),
   resetKeybindings: (): Promise<void> => _ResetKeybindings(),
-  selectProjectDir: (): Promise<string> => _SelectProjectDir(),
-  getProjectDir: (): Promise<string> => _GetProjectDir(),
-  clearProjectDir: (): Promise<void> => _ClearProjectDir(),
+  addRoot: (dir: string): Promise<void> => _AddRoot(dir),
+  removeRoot: (dir: string): Promise<void> => _RemoveRoot(dir),
+  listRoots: (): Promise<string[]> => _ListRoots(),
 };
 
 export function describeError(err: unknown): string {

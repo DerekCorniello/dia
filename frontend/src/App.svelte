@@ -12,7 +12,7 @@
     plugins as pluginsStore,
     pluginPaths as pluginPathsStore,
     keybinds as keybindsStore,
-    projectDir,
+    roots,
   } from './lib/stores';
   import { buildAllCustomThemesCss } from './lib/colors';
   import { EventsOn, WindowMinimise, WindowToggleMaximise, Quit } from '../wailsjs/runtime';
@@ -153,13 +153,6 @@
     return a.name.localeCompare(b.name);
   }
 
-  $: recentWs =
-    sortKey === 'recent' ? filtered.filter((w) => recent.some((r) => r.name === w.name)) : [];
-  $: otherWs =
-    sortKey === 'recent'
-      ? filtered.filter((w) => !recent.some((r) => r.name === w.name))
-      : filtered;
-
   onDestroy(() => {
     customThemeStyle?.remove();
     customThemeStyle = null;
@@ -169,7 +162,7 @@
   async function refresh() {
     loading.set(true);
     try {
-      const [ws, doc, p, ct, pl, pp, rec, pd] = await Promise.all([
+      const [ws, doc, p, ct, pl, pp, rec, rs] = await Promise.all([
         api.listWorkspaces(),
         api.doctor(),
         api.paths(),
@@ -177,7 +170,7 @@
         api.listPlugins(),
         api.pluginPaths(),
         api.getRecent(),
-        api.getProjectDir(),
+        api.listRoots(),
       ]);
       workspaces.set(ws);
       doctor.set(doc);
@@ -186,7 +179,7 @@
       pluginsStore.set(pl);
       pluginPathsStore.set(pp);
       recent = rec;
-      projectDir.set(pd);
+      roots.set(rs);
     } catch (e) {
       pushToast('err', `refresh: ${describeError(e)}`);
     } finally {
@@ -233,25 +226,23 @@
     showNew = false;
   }
 
-  async function openProject() {
+  async function addRoot() {
+    const dir = prompt('Enter project root path:');
+    if (!dir) return;
     try {
-      const dir = await api.selectProjectDir();
-      if (dir) {
-        projectDir.set(dir);
-        await refresh();
-      }
+      await api.addRoot(dir);
+      await refresh();
     } catch (e) {
-      pushToast('err', `open project: ${describeError(e)}`);
+      pushToast('err', `add root: ${describeError(e)}`);
     }
   }
 
-  async function closeProject() {
+  async function removeRoot(dir: string) {
     try {
-      await api.clearProjectDir();
-      projectDir.set('');
+      await api.removeRoot(dir);
       await refresh();
     } catch (e) {
-      pushToast('err', `close project: ${describeError(e)}`);
+      pushToast('err', `remove root: ${describeError(e)}`);
     }
   }
 
@@ -351,9 +342,9 @@
       // fall back to defaults
     }
     try {
-      projectDir.set(await api.getProjectDir());
+      roots.set(await api.listRoots());
     } catch {
-      projectDir.set('');
+      roots.set([]);
     }
     unsubStateChanged = EventsOn('workspace:state-changed', () => {
       refresh();
@@ -400,11 +391,11 @@
       </button>
       <button
         type="button"
-        on:click={openProject}
+        on:click={addRoot}
         class="rounded bg-bg-600 px-3 py-1.5 text-xs text-fg-dim hover:bg-bg-600/70 hover:text-fg"
-        title="open project directory"
+        title="add project root"
       >
-        Open Folder
+        + Add Root
       </button>
       <button
         type="button"
@@ -477,32 +468,36 @@
     </div>
   </header>
 
-  {#if $projectDir}
+  {#if $roots.length > 0}
     <div
-      class="flex items-center gap-2 border-b border-primary/15 bg-bg-800/50 px-5 py-1.5 text-xs"
+      class="flex flex-wrap items-center gap-1.5 border-b border-primary/15 bg-bg-800/50 px-5 py-1.5 text-xs"
     >
-      <span class="text-fg-mute">Project:</span>
-      <span class="font-mono text-fg-dim truncate flex-1">{$projectDir}</span>
-      <button
-        type="button"
-        on:click={closeProject}
-        class="rounded p-0.5 text-fg-mute hover:text-fg"
-        title="clear project directory"
-        aria-label="clear project directory"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          ><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg
-        >
-      </button>
+      <span class="text-fg-mute mr-1">Roots:</span>
+      {#each $roots as root (root)}
+        <span class="inline-flex items-center gap-1 rounded bg-bg-600 px-1.5 py-0.5 font-mono text-fg-dim">
+          {root}
+          <button
+            type="button"
+            on:click={() => removeRoot(root)}
+            class="text-fg-mute hover:text-error"
+            title="remove root"
+            aria-label="remove root {root}"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              ><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg
+            >
+          </button>
+        </span>
+      {/each}
     </div>
   {/if}
 
@@ -558,17 +553,17 @@
             >
               No workspaces matching "{search}".
             </div>
-          {:else if !$projectDir}
+          {:else}
             <div class="flex flex-col items-center justify-center py-16">
               <div class="text-4xl font-bold text-primary mb-2">dia</div>
               <p class="text-sm text-fg-mute mb-6">The Do-It-All App</p>
               <div class="flex items-center gap-3">
                 <button
                   type="button"
-                  on:click={openProject}
+                  on:click={addRoot}
                   class="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-content hover:bg-primary/90"
                 >
-                  Open Project
+                  Add Root
                 </button>
                 <button
                   type="button"
@@ -600,21 +595,6 @@
                   </div>
                 </div>
               {/if}
-            </div>
-          {:else}
-            <div
-              class="rounded-lg border border-dashed border-bg-600 p-8 text-center text-sm text-fg-mute"
-            >
-              No workspaces in this directory.
-              <button type="button" on:click={openNew} class="ml-1 text-primary hover:underline"
-                >Create one</button
-              >
-              or
-              <button
-                type="button"
-                on:click={closeProject}
-                class="ml-1 text-primary hover:underline">change directory</button
-              >.
             </div>
           {/if}
         {:else}

@@ -222,16 +222,24 @@ func newResolverManager(stateDir string, st *state.Store, reg *registry.Registry
 	return pmgr
 }
 
-// resolveWorkspace finds a workspace by name across the global and
-// project-local config locations. The returned Source.Path is the
-// absolute path the workspace was loaded from.
+// resolveWorkspace finds a workspace by name across the global dir,
+// every persisted root, and the CWD walk-up. The returned Source.Path
+// is the absolute path the workspace was loaded from.
 func resolveWorkspace(name string) (*config.Workspace, config.Source, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, config.Source{}, fmt.Errorf("getwd: %w", err)
 	}
+	var roots []string
+	if dir, err := state.ResolveStateDir(); err == nil {
+		st, err := state.OpenAt(filepath.Join(dir, state.StateFile))
+		if err == nil {
+			roots = st.Snapshot().Roots
+		}
+	}
 	all, err := config.Discover(config.DiscoverOptions{
 		GlobalDir: config.DefaultGlobalDir(),
+		Roots:     roots,
 		CWD:       cwd,
 	})
 	if err != nil {

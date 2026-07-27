@@ -36,9 +36,9 @@ vi.mock('../../wailsjs/go/wailsapp/App', () => ({
   GetKeybindings: vi.fn(),
   SetKeybinding: vi.fn(),
   ResetKeybindings: vi.fn(),
-  SelectProjectDir: vi.fn(),
-  GetProjectDir: vi.fn(),
-  ClearProjectDir: vi.fn(),
+  AddRoot: vi.fn(),
+  RemoveRoot: vi.fn(),
+  ListRoots: vi.fn(),
 }));
 
 vi.mock('../stores', () => ({
@@ -54,7 +54,7 @@ vi.mock('../stores', () => ({
   plugins: writable([]),
   pluginPaths: writable(null),
   keybinds: writable({}),
-  projectDir: writable(''),
+  roots: writable([]),
 }));
 
 import NewWorkspaceDialog from './NewWorkspaceDialog.svelte';

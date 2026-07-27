@@ -88,6 +88,9 @@ type Data struct {
 	CustomThemes map[string]CustomTheme `json:"custom_themes,omitempty"`
 	Plugins      map[string]PluginState `json:"plugins,omitempty"`
 	ProjectDir   string                 `json:"project_dir,omitempty"`
+	// Roots are directories to scan for local workspace YAMLs.
+	// Workspaces found here appear in every list regardless of CWD.
+	Roots []string `json:"roots,omitempty"`
 }
 
 // Store guards a Data value persisted to a single JSON file. The
@@ -142,6 +145,7 @@ func OpenAt(path string) (*Store, error) {
 		CustomThemes: raw.CustomThemes,
 		Plugins:      raw.Plugins,
 		ProjectDir:   raw.ProjectDir,
+		Roots:        raw.Roots,
 	}
 	if loaded.Instances == nil {
 		loaded.Instances = map[string]Instance{}
@@ -169,6 +173,7 @@ type rawData struct {
 	CustomThemes map[string]CustomTheme `json:"custom_themes,omitempty"`
 	Plugins      map[string]PluginState `json:"plugins,omitempty"`
 	ProjectDir   string                 `json:"project_dir,omitempty"`
+	Roots        []string               `json:"roots,omitempty"`
 }
 
 // migrateRecent normalizes a freshly-loaded Recent slice. The legacy

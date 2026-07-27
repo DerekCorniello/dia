@@ -8,10 +8,10 @@ process snapshot, just deterministic rebuilds from a config.
 
 ## Status
 
-v0.3.0 is released; v0.4.0 is in development. Core engine (v0.1.0),
-theming + UI polish (v0.2.0), JS plugin system (v0.3.0) with embedded
-and window-style plugins. In development for v0.4.0: plugin-provided
-app types, plugin install from git, and workspace lifecycle hooks.
+v0.4.0 is released. Core engine (v0.1.0), theming + UI polish
+(v0.2.0), JS plugin system (v0.3.0) with embedded and window-style
+plugins. v0.4.0 adds plugin-provided app types, plugin install from
+git, workspace lifecycle hooks, and GUI plugin management.
 
 ## Features
 

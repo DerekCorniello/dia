@@ -11,7 +11,6 @@ import (
 	"github.com/DerekCorniello/dia/internal/diag"
 	"github.com/DerekCorniello/dia/internal/platform"
 	"github.com/DerekCorniello/dia/internal/state"
-	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // OpenConfigFolder reveals the global config dir in the file
@@ -54,48 +53,47 @@ func (a *App) OpenStateFile() error {
 	return platform.New().OpenFile(path)
 }
 
-// SelectProjectDir opens a directory picker dialog and persists the
-// chosen path. Discovery then includes that directory for .dia.yaml
-// and .dia/ workspace lookups.
-func (a *App) SelectProjectDir() (string, error) {
-	if a.ctx == nil {
-		return "", errors.New("not initialized")
-	}
-	dir, err := wailsRuntime.OpenDirectoryDialog(a.ctx, wailsRuntime.OpenDialogOptions{
-		Title: "Select Project Directory",
-	})
-	if err != nil {
-		return "", fmt.Errorf("select directory: %w", err)
-	}
-	if dir == "" {
-		return "", nil
-	}
-	if a.store != nil {
-		if err := a.store.Mutate(func(d *state.Data) {
-			d.ProjectDir = dir
-		}); err != nil {
-			a.logger.Warn("mutate project dir", "error", err)
-		}
-	}
-	return dir, nil
-}
-
-// GetProjectDir returns the persisted project directory.
-func (a *App) GetProjectDir() string {
-	if a.store == nil {
-		return ""
-	}
-	return a.store.Snapshot().ProjectDir
-}
-
-// ClearProjectDir removes the persisted project directory.
-func (a *App) ClearProjectDir() error {
+// AddRoot persists a directory to the roots list and rescans it for
+// workspace YAMLs. Duplicates and non-directories are silently ignored.
+func (a *App) AddRoot(dir string) error {
 	if a.store == nil {
 		return errors.New("state store not initialized")
 	}
 	return a.store.Mutate(func(d *state.Data) {
-		d.ProjectDir = ""
+		for _, r := range d.Roots {
+			if r == dir {
+				return
+			}
+		}
+		d.Roots = append(d.Roots, dir)
 	})
+}
+
+// RemoveRoot removes a directory from the roots list.
+func (a *App) RemoveRoot(dir string) error {
+	if a.store == nil {
+		return errors.New("state store not initialized")
+	}
+	return a.store.Mutate(func(d *state.Data) {
+		out := make([]string, 0, len(d.Roots))
+		for _, r := range d.Roots {
+			if r != dir {
+				out = append(out, r)
+			}
+		}
+		d.Roots = out
+	})
+}
+
+// ListRoots returns the persisted project roots.
+func (a *App) ListRoots() []string {
+	if a.store == nil {
+		return nil
+	}
+	snap := a.store.Snapshot()
+	out := make([]string, len(snap.Roots))
+	copy(out, snap.Roots)
+	return out
 }
 
 // RevealPath opens an arbitrary path in the file manager.

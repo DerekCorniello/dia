@@ -78,7 +78,7 @@ func TestDiscoverProjectLocalWalkUp(t *testing.T) {
 	}
 }
 
-func TestDiscoverProjectLocalShadowsGlobal(t *testing.T) {
+func TestDiscoverProjectLocalDoesNotShadowGlobal(t *testing.T) {
 	g := t.TempDir()
 	writeYAML(t, g, "shared.yaml", "version: 1\nname: shared\napps:\n  - type: custom\n    cmd: echo global\n")
 
@@ -89,14 +89,17 @@ func TestDiscoverProjectLocalShadowsGlobal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sources) != 1 {
-		t.Fatalf("expected 1 source after shadow, got %d", len(sources))
+	if len(sources) != 2 {
+		t.Fatalf("expected 2 sources (both local and global), got %d", len(sources))
 	}
-	if sources[0].Workspace.Apps[0].Cmd != "echo local" {
-		t.Errorf("expected local to win, got cmd=%q", sources[0].Workspace.Apps[0].Cmd)
+	// Both should appear; sorted by name (both "shared"), then by whatever order
+	// they were discovered. We just verify both are present with distinct paths.
+	seen := map[string]bool{}
+	for _, s := range sources {
+		seen[s.Path] = true
 	}
-	if !sources[0].Local {
-		t.Error("expected Local=true on shadowed entry")
+	if len(seen) != 2 {
+		t.Error("expected two distinct paths")
 	}
 }
 
@@ -154,5 +157,43 @@ func TestDiscoverIgnoresNonYAML(t *testing.T) {
 	}
 	if len(sources) != 1 {
 		t.Fatalf("expected 1 source (only ok.yaml), got %d", len(sources))
+	}
+}
+
+func TestDiscoverRoots(t *testing.T) {
+	g := t.TempDir()
+	// Global workspace.
+	writeYAML(t, g, "global.yaml", "version: 1\nname: global-ws\napps:\n  - type: custom\n    cmd: echo global\n")
+
+	root1 := t.TempDir()
+	writeYAML(t, root1, ".dia.yaml", "version: 1\nname: root1-ws\napps:\n  - type: custom\n    cmd: echo r1\n")
+
+	root2 := t.TempDir()
+	dia2 := root2 + "/.dia"
+	if err := os.MkdirAll(dia2, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeYAML(t, dia2, "nested.yaml", "version: 1\nname: root2-ws\napps:\n  - type: custom\n    cmd: echo r2\n")
+
+	sources, err := Discover(DiscoverOptions{
+		GlobalDir: g,
+		Roots:     []string{root1, root2},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 3 {
+		t.Fatalf("expected 3 sources (global + 2 roots), got %d", len(sources))
+	}
+	names := make([]string, len(sources))
+	for i, s := range sources {
+		names[i] = s.Workspace.Name
+	}
+	// Sorted by name.
+	want := []string{"global-ws", "root1-ws", "root2-ws"}
+	for i, n := range names {
+		if n != want[i] {
+			t.Errorf("sources[%d].name = %q, want %q", i, n, want[i])
+		}
 	}
 }

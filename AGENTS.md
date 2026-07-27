@@ -59,8 +59,8 @@ npm run build        # vite build
 First-time setup:
 
 ```sh
-make install-tools  # Wails CLI + golangci-lint
-make install-hooks  # symlink the version-controlled pre-commit hook
+make install-tools  # Wails CLI (version taken from go.mod) + golangci-lint
+make hooks          # configure the version-controlled pre-commit hook
 ```
 
 CI mirrors these gates on Linux, macOS, and Windows; keep them green.

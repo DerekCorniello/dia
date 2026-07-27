@@ -2,11 +2,13 @@ package cli
 
 import (
 	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/spf13/cobra"
 
 	"github.com/DerekCorniello/dia/internal/config"
+	"github.com/DerekCorniello/dia/internal/state"
 )
 
 func newListCmd() *cobra.Command {
@@ -14,7 +16,7 @@ func newListCmd() *cobra.Command {
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List discovered workspaces",
-		Long:    "Print every workspace found in the global config dir and in the current directory (or its parents). Project-local workspaces shadow global ones of the same name.",
+		Long:    "Print every workspace found in the global config dir, every persisted root, and the current directory (or its parents). Name collisions are shown with full paths.",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := newOutput(cmd)
@@ -22,8 +24,16 @@ func newListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			var roots []string
+			if dir, err := state.ResolveStateDir(); err == nil {
+				st, err := state.OpenAt(filepath.Join(dir, state.StateFile))
+				if err == nil {
+					roots = st.Snapshot().Roots
+				}
+			}
 			all, err := config.Discover(config.DiscoverOptions{
 				GlobalDir: config.DefaultGlobalDir(),
+				Roots:     roots,
 				CWD:       cwd,
 			})
 			if err != nil {
@@ -33,7 +43,7 @@ func newListCmd() *cobra.Command {
 				if all[i].Workspace.Name != all[j].Workspace.Name {
 					return all[i].Workspace.Name < all[j].Workspace.Name
 				}
-				return all[i].Local == all[j].Local
+				return all[i].Path < all[j].Path
 			})
 			if out.IsJSON() {
 				type row struct {

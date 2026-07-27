@@ -15,18 +15,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ListWorkspaces returns the discovered workspaces with a running
-// flag attached. Errors during discovery are returned to the UI.
+// ListWorkspaces returns all discovered workspaces with a running
+// flag attached. Every workspace is returned regardless of CWD:
+// global workspaces, workspaces from every persisted root, and the
+// project-local workspace in the CWD walk-up. Errors during discovery
+// are returned to the UI.
 func (a *App) ListWorkspaces() ([]WorkspaceInfo, error) {
 	if a.store == nil || a.rt == nil {
 		return nil, errors.New("not initialized")
 	}
 	cwd, _ := os.Getwd()
-	if pd := a.GetProjectDir(); pd != "" {
-		cwd = pd
-	}
+	snap := a.store.Snapshot()
 	sources, err := config.Discover(config.DiscoverOptions{
 		GlobalDir: config.DefaultGlobalDir(),
+		Roots:     snap.Roots,
 		CWD:       cwd,
 	})
 	if err != nil {
@@ -105,8 +107,13 @@ func (a *App) GetWorkspace(name string) (*WorkspaceDetail, error) {
 	if a.rt == nil {
 		return nil, errors.New("not initialized")
 	}
+	var roots []string
+	if a.store != nil {
+		roots = a.store.Snapshot().Roots
+	}
 	sources, err := config.Discover(config.DiscoverOptions{
 		GlobalDir: config.DefaultGlobalDir(),
+		Roots:     roots,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("discover: %w", err)
@@ -348,11 +355,13 @@ func (a *App) Reconcile() (ReconcileInfo, error) {
 
 func (a *App) findWorkspace(name string) (*config.Workspace, config.Source, error) {
 	cwd, _ := os.Getwd()
-	if pd := a.GetProjectDir(); pd != "" {
-		cwd = pd
+	var roots []string
+	if a.store != nil {
+		roots = a.store.Snapshot().Roots
 	}
 	sources, err := config.Discover(config.DiscoverOptions{
 		GlobalDir: config.DefaultGlobalDir(),
+		Roots:     roots,
 		CWD:       cwd,
 	})
 	if err != nil {
@@ -526,6 +535,10 @@ func (a *App) DeleteWorkspace(name string) error {
 // is placed in CWD/.dia/; otherwise it goes in the global config
 // dir. The caller supplies the name; if a file with that name
 // already exists, the operation is refused.
+//
+// Creating a local workspace automatically registers its parent
+// directory as a root, so the workspace appears in every list
+// regardless of CWD.
 func (a *App) NewWorkspace(name string, local bool) (string, error) {
 	if name == "" {
 		return "", errors.New("name is required")
@@ -534,12 +547,14 @@ func (a *App) NewWorkspace(name string, local bool) (string, error) {
 		return "", err
 	}
 	var dir string
+	var rootDir string
 	if local {
 		cwd, err := os.Getwd()
 		if err != nil {
 			return "", fmt.Errorf("get cwd: %w", err)
 		}
 		dir = filepath.Join(cwd, config.LocalDirName)
+		rootDir = cwd
 	} else {
 		dir = config.DefaultGlobalDir()
 	}
@@ -553,6 +568,18 @@ func (a *App) NewWorkspace(name string, local bool) (string, error) {
 	body := fmt.Sprintf("version: %d\nname: %s\n", config.SchemaVersion, name)
 	if err := os.WriteFile(yamlPath, []byte(body), 0o644); err != nil {
 		return "", err
+	}
+	// Auto-register the parent directory as a root so the workspace
+	// is visible from anywhere.
+	if rootDir != "" && a.store != nil {
+		_ = a.store.Mutate(func(d *state.Data) {
+			for _, r := range d.Roots {
+				if r == rootDir {
+					return
+				}
+			}
+			d.Roots = append(d.Roots, rootDir)
+		})
 	}
 	return yamlPath, nil
 }

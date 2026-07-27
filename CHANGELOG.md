@@ -5,7 +5,7 @@ All notable changes to dia are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [0.4.0] - Unreleased
+## [0.4.0] - 2026-07-25
 
 ### Added
 
@@ -62,6 +62,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `platform.Platform` gained `Run(opts, timeout)`, a blocking
   run-to-completion counterpart to the detached `Launch`, used by
   hooks.
+- **`type: browser` gained `browser`, `new_window`, and `urls` fields.**
+  Setting `browser` to a binary name launches that browser directly
+  instead of going through the OS URL handler, lifts the http(s)
+  restriction, and opens multiple URLs in the same window. `new_window`
+  forces a fresh window. `urls` is a list of additional destinations
+  merged after `url`. Firefox-family browsers get per-tab flags
+  (`-new-tab`) via `browserTabArgs`; Chromium-family and unknown
+  browsers use plain positional arguments. For Firefox-style browsers
+  with multiple URLs and `new_window`, the launch is split through a
+  shell with a short sleep to work around a remote-process race
+  between `-new-window` and subsequent `-new-tab` calls.
 
 ### Changed
 
@@ -130,6 +141,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   despite being documented as "runs `cmd`" and accepted by the config
   validator. The registry had no handler registered for the empty
   string. Pre-existing; found while adding plugin app types.
+- **`$EDITOR`/`$VISUAL` with arguments broke `dia edit`.** The editor
+  value was passed as a single executable name to `exec.Command`, so
+  `code --wait` failed with "executable not found". Now split with
+  `strings.Fields`. Pre-existing.
+- **Window plugin `fetch` bypassed the capability model.**
+  `pluginWindowHost.dispatch` handled `fetch` directly without checking
+  grants, so a window plugin could make HTTP requests even when
+  `fetch` was not granted. Now falls through to the goja runtime bridge
+  which enforces capability gating, matching `exec` which already lived
+  in the same fallthrough path. v0.4.0 regression.
+- **Non-standard CSS `zoom` in the UI.** `App.svelte` used the Chromium-
+  only `zoom` property for zoom controls. Switched to `transform:
+  scale()` with `transformOrigin` for cross-engine compatibility.
+- **Settings panel ConfirmDialog rendered inside a keybinding loop.**
+  The theme-deletion confirmation dialog appeared inside the
+  `{#each}` loop for keybindings, producing invalid HTML (a dialog
+  nested inside a button) and multiple overlapping modals if
+  triggered. Moved outside the loop.
+- **`CustomThemeEditor` style element leaked.** A transient preview
+  `<style>` element was appended to `<head>` on mount but never
+  removed on destroy, accumulating one per edit session. Switched
+  from an uncalled `export function destroy()` to `onDestroy`.
+- **`ConfirmDialog` imported unused transitions.** `fly` and `fade`
+  from `svelte/transition` were imported but never used. Removed.
+- **Nil pointer risk in unguarded bound methods.** `ListWorkspaces`,
+  `GetWorkspace`, and `StartWorkspace` accessed `a.store` or `a.rt`
+  without nil checks, which would panic if `Startup` failed early.
+- **Plugins panel and workspace card layout.** Cards now wrap and
+  size correctly when filters exclude some entries.
+- **`runtime.newID` hardcoded slice bound.** The `enc[:12]` slice
+  literal was not derived from the underlying buffer size.
 
 ### Removed
 
