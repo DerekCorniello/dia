@@ -135,7 +135,7 @@ func (h *wailsHost) DeleteCustomTheme(ctx context.Context, name string) error {
 }
 
 func (h *wailsHost) NewWorkspace(ctx context.Context, name string) (string, error) {
-	return h.app.NewWorkspace(name, false)
+	return h.app.NewWorkspace(name, "")
 }
 
 func (h *wailsHost) Exec(ctx context.Context, cmd string, args []string) (string, error) {

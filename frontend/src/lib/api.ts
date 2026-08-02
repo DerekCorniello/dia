@@ -43,6 +43,8 @@ import {
   AddRoot as _AddRoot,
   RemoveRoot as _RemoveRoot,
   ListRoots as _ListRoots,
+  GetCwd as _GetCwd,
+  GetHomeDir as _GetHomeDir,
 } from '../../wailsjs/go/wailsapp/App';
 import { wailsapp } from '../../wailsjs/go/models';
 
@@ -116,7 +118,7 @@ export const api = {
   openConfigFolder: (): Promise<void> => _OpenConfigFolder(),
   openStateFolder: (): Promise<void> => _OpenStateFolder(),
   openStateFile: (): Promise<void> => _OpenStateFile(),
-  newWorkspace: (name: string, local: boolean): Promise<string> => _NewWorkspace(name, local),
+  newWorkspace: (name: string, dir: string): Promise<string> => _NewWorkspace(name, dir),
   getTheme: (): Promise<string> => _GetTheme(),
   setTheme: (theme: string): Promise<void> => _SetTheme(theme),
   listCustomThemes: (): Promise<CustomThemeInfo[]> => array(_ListCustomThemes()),
@@ -149,6 +151,8 @@ export const api = {
   getKeybindings: (): Promise<Record<string, string>> => _GetKeybindings(),
   setKeybinding: (action: string, keys: string): Promise<void> => _SetKeybinding(action, keys),
   resetKeybindings: (): Promise<void> => _ResetKeybindings(),
+  getCwd: (): Promise<string> => _GetCwd(),
+  getHomeDir: (): Promise<string> => _GetHomeDir(),
   addRoot: (dir: string): Promise<void> => _AddRoot(dir),
   removeRoot: (dir: string): Promise<void> => _RemoveRoot(dir),
   listRoots: (): Promise<string[]> => _ListRoots(),

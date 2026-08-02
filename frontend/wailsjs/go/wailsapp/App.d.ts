@@ -14,6 +14,10 @@ export function DetectTools():Promise<Array<wailsapp.ToolCategory>>;
 
 export function Doctor():Promise<Array<wailsapp.CheckInfo>>;
 
+export function GetCwd():Promise<string>;
+
+export function GetHomeDir():Promise<string>;
+
 export function GetKeybindings():Promise<Record<string, string>>;
 
 export function GetPluginCapabilities(arg1:string):Promise<wailsapp.PluginCapabilityInfo>;
@@ -42,7 +46,7 @@ export function ListRoots():Promise<Array<string>>;
 
 export function ListWorkspaces():Promise<Array<wailsapp.WorkspaceInfo>>;
 
-export function NewWorkspace(arg1:string,arg2:boolean):Promise<string>;
+export function NewWorkspace(arg1:string,arg2:string):Promise<string>;
 
 export function OpenConfigFolder():Promise<void>;
 

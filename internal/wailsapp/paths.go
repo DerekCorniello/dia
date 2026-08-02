@@ -96,6 +96,18 @@ func (a *App) ListRoots() []string {
 	return out
 }
 
+// GetCwd returns the current working directory for the frontend.
+func (a *App) GetCwd() string {
+	cwd, _ := os.Getwd()
+	return cwd
+}
+
+// GetHomeDir returns the user's home directory.
+func (a *App) GetHomeDir() string {
+	home, _ := os.UserHomeDir()
+	return home
+}
+
 // RevealPath opens an arbitrary path in the file manager.
 func (a *App) RevealPath(path string) error {
 	if _, err := os.Stat(path); err != nil {

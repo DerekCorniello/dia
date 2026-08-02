@@ -25,7 +25,7 @@ all: hooks build
 # against webkit2gtk-4.0, which on a 4.1-only system fails at the
 # linker with missing libjxl symbols.
 dev:
-	$(WAILS) dev -tags webkit2_41
+	JSC_SIGNAL_FOR_GC=12 $(WAILS) dev -tags webkit2_41
 
 build:
 	$(WAILS) build -clean -trimpath -ldflags "$(LDFLAGS)" -tags webkit2_41

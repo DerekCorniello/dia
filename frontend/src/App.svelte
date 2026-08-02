@@ -23,14 +23,13 @@
   import PluginPanel from './lib/components/PluginPanel.svelte';
   import Toasts from './lib/components/Toasts.svelte';
 
-  type SortKey = 'recent' | 'mostUsed' | 'name' | 'source';
-  const SORT_KEYS: SortKey[] = ['recent', 'mostUsed', 'name', 'source'];
+  type SortKey = 'recent' | 'mostUsed' | 'name';
+  const SORT_KEYS: SortKey[] = ['recent', 'mostUsed', 'name'];
 
   function sortLabel(s: SortKey): string {
     if (s === 'recent') return 'Recent';
     if (s === 'mostUsed') return 'Most Used';
-    if (s === 'name') return 'Name';
-    return 'Source';
+    return 'Name';
   }
 
   let showSettings = false;
@@ -134,10 +133,6 @@
     rec: RecentEntry[],
   ): number {
     if (key === 'name') return a.name.localeCompare(b.name);
-    if (key === 'source') {
-      const c = (a.source || '').localeCompare(b.source || '');
-      return c !== 0 ? c : a.name.localeCompare(b.name);
-    }
     if (key === 'mostUsed') {
       const ac = a.useCount ?? 0;
       const bc = b.useCount ?? 0;

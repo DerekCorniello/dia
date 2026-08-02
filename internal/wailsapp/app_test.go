@@ -22,7 +22,7 @@ func withTempXDG(t *testing.T) {
 func TestNewWorkspace_WritesFile(t *testing.T) {
 	withTempXDG(t)
 	a := New()
-	path, err := a.NewWorkspace("demo", false)
+	path, err := a.NewWorkspace("demo", "")
 	if err != nil {
 		t.Fatalf("NewWorkspace: %v", err)
 	}
@@ -46,10 +46,10 @@ func TestNewWorkspace_WritesFile(t *testing.T) {
 func TestNewWorkspace_RefusesExisting(t *testing.T) {
 	withTempXDG(t)
 	a := New()
-	if _, err := a.NewWorkspace("dup", false); err != nil {
+	if _, err := a.NewWorkspace("dup", ""); err != nil {
 		t.Fatalf("first NewWorkspace: %v", err)
 	}
-	if _, err := a.NewWorkspace("dup", false); err == nil {
+	if _, err := a.NewWorkspace("dup", ""); err == nil {
 		t.Fatal("expected error on duplicate name, got nil")
 	}
 }
@@ -59,13 +59,13 @@ func TestNewWorkspace_RejectsBadName(t *testing.T) {
 	withTempXDG(t)
 	a := New()
 	for _, bad := range []string{"", "has space", "with/slash"} {
-		if _, err := a.NewWorkspace(bad, false); err == nil {
+		if _, err := a.NewWorkspace(bad, ""); err == nil {
 			t.Errorf("NewWorkspace(%q) = nil err, want error", bad)
 		}
 	}
 	// These should now be valid (uppercase, leading/trailing hyphens allowed)
 	for _, good := range []string{"Has-Caps", "-leading", "trailing-"} {
-		if _, err := a.NewWorkspace(good, false); err != nil {
+		if _, err := a.NewWorkspace(good, ""); err != nil {
 			t.Errorf("NewWorkspace(%q) = %v, want nil", good, err)
 		}
 	}

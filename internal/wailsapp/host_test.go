@@ -21,7 +21,7 @@ func newTestHost(t *testing.T) *wailsHost {
 
 func TestWailsHost_ListWorkspaces(t *testing.T) {
 	h := newTestHost(t)
-	if _, err := h.app.NewWorkspace("alpha", false); err != nil {
+	if _, err := h.app.NewWorkspace("alpha", ""); err != nil {
 		t.Fatalf("NewWorkspace: %v", err)
 	}
 

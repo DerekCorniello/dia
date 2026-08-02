@@ -1,14 +1,27 @@
 <script lang="ts">
   import { api, describeError } from '../api';
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
 
   export let onClose: () => void = () => {};
 
   let name = '';
-  let local = false;
+  let global = false;
+  let customDir = '';
+  let cwd = '';
   let busy = false;
   let nameError = '';
   const dispatch = createEventDispatcher<{ created: string }>();
+
+  type LocationOption = 'cwd' | 'home' | 'custom';
+  let location: LocationOption = 'cwd';
+
+  onMount(async () => {
+    try {
+      cwd = await api.getCwd();
+    } catch {
+      cwd = '';
+    }
+  });
 
   function validateName(v: string): string {
     if (!v) return '';
@@ -28,13 +41,36 @@
     if (e.key === 'Escape') onClose();
   }
 
+  function resolveDir(): string {
+    if (global) return '';
+    if (location === 'cwd') return cwd;
+    if (location === 'home') return '';
+    return customDir;
+  }
+
   async function submit() {
     if (!name.trim() || nameError) return;
+    if (!global && location === 'custom' && !customDir.trim()) {
+      nameError = 'Custom directory is required';
+      return;
+    }
+    if (!global && location === 'custom') {
+      // resolve ~
+      const dir = customDir.trim().replace(/^~/, await api.getHomeDir().catch(() => ''));
+      if (!dir) return;
+      await api.newWorkspace(name.trim(), dir);
+    } else {
+      await api.newWorkspace(name.trim(), resolveDir());
+    }
+    dispatch('created', name.trim());
+    onClose();
+  }
+
+  async function handleSubmit(e: Event) {
+    e.preventDefault();
     busy = true;
     try {
-      await api.newWorkspace(name.trim(), local);
-      dispatch('created', name.trim());
-      onClose();
+      await submit();
     } catch (e) {
       nameError = describeError(e);
     } finally {
@@ -58,7 +94,7 @@
     aria-label="new workspace"
   >
     <h2 class="text-base font-medium mb-3">New workspace</h2>
-    <form on:submit|preventDefault={submit} class="space-y-3">
+    <form on:submit={handleSubmit} class="space-y-3">
       <label class="block text-sm">
         <span class="text-fg-dim">Name</span>
         <input
@@ -85,29 +121,61 @@
         <span class="text-xs font-semibold uppercase tracking-wide text-fg-mute block mb-1.5"
           >Location</span
         >
-        <label class="flex items-center gap-2 text-sm mb-1.5">
-          <input
-            type="radio"
-            bind:group={local}
-            value={false}
-            disabled={busy}
-            class="accent-primary"
-          />
-          <span class="text-fg-dim">Global</span>
-          <span class="text-xs text-fg-mute">(~/.config/dia/workspaces/)</span>
-        </label>
-        <label class="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
-            bind:group={local}
-            value={true}
-            disabled={busy}
-            class="accent-primary"
-          />
-          <span class="text-fg-dim">Local</span>
-          <span class="text-xs text-fg-mute">(./.dia/)</span>
-        </label>
+
+        {#if !global}
+          <label class="flex items-center gap-2 text-sm mb-1.5">
+            <input
+              type="radio"
+              bind:group={location}
+              value="cwd"
+              disabled={busy}
+              class="accent-primary"
+            />
+            <span class="text-fg-dim">Current directory</span>
+            {#if cwd}
+              <span class="text-xs text-fg-mute font-mono">({cwd})</span>
+            {/if}
+          </label>
+          <label class="flex items-center gap-2 text-sm mb-1.5">
+            <input
+              type="radio"
+              bind:group={location}
+              value="home"
+              disabled={busy}
+              class="accent-primary"
+            />
+            <span class="text-fg-dim">Home</span>
+            <span class="text-xs text-fg-mute font-mono">(~)</span>
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              bind:group={location}
+              value="custom"
+              disabled={busy}
+              class="accent-primary"
+            />
+            <span class="text-fg-dim">Custom</span>
+          </label>
+          {#if location === 'custom'}
+            <input
+              type="text"
+              bind:value={customDir}
+              disabled={busy}
+              placeholder="/path/to/project"
+              class="mt-1 block w-full rounded border border-bg-600 bg-bg-800 px-2 py-1 text-sm font-mono focus:border-accent focus:outline-none"
+            />
+          {/if}
+        {:else}
+          <p class="text-sm text-fg-mute">Saved to ~/.config/dia/workspaces/</p>
+        {/if}
       </div>
+
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" bind:checked={global} disabled={busy} class="accent-primary" />
+        <span class="text-fg-dim">Global</span>
+        <span class="text-xs text-fg-mute">(shared across all projects)</span>
+      </label>
 
       <div class="flex justify-end gap-2 pt-2">
         <button

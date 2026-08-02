@@ -88,76 +88,36 @@
 </script>
 
 <section
-  class="relative rounded-lg border border-bg-600 bg-bg-700 p-3 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md shadow-sm {workspace.running
-    ? 'shadow-primary/10'
-    : ''}"
+  class="relative rounded-lg border {workspace.running
+    ? 'border-primary/40'
+    : 'border-bg-600'} bg-bg-700 p-3 shadow-sm hover:shadow-md transition-shadow duration-150"
 >
-  <div
-    class="absolute left-0 top-2 bottom-2 w-1 rounded-r {workspace.running
-      ? 'bg-primary'
-      : workspace.source === 'local'
-        ? 'bg-info'
-        : 'bg-accent-secondary'}"
-  ></div>
-  <header class="flex items-center justify-between gap-2">
+  <div class="flex items-start justify-between gap-3">
     <button
       type="button"
       on:click={toggleExpand}
       class="min-w-0 flex-1 text-left"
       aria-expanded={expanded}
     >
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="text-sm font-semibold text-fg truncate">{workspace.name}</span>
-        <span
-          class="inline-flex items-center rounded-full {workspace.source === 'local'
-            ? 'bg-info/15 text-info'
-            : 'bg-accent-secondary/15 text-accent-secondary'} px-1.5 py-0.5 text-[10px] font-medium"
-        >
-          {workspace.source}
-        </span>
+      <div class="flex items-center gap-2">
         {#if workspace.running}
-          <span class="inline-flex items-center gap-1 text-[10px] font-medium text-primary">
-            <span class="inline-block h-1.5 w-1.5 rounded-full bg-primary"></span>
-            running
-          </span>
+          <span class="inline-block h-2 w-2 shrink-0 rounded-full bg-primary"></span>
         {/if}
+        <span class="text-sm font-semibold text-fg">{workspace.name}</span>
       </div>
       {#if workspace.description}
-        <p class="mt-0.5 text-xs text-fg-mute line-clamp-2" title={workspace.description}>
-          {workspace.description}
-        </p>
+        <p class="mt-0.5 text-xs text-fg-dim line-clamp-2">{workspace.description}</p>
       {:else}
-        <p class="mt-0.5 text-xs italic text-fg-mute/60">No description</p>
+        <p class="mt-0.5 text-xs italic text-fg-mute/50">No description</p>
       {/if}
-      <p class="mt-0.5 text-xs text-fg-mute">
-        {workspace.apps} app{workspace.apps === 1 ? '' : 's'}{workspace.plugins &&
-        workspace.plugins.length > 0
-          ? ' and ' +
-            workspace.plugins.length +
-            ' plugin' +
-            (workspace.plugins.length === 1 ? '' : 's')
-          : ''}
+      <p class="mt-1 text-[10px] text-fg-mute">
+        {workspace.apps} app{workspace.apps === 1 ? '' : 's'}
+        {#if workspace.plugins && workspace.plugins.length > 0}
+          {' '}and {workspace.plugins.length} plugin{workspace.plugins.length === 1 ? '' : 's'}
+        {/if}
       </p>
     </button>
-    <div class="flex items-center gap-1 shrink-0">
-      <button
-        type="button"
-        on:click={() => (showEditor = true)}
-        disabled={busy || $loading}
-        class="rounded bg-bg-600 px-2 py-1 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg disabled:opacity-50"
-        title="edit workspace"
-      >
-        edit
-      </button>
-      <button
-        type="button"
-        on:click={deleteWorkspace}
-        disabled={workspace.running || busy || $loading}
-        class="rounded bg-error/10 px-2 py-1 text-[10px] text-error hover:bg-error/20 disabled:opacity-50"
-        title="delete workspace"
-      >
-        delete
-      </button>
+    <div class="flex items-center gap-1 shrink-0 pt-0.5">
       {#if workspace.running}
         <button
           type="button"
@@ -177,38 +137,48 @@
           {busy ? '...' : 'start'}
         </button>
       {/if}
+      <button
+        type="button"
+        on:click={() => (showEditor = true)}
+        disabled={busy || $loading}
+        class="rounded bg-bg-600 px-2 py-1 text-[10px] text-fg-dim hover:bg-bg-600/70 hover:text-fg disabled:opacity-50"
+      >
+        edit
+      </button>
+      <button
+        type="button"
+        on:click={deleteWorkspace}
+        disabled={workspace.running || busy || $loading}
+        class="rounded px-2 py-1 text-[10px] text-fg-dim hover:bg-error/10 hover:text-error disabled:opacity-30"
+      >
+        del
+      </button>
     </div>
-  </header>
+  </div>
 
   {#if expanded && detail}
-    <div class="mt-3 border-t border-primary/15 pt-3" transition:slide={{ duration: 200 }}>
-      <div class="text-xs text-fg-mute break-all mb-2 font-mono">{workspace.path}</div>
-      <ul class="space-y-1 text-sm">
-        <!-- Position-keyed: a workspace may legitimately declare two
-             identical apps, so no field combination is unique. -->
+    <div class="mt-3 border-t border-bg-600 pt-3" transition:slide={{ duration: 200 }}>
+      <div class="text-xs text-fg-mute/60 break-all font-mono">{workspace.path}</div>
+      <ul class="mt-2 space-y-0.5 text-xs">
         {#each detail.app_details as app, i (i)}
           <li class="flex items-baseline gap-2 font-mono">
-            <span class="w-20 text-fg-dim">{app.type}</span>
-            <span class="flex-1 break-all"
+            <span class="w-16 text-fg-mute shrink-0">{app.type}</span>
+            <span class="flex-1 break-all text-fg-dim"
               >{app.url || app.cmd}{app.args ? ' ' + app.args : ''}</span
             >
           </li>
         {/each}
       </ul>
       {#if workspacePlugins.length > 0}
-        <div class="mt-3 border-t border-primary/15 pt-3">
-          <div class="text-xs font-semibold uppercase tracking-wide text-fg-mute mb-1">Plugins</div>
-          <ul class="space-y-1">
+        <div class="mt-2 border-t border-bg-600 pt-2">
+          <div class="text-[10px] font-semibold uppercase tracking-wide text-fg-mute mb-1">
+            Plugins
+          </div>
+          <div class="flex flex-wrap gap-1">
             {#each workspacePlugins as p (p.id)}
-              <li class="flex items-center gap-2 text-sm">
-                <span class="text-fg-dim">{p.name || p.id}</span>
-                <span
-                  class="rounded bg-secondary/15 px-1 py-0.5 text-[10px] font-medium text-secondary"
-                  >{p.ui.type}</span
-                >
-              </li>
+              <span class="text-xs text-fg-mute">{p.name || p.id}</span>
             {/each}
-          </ul>
+          </div>
         </div>
       {/if}
     </div>

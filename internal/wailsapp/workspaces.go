@@ -72,10 +72,17 @@ func (a *App) useCountByName() map[string]int {
 }
 
 func sourceLabel(s config.Source) string {
-	if s.Local {
-		return "local"
+	if !s.Local {
+		return "global"
 	}
-	return "global"
+	dir := filepath.Dir(s.Path)
+	// Show the directory the workspace YAML lives in for root-based workspaces.
+	// This is more informative than "local" — it tells you where to find it.
+	base := filepath.Base(dir)
+	if base == ".dia" {
+		base = filepath.Base(filepath.Dir(dir))
+	}
+	return base
 }
 
 func pluginIDs(refs []config.PluginRef) []string {
@@ -531,37 +538,30 @@ func (a *App) DeleteWorkspace(name string) error {
 	return nil
 }
 
-// NewWorkspace writes a starter YAML. When local is true the file
-// is placed in CWD/.dia/; otherwise it goes in the global config
-// dir. The caller supplies the name; if a file with that name
-// already exists, the operation is refused.
-//
-// Creating a local workspace automatically registers its parent
-// directory as a root, so the workspace appears in every list
+// NewWorkspace writes a starter YAML. When dir is empty the file goes
+// in the global config dir (~/.config/dia/workspaces/). When dir is
+// set, the file goes in {dir}/.dia/{name}.yaml and dir is
+// auto-registered as a root so the workspace appears in every list
 // regardless of CWD.
-func (a *App) NewWorkspace(name string, local bool) (string, error) {
+func (a *App) NewWorkspace(name string, dir string) (string, error) {
 	if name == "" {
 		return "", errors.New("name is required")
 	}
 	if err := config.ValidateName(name); err != nil {
 		return "", err
 	}
-	var dir string
+	var wsDir string
 	var rootDir string
-	if local {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return "", fmt.Errorf("get cwd: %w", err)
-		}
-		dir = filepath.Join(cwd, config.LocalDirName)
-		rootDir = cwd
+	if dir == "" {
+		wsDir = config.DefaultGlobalDir()
 	} else {
-		dir = config.DefaultGlobalDir()
+		wsDir = filepath.Join(dir, config.LocalDirName)
+		rootDir = dir
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(wsDir, 0o755); err != nil {
 		return "", err
 	}
-	yamlPath := filepath.Join(dir, name+".yaml")
+	yamlPath := filepath.Join(wsDir, name+".yaml")
 	if _, err := os.Stat(yamlPath); err == nil {
 		return yamlPath, fmt.Errorf("workspace %q already exists at %s", name, yamlPath)
 	}

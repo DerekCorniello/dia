@@ -39,6 +39,8 @@ vi.mock('../../wailsjs/go/wailsapp/App', () => ({
   AddRoot: vi.fn(),
   RemoveRoot: vi.fn(),
   ListRoots: vi.fn(),
+  GetCwd: vi.fn(),
+  GetHomeDir: vi.fn(),
 }));
 
 vi.mock('../stores', () => ({

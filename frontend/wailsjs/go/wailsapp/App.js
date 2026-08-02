@@ -22,6 +22,14 @@ export function Doctor() {
   return window['go']['wailsapp']['App']['Doctor']();
 }
 
+export function GetCwd() {
+  return window['go']['wailsapp']['App']['GetCwd']();
+}
+
+export function GetHomeDir() {
+  return window['go']['wailsapp']['App']['GetHomeDir']();
+}
+
 export function GetKeybindings() {
   return window['go']['wailsapp']['App']['GetKeybindings']();
 }
