@@ -209,7 +209,7 @@ func TestStart_InvalidArgs(t *testing.T) {
 }
 
 func TestStatus_Empty(t *testing.T) {
-	home := t.TempDir()
+	home := shortStateHome(t)
 	startCLIDaemon(t, home)
 	code, out, _ := runWith(t, map[string]string{"XDG_STATE_HOME": home}, "status")
 	if code != 0 {
@@ -221,7 +221,7 @@ func TestStatus_Empty(t *testing.T) {
 }
 
 func TestStop_NotRunning(t *testing.T) {
-	home := t.TempDir()
+	home := shortStateHome(t)
 	startCLIDaemon(t, home)
 	code, _, errOut := runWith(t, map[string]string{"XDG_STATE_HOME": home}, "stop", "nope")
 	if code != ExitNotFound {
@@ -233,7 +233,7 @@ func TestStop_NotRunning(t *testing.T) {
 }
 
 func TestReconcile_Empty(t *testing.T) {
-	home := t.TempDir()
+	home := shortStateHome(t)
 	startCLIDaemon(t, home)
 	code, out, _ := runWith(t, map[string]string{"XDG_STATE_HOME": home}, "reconcile")
 	if code != 0 {
@@ -245,7 +245,7 @@ func TestReconcile_Empty(t *testing.T) {
 }
 
 func TestReconcile_JSON(t *testing.T) {
-	home := t.TempDir()
+	home := shortStateHome(t)
 	startCLIDaemon(t, home)
 	code, out, _ := runWith(t, map[string]string{"XDG_STATE_HOME": home}, "--json", "reconcile")
 	if code != 0 {
@@ -271,7 +271,7 @@ func TestDoctor(t *testing.T) {
 }
 
 func TestStartStopRoundtrip(t *testing.T) {
-	stateDir := t.TempDir()
+	stateDir := shortStateHome(t)
 	cfgDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cfgDir, "dia", "workspaces"), 0o755); err != nil {
 		t.Fatal(err)
@@ -324,7 +324,7 @@ func TestStartStopRoundtrip(t *testing.T) {
 }
 
 func TestStartStopRoundtrip_JSON(t *testing.T) {
-	stateDir := t.TempDir()
+	stateDir := shortStateHome(t)
 	cfgDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cfgDir, "dia", "workspaces"), 0o755); err != nil {
 		t.Fatal(err)
@@ -366,7 +366,7 @@ func TestStartStopRoundtrip_JSON(t *testing.T) {
 }
 
 func TestStopAll_NoArgs(t *testing.T) {
-	home := t.TempDir()
+	home := shortStateHome(t)
 	startCLIDaemon(t, home)
 	code, out, _ := runWith(t, map[string]string{"XDG_STATE_HOME": home}, "stop", "--all")
 	if code != 0 {
@@ -378,7 +378,7 @@ func TestStopAll_NoArgs(t *testing.T) {
 }
 
 func TestRestartCreatesFreshInstance(t *testing.T) {
-	stateDir := t.TempDir()
+	stateDir := shortStateHome(t)
 	cfgDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(cfgDir, "dia", "workspaces"), 0o755); err != nil {
 		t.Fatal(err)
@@ -422,7 +422,7 @@ func TestRestartCreatesFreshInstance(t *testing.T) {
 }
 
 func TestShutdown(t *testing.T) {
-	home := t.TempDir()
+	home := shortStateHome(t)
 	startCLIDaemon(t, home)
 	code, out, _ := runWith(t, map[string]string{"XDG_STATE_HOME": home}, "shutdown")
 	if code != 0 {
