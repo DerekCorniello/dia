@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,7 +40,28 @@ func gitPluginRepo(t *testing.T, manifest string) string {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	return "file://" + dir
+	// A file:// URL needs a hostless triple-slash form with a leading
+	// path slash; on Windows a drive letter must not be parsed as the
+	// host (file://C:\... hangs the clone). Slashes must be forward.
+	p := filepath.ToSlash(dir)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return (&url.URL{Scheme: "file", Path: p}).String()
+}
+
+// urlPath reverses a file:// URL from gitPluginRepo back into the
+// filesystem path the repo lives at.
+func urlPath(u string) (string, error) {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return "", err
+	}
+	p := parsed.Path
+	if len(p) >= 3 && p[0] == '/' && p[2] == ':' {
+		p = strings.TrimPrefix(p, "/")
+	}
+	return filepath.FromSlash(p), nil
 }
 
 const readOnlyManifest = `{"id":"readonly","name":"Read Only","version":"0.1.0",` +
@@ -201,7 +223,10 @@ func TestPluginInstall_AtRef(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", tmp)
 	url := gitPluginRepo(t, readOnlyManifest)
-	repoDir := strings.TrimPrefix(url, "file://")
+	repoDir, err := urlPath(url)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Tag the current commit, then move the branch past it so the tag
 	// and the default branch differ.
@@ -248,7 +273,10 @@ func TestPluginUpdate_RoundTrip(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", tmp)
 	url := gitPluginRepo(t, readOnlyManifest)
-	repoDir := strings.TrimPrefix(url, "file://")
+	repoDir, err := urlPath(url)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if code, out := installArgs(t, "", url); code != ExitOK {
 		t.Fatalf("install: exit %d: %s", code, out)

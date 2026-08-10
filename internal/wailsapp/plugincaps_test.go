@@ -1,6 +1,7 @@
 package wailsapp
 
 import (
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -256,7 +257,28 @@ func gitPluginRepo(t *testing.T, manifest string) string {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	return "file://" + dir
+	// A file:// URL needs a hostless triple-slash form with a leading
+	// path slash; on Windows a drive letter must not be parsed as the
+	// host (file://C:/... hangs the clone). Slashes must be forward.
+	p := filepath.ToSlash(dir)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return (&url.URL{Scheme: "file", Path: p}).String()
+}
+
+// urlPath reverses a file:// URL from gitPluginRepo back into the
+// filesystem path the repo lives at.
+func urlPath(u string) (string, error) {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return "", err
+	}
+	p := parsed.Path
+	if len(p) >= 3 && p[0] == '/' && p[2] == ':' {
+		p = strings.TrimPrefix(p, "/")
+	}
+	return filepath.FromSlash(p), nil
 }
 
 const gitCapsManifest = `{"id":"caps-plug","name":"Caps","version":"0.2.0","entry":"index.js",` +
@@ -370,7 +392,10 @@ func TestUpdatePlugin_ReclonesAndKeepsGrants(t *testing.T) {
 	withTempXDG(t)
 	a := startedApp(t)
 	url := gitPluginRepo(t, gitCapsManifest)
-	repoDir := strings.TrimPrefix(url, "file://")
+	repoDir, err := urlPath(url)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if _, err := a.InstallPluginFromSource(url, ""); err != nil {
 		t.Fatal(err)

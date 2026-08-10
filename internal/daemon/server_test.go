@@ -186,7 +186,16 @@ func TestServerShutdown(t *testing.T) {
 	}
 	_ = c.Close()
 
-	if _, err := Dial(stateDir); err == nil {
-		t.Fatal("dial after shutdown should fail")
+	// Serve may still be draining an in-flight Accept (recreating a
+	// pipe instance on Windows), so a dial can succeed once; poll until
+	// the listener is fully gone, mirroring TestShutdown in the CLI.
+	for i := 0; i < 50; i++ {
+		nc, err := Dial(stateDir)
+		if err != nil {
+			return
+		}
+		_ = nc.Close()
+		time.Sleep(10 * time.Millisecond)
 	}
+	t.Fatal("daemon still reachable after shutdown")
 }

@@ -1,12 +1,37 @@
 package plugins
 
 import (
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// fileURL returns a hostless file:// URL for a local path. A Windows
+// drive letter must sit behind a leading slash, or git treats it as a
+// host (file://C:\... hangs the clone); slashes must be forward.
+func fileURL(dir string) string {
+	p := filepath.ToSlash(dir)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return (&url.URL{Scheme: "file", Path: p}).String()
+}
+
+// urlPath reverses fileURL into a filesystem path.
+func urlPath(u string) (string, error) {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return "", err
+	}
+	p := parsed.Path
+	if len(p) >= 3 && p[0] == '/' && p[2] == ':' {
+		p = strings.TrimPrefix(p, "/")
+	}
+	return filepath.FromSlash(p), nil
+}
 
 func TestParseInstallSource(t *testing.T) {
 	existing := t.TempDir()
@@ -136,7 +161,7 @@ func gitRepo(t *testing.T, manifest string) string {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	return "file://" + dir
+	return fileURL(dir)
 }
 
 const gitManifest = `{"id":"from-git","name":"From Git","version":"0.1.0","ui":{"type":"list","title":"T"}}`
@@ -246,7 +271,7 @@ func TestInstallFrom_RepoWithoutManifestFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	src, _ := ParseInstallSource("file://"+dir, "")
+	src, _ := ParseInstallSource(fileURL(dir), "")
 	_, err = mgr.InstallFrom(src, false, "")
 	if err == nil {
 		t.Fatal("expected an error for a repo with no plugin.json")
@@ -315,7 +340,10 @@ func TestUpdate_ReclonesAndPreservesGrants(t *testing.T) {
 		t.Skip("git not on PATH")
 	}
 	url := gitRepo(t, gitManifest)
-	repoDir := strings.TrimPrefix(url, "file://")
+	repoDir, err := urlPath(url)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	mgr, err := NewManager(t.TempDir(), &fakeHost{})
 	if err != nil {
@@ -401,7 +429,10 @@ func TestUpdate_IDMismatchIsRefused(t *testing.T) {
 		t.Skip("git not on PATH")
 	}
 	url := gitRepo(t, gitManifest)
-	repoDir := strings.TrimPrefix(url, "file://")
+	repoDir, err := urlPath(url)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	mgr, err := NewManager(t.TempDir(), &fakeHost{})
 	if err != nil {
