@@ -3,31 +3,38 @@
 package daemon
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net"
+
+	winio "github.com/Microsoft/go-winio"
 )
 
-// socketName is a stable component of the named pipe. The consumer
-// identity is fixed regardless of state dir; windows named pipes are
-// machine-wide, matching the single-user desktop app model.
-const socketName = "\\\\.\\pipe\\dia"
+// socketNamePrefix is the fixed part of the daemon named pipe below.
+// The pipe name is machine-wide on Windows, so the state dir is hashed
+// into it: that isolates one user's daemon from another's and keeps
+// concurrent daemons (as in the test suite) from colliding, matching
+// the per-state-dir isolation the unix socket gives.
+const socketNamePrefix = `\\.\pipe\dia-`
 
-// socketPath returns the named pipe path to the daemon socket.
+// socketPath returns the named pipe path to the daemon socket for a
+// given state dir.
 func socketPath(stateDir string) string {
-	return socketName
+	sum := sha256.Sum256([]byte(stateDir))
+	return socketNamePrefix + hex.EncodeToString(sum[:8])
 }
 
-// dial attempts to connect to a live daemon named pipe. The client
-// half of a named pipe is dynamic; Windows allows one-shot name reuse
-// for the client, so dialing a nonexistent pipe yields "file not
-// found" and the caller reports it as a dead daemon.
+// dial attempts to connect to a live daemon named pipe. The dial fails
+// with a "file not found" style error when no daemon is listening; the
+// caller reports it as a dead daemon.
 func dialSocket(path string) (net.Conn, error) {
-	return net.Dial("pipe", path)
+	return winio.DialPipe(path, nil)
 }
 
 // listenSocket binds the named pipe name. The server half of a named
 // pipe cannot be unlinked, so there is nothing to clean up beforehand.
 func listenSocket(path string) (net.Listener, error) {
-	return net.Listen("pipe", path)
+	return winio.ListenPipe(path, nil)
 }
 
 // removeSocket is a no-op on Windows: named pipes go away when the
