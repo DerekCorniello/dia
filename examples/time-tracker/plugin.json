@@ -1,0 +1,20 @@
+{
+  "id": "time-tracker",
+  "name": "Time Tracker",
+  "version": "0.1.0",
+  "description": "Track how long you work in each workspace. Sessions are saved locally and can be exported as CSV.",
+  "author": "dia",
+  "entry": "index.js",
+  "capabilities": [],
+  "config_schema": {
+    "week_starts_monday": { "type": "boolean", "default": true, "label": "Week starts on Monday" }
+  },
+  "ui": {
+    "type": "window",
+    "title": "Time Tracker",
+    "entry": "panel/panel.js",
+    "width": 640,
+    "height": 560,
+    "refreshable": false
+  }
+}

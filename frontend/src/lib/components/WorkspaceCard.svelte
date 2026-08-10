@@ -47,8 +47,33 @@
     }
   }
 
+  async function restart() {
+    busy = true;
+    try {
+      await api.restartWorkspace(workspace.name);
+      pushToast('ok', `restarted ${workspace.name}`);
+      onChanged();
+    } catch (e) {
+      pushToast('err', `restart ${workspace.name}: ${describeError(e)}`);
+    } finally {
+      busy = false;
+    }
+  }
+
   async function deleteWorkspace() {
     showDeleteConfirm = true;
+  }
+
+  async function openPlugin(p: PluginInfo) {
+    busy = true;
+    try {
+      await api.openWorkspacePluginWindow(workspace.name, p.id);
+      pushToast('ok', `opened ${p.name || p.id}`);
+    } catch (e) {
+      pushToast('err', `open ${p.name || p.id}: ${describeError(e)}`);
+    } finally {
+      busy = false;
+    }
   }
 
   async function confirmDelete() {
@@ -101,7 +126,11 @@
     >
       <div class="flex items-center gap-2">
         {#if workspace.running}
-          <span class="inline-block h-2 w-2 shrink-0 rounded-full bg-primary"></span>
+          <span
+            class="inline-block h-2 w-2 shrink-0 rounded-full bg-primary"
+            aria-label="running"
+            role="img"
+          ></span>
         {/if}
         <span class="text-sm font-semibold text-fg">{workspace.name}</span>
       </div>
@@ -112,9 +141,9 @@
       {/if}
       <p class="mt-1 text-[10px] text-fg-mute">
         {workspace.apps} app{workspace.apps === 1 ? '' : 's'}
-        {#if workspace.plugins && workspace.plugins.length > 0}
-          {' '}and {workspace.plugins.length} plugin{workspace.plugins.length === 1 ? '' : 's'}
-        {/if}
+        {workspace.plugins && workspace.plugins.length > 0
+          ? ` and ${workspace.plugins.length} plugin${workspace.plugins.length === 1 ? '' : 's'}`
+          : ''}
       </p>
     </button>
     <div class="flex items-center gap-1 shrink-0 pt-0.5">
@@ -126,6 +155,14 @@
           class="rounded bg-error/20 px-2 py-1 text-[10px] font-medium text-error hover:bg-error/30 disabled:opacity-50"
         >
           stop
+        </button>
+        <button
+          type="button"
+          on:click={restart}
+          disabled={busy || $loading}
+          class="rounded bg-bg-600 px-2 py-1 text-[10px] font-medium text-fg-dim hover:bg-primary/20 hover:text-primary disabled:opacity-50"
+        >
+          {busy ? '...' : 'restart'}
         </button>
       {:else}
         <button
@@ -176,7 +213,19 @@
           </div>
           <div class="flex flex-wrap gap-1">
             {#each workspacePlugins as p (p.id)}
-              <span class="text-xs text-fg-mute">{p.name || p.id}</span>
+              <div class="flex items-center gap-1">
+                <span class="text-xs text-fg-mute">{p.name || p.id}</span>
+                {#if p.ui.type === 'window'}
+                  <button
+                    type="button"
+                    on:click={() => openPlugin(p)}
+                    disabled={busy || $loading}
+                    class="rounded bg-bg-600 px-1.5 py-0.5 text-[10px] text-fg-dim hover:bg-primary/20 hover:text-primary disabled:opacity-50"
+                  >
+                    open
+                  </button>
+                {/if}
+              </div>
             {/each}
           </div>
         </div>

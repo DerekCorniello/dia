@@ -2,9 +2,14 @@ package wailsapp
 
 import (
 	"encoding/json"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/DerekCorniello/dia/internal/daemon"
 )
 
 // withTempXDG sets XDG_CONFIG_HOME and XDG_STATE_HOME to t.TempDir
@@ -15,6 +20,54 @@ func withTempXDG(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 	t.Setenv("XDG_STATE_HOME", tmp)
+}
+
+// xdgStateDir returns the state dir the app binds under the current
+// XDG_STATE_HOME, matching state.ResolveStateDir.
+func xdgStateDir(t *testing.T) string {
+	t.Helper()
+	dir, err := resolveStateDir(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// startDaemon boots an in-process daemon server on the given state dir
+// so the app under test dials it instead of spawning the (test)
+// binary. Cleanup shuts it down.
+func startDaemon(t *testing.T, stateDir string) {
+	t.Helper()
+	srv, err := daemon.NewServer(daemon.Options{
+		StateDir: stateDir,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelError})),
+	})
+	if err != nil {
+		t.Fatalf("start daemon: %v", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		_ = srv.Serve()
+		close(done)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c, err := daemon.Dial(stateDir)
+		if err == nil {
+			_ = c.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			srv.Close()
+			<-done
+			t.Fatalf("daemon socket never came up: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Cleanup(func() {
+		srv.Close()
+		<-done
+	})
 }
 
 // TestNewWorkspace_WritesFile verifies NewWorkspace creates a
@@ -71,15 +124,18 @@ func TestNewWorkspace_RejectsBadName(t *testing.T) {
 	}
 }
 
-// TestStartup_BuildsRuntime verifies Startup wires up the runtime
-// without panicking. The runtime is reachable via ListInstances,
-// which is a no-op before any workspace has been started.
+// TestStartup_BuildsRuntime verifies Startup wires up the plugin and
+// state handles without panicking, and that lifecycle works against an
+// in-process daemon on the resolved state dir (mirroring how the CLI
+// tests host a server that dial, not spawn).
 func TestStartup_BuildsRuntime(t *testing.T) {
 	withTempXDG(t)
+	stateDir := xdgStateDir(t)
 	a := New()
+	startDaemon(t, stateDir)
 	a.Startup(testCtx())
-	if a.rt == nil {
-		t.Fatal("rt not set after Startup")
+	if a.store == nil {
+		t.Fatal("store not set after Startup")
 	}
 	if got := a.ListInstances(); len(got) != 0 {
 		t.Errorf("ListInstances = %d, want 0", len(got))
@@ -335,9 +391,6 @@ func TestEnableWorkspacePlugin_RoundTrip(t *testing.T) {
 	ps, ok := snap.Plugins["wspl"]
 	if !ok {
 		t.Fatal("plugin state not persisted")
-	}
-	if !ps.Enabled {
-		t.Error("plugin should be enabled")
 	}
 	if len(ps.GrantedCapabilities) != 1 || ps.GrantedCapabilities[0] != "workspaces:read" {
 		t.Errorf("granted caps: %v", ps.GrantedCapabilities)

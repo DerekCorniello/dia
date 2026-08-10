@@ -57,8 +57,8 @@ type HookPhase struct {
 }
 
 // PluginRef is a reference to an installed plugin by ID. When the
-// workspace starts, the listed plugins are enabled; when it stops
-// they are disabled. Config is an optional workspace-scoped JSON
+// workspace starts, the listed plugins are started; when it stops
+// they are stopped. Config is an optional workspace-scoped JSON
 // object the plugin receives via dia.getConfig().
 type PluginRef struct {
 	ID     string         `yaml:"id"`

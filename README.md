@@ -1,17 +1,27 @@
+<p align="center">
+  <img src="build/appicon.png" alt="dia" width="128" height="128" />
+</p>
+
 # dia
 
-dia: a cross-platform desktop launcher for dev workspaces.
+dia is a cross-platform desktop launcher for dev workspaces. Define a
+workspace in YAML, click start, and dia brings up the editor, terminal,
+browser, and services for that project. No window manager, no process
+snapshot -- just deterministic rebuilds from a config.
 
-Define a workspace in YAML, click start, and dia brings up the editor,
-terminal, browser, and services for that project. No window manager, no
-process snapshot, just deterministic rebuilds from a config.
+dia is a desktop app first. The scriptable CLI is a convenience for
+automation, not a rival interface.
 
 ## Status
 
-v0.4.0 is released. Core engine (v0.1.0), theming + UI polish
-(v0.2.0), JS plugin system (v0.3.0) with embedded and window-style
-plugins. v0.4.0 adds plugin-provided app types, plugin install from
-git, workspace lifecycle hooks, and GUI plugin management.
+v0.5.0 is released. This is the release that makes sessions real:
+workspaces now survive closing the GUI. A headless daemon owns the
+workspace runtime and keeps supervising your apps until `dia
+shutdown`, so `start` attaches to what is already running and
+`restart` replaces it. Earlier releases built the engine (v0.1.0),
+theming + UI polish (v0.2.0), the JS plugin system (v0.3.0), and
+plugin-provided app types, git installs, hooks, and GUI plugin
+management (v0.4.0).
 
 ## Features
 
@@ -30,19 +40,15 @@ git, workspace lifecycle hooks, and GUI plugin management.
   limited to the built-ins
 - Plugins install from a git repository, and update in place
 - Lifecycle hooks (`pre_start`/`post_start`/`pre_stop`/`post_stop`)
+- Session daemon: workspaces survive the GUI closing; `start` attaches
+  to a running instance and `restart` replaces it
 - Cross-platform: Linux, macOS, Windows
 - Frameless window with custom title bar (no OS decoration)
-- Scriptable CLI alongside the GUI
+- A scriptable CLI, for scripting and automation
 
 ## Install
 
 ### From source (requires Go 1.23+ and Node 20+)
-
-The CLI alone:
-
-```sh
-go install github.com/DerekCorniello/dia@latest
-```
 
 The desktop app needs the Wails CLI and, on Linux, GTK/WebKit:
 
@@ -50,6 +56,13 @@ The desktop app needs the Wails CLI and, on Linux, GTK/WebKit:
 make install-tools   # Wails CLI (version taken from go.mod) + golangci-lint
 make build           # writes build/bin/dia
 make run             # build, then launch it
+make install         # also installs a .desktop entry for the app launcher
+```
+
+The CLI is the same binary, so a plain `go install` gets you that too:
+
+```sh
+go install github.com/DerekCorniello/dia@latest
 ```
 
 ### Prebuilt binaries
@@ -59,24 +72,21 @@ Download the archive for your OS/arch from the
 
 ## Quickstart
 
-Create a workspace:
+Launch dia from your app launcher, or just run `dia` with no arguments.
+You get a desktop launcher listing your workspaces, each with a
+Start/Stop button per app. Click a card to expand it.
+
+To add your first workspace, hit `+ New` in the header. That writes a
+starter YAML to `~/.config/dia/workspaces/<name>.yaml` and opens it in
+your editor. Edit it to your liking and it shows up in the grid.
+
+From a terminal the same actions are available for scripting:
 
 ```sh
-dia new myproject
+dia new myproject     # write a starter workspace
+dia start myproject   # start it from the CLI
+dia list              # what the GUI shows, as text
 ```
-
-This writes a starter YAML to `~/.config/dia/workspaces/myproject.yaml` and
-opens it in `$EDITOR`. Edit it to your liking, then:
-
-```sh
-dia start myproject
-```
-
-Or just run `dia` with no arguments to open the desktop launcher and pick
-from your workspaces.
-
-The GUI shows the same workspaces as `dia list`, with a Start/Stop button
-per card. Click a card to expand and see its apps.
 
 ## Example workspace
 
@@ -173,33 +183,6 @@ There is deliberately no `depends_on` or per-app health checking. If
 you need ordering between apps, `pre_start` is the supported way to
 express it.
 
-## CLI
-
-```sh
-dia                     # opens the GUI
-dia list                # list all workspaces
-dia list --json         # machine-readable output
-dia start <name>        # start a workspace
-dia start <name> --dry-run  # resolve and print without launching
-dia stop <name>         # stop a workspace
-dia stop --all          # stop every running workspace
-dia status              # running instances and PIDs
-dia new <name>          # create a starter workspace
-dia edit <name>         # open the config in $VISUAL or $EDITOR
-dia open <name>         # reveal the workspace in the file manager
-dia open <name> --json  # machine-readable output
-dia reconcile           # drop PIDs from state that are no longer running
-dia doctor              # smoke checks
-dia plugin list         # list installed plugins
-dia plugin install <path|url>  # install from a directory or git repo
-dia plugin update <id>  # re-clone a git-installed plugin
-dia completion bash     # generate shell completion (bash/zsh/fish/powershell)
-dia --version           # print version and exit
-```
-
-All list/status/doctor commands support `--json` for machine-readable
-output.
-
 ## Plugins
 
 dia's plugin system runs in two flavors:
@@ -241,7 +224,7 @@ dia plugin new hello --local      # writes to ./.dia/plugins/ in cwd
 `apps:resolve` capability, so grant it before the type resolves:
 
 ```sh
-dia plugin enable compose --caps apps:resolve
+dia plugin grant compose --caps apps:resolve
 ```
 
 This generates a `plugin.json` and a starter `index.js` you can
@@ -369,7 +352,7 @@ module.exports = {
 Read-only capabilities are granted by default at install time.
 Mutating ones are never granted by requesting them: the manifest only
 declares what a plugin *wants*, and the user has to approve each one
-explicitly with `dia plugin enable --caps`.
+explicitly with `dia plugin grant --caps`.
 
 Grants are shared between the GUI and the CLI: Settings > Plugins
 lists each plugin's requested capabilities and lets you toggle them,
@@ -404,7 +387,7 @@ the plugin keeps running.
 Grant capabilities explicitly:
 
 ```sh
-dia plugin enable my-plugin --caps workspaces:read,workspaces:start
+dia plugin grant my-plugin --caps workspaces:read,workspaces:start
 ```
 
 ### Plugin-provided app types
@@ -522,8 +505,7 @@ dia plugin info <id>
 dia plugin install <path|url> [--local] [--ref <branch|tag>] [--yes]
 dia plugin update <id>
 dia plugin uninstall <id>
-dia plugin enable <id> [--caps a,b,c]
-dia plugin disable <id>
+dia plugin grant <id> [--caps a,b,c]
 ```
 
 #### Installing from a git repository
@@ -554,12 +536,12 @@ The clone URL and ref are recorded next to the plugin, so:
 dia plugin update my-plugin
 ```
 
-re-clones it in place, preserving your granted capabilities and
-enabled state. A plugin installed from a local path has no recorded
-source and cannot be updated this way.
+re-clones it in place, preserving your granted capabilities. A plugin
+installed from a local path has no recorded source and cannot be
+updated this way.
 
-The GUI picks up enabled plugins on the next launch. Open Settings
-> Plugins to enable/disable, install from a folder, see paths, and
+The GUI picks up plugins on the next launch. Open Settings
+> Plugins to grant capabilities, install from a folder, see paths, and
 view the inline writing guide.
 
 ### `dia.exec(cmd, args)`
@@ -592,20 +574,29 @@ dia.fetch('https://api.github.com/repos/owner/repo/issues', {
 
 ### Window plugins: how the spawn works
 
-- The user enables a window plugin in Settings > Plugins and
-  clicks "open window" on its panel in the main window.
-- The main dia process calls `os.Executable()` and re-spawns
-  the same binary with `--plugin-window=<id>`.
-- The second process loads the plugin's `panel/panel.js` (or the
-  `ui.entry` path) into a fresh wails window, generates a host
-  `index.html` if the plugin does not ship one, and exposes
-  `window.dia` as a wails binding back to Go.
+Window plugins are invoked by the workspace that owns them, not as
+free-floating windows.
+
+- A workspace lists a window plugin under `plugins:` with an optional
+  per-workspace `config` map. When you expand a workspace in the main
+  window, an "open window" action appears next to each attached window
+  plugin; editing the workspace lets you attach or remove plugins.
+- Starting the workspace spawns each attached window plugin
+  automatically. The main dia process calls `os.Executable()` and
+  re-spawns the same binary with `--plugin-window=<id>`,
+  `--workspace=<name>`, and `--workspace-path=<path>`.
+- The second process reads the workspace's config for that plugin,
+  loads the plugin's `panel/panel.js` (or the `ui.entry` path) into a
+  fresh wails window, generates a host `index.html` if the plugin does
+  not ship one, and exposes `window.dia` as a wails binding back to Go.
 - The plugin's `index.js` is loaded in goja so `module.exports`
   functions (e.g. `getData`, `onAction`) are reachable via
   `window.dia.call("getData")`.
-- The new window process has no workspace runtime; mutating
-  `dia.*` calls return an error. Read-only calls (`listWorkspaces`,
-  `getTheme`, etc.) work against the shared state file.
+- The window process opens with the plugin's persisted capability
+  grants (the read-only defaults unless the user approved more), so a
+  window plugin can `exec`, `fetch`, or `startWorkspace` only when the
+  user granted them. Stopping the workspace kills that plugin's window
+  process.
 
 ### Example plugins
 
@@ -678,6 +669,87 @@ examples/quick-notes/
     panel.js
 ```
 
+#### Time Tracker
+
+A window plugin that logs work sessions by name. Start/stop from
+the window; finished sessions land in localStorage and roll up into
+today/this-week totals. No capabilities needed -- it never touches
+the bridge, so read-only grants are all it gets. Export writes the
+session log to a CSV download.
+
+```
+examples/time-tracker/
+  plugin.json
+  index.js
+  panel/
+    panel.js
+```
+
+#### API Playground
+
+A window plugin that fires HTTP requests against an API and shows
+the response: method, URL, headers, and body. Requests can be saved
+as templates in localStorage and replayed. Unlike the other window
+plugins it needs the mutating `fetch` capability, so approve it
+when granting this one (`dia plugin grant api-playground --caps
+fetch`). The response body is parsed as JSON when possible.
+
+```
+examples/api-playground/
+  plugin.json
+  index.js
+  panel/
+    panel.js
+```
+
+## CLI (scripting)
+
+The same binary serves as a CLI for automation. It exposes what the
+GUI does, for scripts, cron, and terminals:
+
+```sh
+dia                     # opens the GUI
+dia list                # list all workspaces
+dia list --json         # machine-readable output
+dia start <name>        # start a workspace (attach if already running)
+dia start <name> --dry-run  # resolve and print without launching
+dia restart <name>      # stop if running, then start a fresh instance
+dia stop <name>         # stop a workspace
+dia stop --all          # stop every running workspace
+dia status              # running instances and PIDs
+dia reconcile           # drop PIDs from state that are no longer running
+dia serve               # run the session daemon in the foreground
+dia shutdown            # stop the daemon and everything it supervises
+dia new <name>          # create a starter workspace
+dia edit <name>         # open the config in $VISUAL or $EDITOR
+dia open <name>         # reveal the workspace in the file manager
+dia open <name> --json  # machine-readable output
+dia doctor              # smoke checks
+dia plugin list         # list installed plugins
+dia plugin install <path|url>  # install from a directory or git repo
+dia plugin update <id>  # re-clone a git-installed plugin
+dia completion bash     # generate shell completion (bash/zsh/fish/powershell)
+dia --version           # print version and exit
+```
+
+All list/status/doctor commands support `--json` for machine-readable
+output.
+
+### Sessions
+
+Like tmux, a headless daemon owns every running workspace. The first
+`dia start`, `stop`, `status`, `reconcile`, or GUI session spawns the
+daemon; it survives the client and keeps supervising your apps until
+`dia shutdown` (or you quit the GUI -- the daemon runs on). `start` is
+idempotent: starting a name that is already running attaches to the
+existing instance rather than launching a duplicate. There is no
+auto-respawn -- when an app dies it stays dead until you run
+`dia restart <name>`.
+
+`dia serve` runs the daemon in the foreground (logs to
+`$XDG_STATE_HOME/dia/dia.log`) for service managers; normally the
+daemon spawns itself in the background on first use.
+
 ## AI tool detection
 
 dia detects AI coding tools installed on the system and makes them
@@ -711,16 +783,17 @@ go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ## Project layout
 
 ```
-main.go                Wails entrypoint; routes GUI vs CLI
+main.go                Wails entrypoint; routes GUI vs CLI vs serve
 internal/config        YAML, validation, discovery
-internal/runtime       instance lifecycle, PID tracking
+internal/runtime       instance lifecycle, PID tracking, reconcile
+internal/daemon        session daemon: owns the runtime, socket server + client
 internal/platform      OS-specific process launching
 internal/registry      app-type registry and built-ins
 internal/plugins       JS plugin host (goja + capability bridge)
 internal/state         XDG paths, JSON state store
 internal/diag          shared smoke checks (doctor)
-internal/cli           cobra commands
-internal/wailsapp      bindings exposed to the Svelte UI
+internal/cli           cobra commands (lifecycle verbs are daemon clients)
+internal/wailsapp      bindings exposed to the Svelte UI (also a daemon client)
 frontend/              Svelte + TypeScript + Vite + Tailwind
 examples/              sample workspaces and plugins
 ```

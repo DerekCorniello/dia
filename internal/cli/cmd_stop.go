@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"strings"
+
 	"github.com/spf13/cobra"
 
-	"github.com/DerekCorniello/dia/internal/state"
+	"github.com/DerekCorniello/dia/internal/daemon"
 )
 
 func newStopCmd() *cobra.Command {
@@ -14,38 +16,42 @@ func newStopCmd() *cobra.Command {
 		Long:  "Stop a running workspace by name, or pass --all to stop every running instance. With --force, processes are killed immediately; otherwise dia sends SIGTERM and waits up to 5 seconds before escalating to SIGKILL.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := newSetup(flagsFromCmd(cmd).StateDir, cmd.ErrOrStderr())
+			out := newOutput(cmd)
+			stopAll, _ := cmd.Flags().GetBool("all")
+			c, err := newDialClient(cmd)
 			if err != nil {
 				return err
 			}
-			out := newOutput(cmd)
-			stopAll, _ := cmd.Flags().GetBool("all")
+			defer func() { _ = c.Close() }()
 
 			if stopAll {
-				ids, err := s.Runtime.StopAllWithIDs(force)
-				if err != nil {
+				var reply struct {
+					Stopped []string `json:"stopped"`
+				}
+				if err := c.Do(daemon.MethodStopAll, map[string]any{"force": force}, &reply); err != nil {
 					return err
 				}
 				if out.IsJSON() {
-					return out.JSON(map[string]any{"stopped": ids})
+					return out.JSON(map[string]any{"stopped": reply.Stopped})
 				}
-				return out.Printf("stopped all (%d instances)\n", len(ids))
+				return out.Printf("stopped all (%d instances)\n", len(reply.Stopped))
 			}
 			if len(args) == 0 {
 				return errInvalidArgs
 			}
 			name := args[0]
-			ids := instancesByName(s.Store, name)
-			if len(ids) == 0 {
-				return &NotFoundError{What: "running workspace " + name}
+			var reply struct {
+				Stopped []string `json:"stopped"`
 			}
-			for _, id := range ids {
-				if err := s.Runtime.Stop(id, force); err != nil {
-					return err
+			if err := c.Do(daemon.MethodStop, daemon.StopParams{Name: name, Force: force}, &reply); err != nil {
+				msg := err.Error()
+				if strings.Contains(msg, "not found") {
+					return &NotFoundError{What: "running workspace " + name}
 				}
+				return err
 			}
 			if out.IsJSON() {
-				return out.JSON(map[string]any{"stopped": ids})
+				return out.JSON(map[string]any{"stopped": reply.Stopped})
 			}
 			return out.Printf("stopped %s\n", name)
 		},
@@ -53,14 +59,4 @@ func newStopCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&force, "force", false, "kill processes immediately (SIGKILL/taskkill /F) instead of graceful")
 	cmd.Flags().Bool("all", false, "stop every running workspace")
 	return cmd
-}
-
-func instancesByName(st *state.Store, name string) []string {
-	var out []string
-	for id, inst := range st.Snapshot().Instances {
-		if inst.WorkspaceName == name && inst.Status == state.StatusRunning {
-			out = append(out, id)
-		}
-	}
-	return out
 }

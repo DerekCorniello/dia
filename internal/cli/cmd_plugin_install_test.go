@@ -289,10 +289,10 @@ func TestPluginEnable_GrantsOnlyWhatTheManifestRequests(t *testing.T) {
 
 	var out, errOut bytes.Buffer
 	// themes:write is not in the manifest and must be dropped.
-	code := runWithIO([]string{"--json", "plugin", "enable", "mutator", "--caps", "cmd:exec,themes:write"},
+	code := runWithIO([]string{"--json", "plugin", "grant", "mutator", "--caps", "cmd:exec,themes:write"},
 		strings.NewReader(""), &out, &errOut)
 	if code != ExitOK {
-		t.Fatalf("enable: %d %s", code, errOut.String())
+		t.Fatalf("grant: %d %s", code, errOut.String())
 	}
 	if !strings.Contains(out.String(), "cmd:exec") {
 		t.Errorf("expected cmd:exec to be granted:\n%s", out.String())
@@ -333,24 +333,26 @@ func TestPluginInstall_DoesNotGrantMutatingCapabilities(t *testing.T) {
 	}
 }
 
-func TestPluginEnableDisable_RoundTrip(t *testing.T) {
+// Granting twice is idempotent: the second grant re-persists the
+// same capability set without error.
+func TestPluginGrant_RoundTrip(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", tmp)
 	url := gitPluginRepo(t, readOnlyManifest)
 	if code, out := installArgs(t, "", url); code != ExitOK {
 		t.Fatalf("install: %d %s", code, out)
 	}
-	if code := Run([]string{"plugin", "enable", "readonly"}); code != ExitOK {
-		t.Errorf("enable returned %d", code)
+	if code := Run([]string{"plugin", "grant", "readonly"}); code != ExitOK {
+		t.Errorf("grant returned %d", code)
 	}
-	if code := Run([]string{"plugin", "disable", "readonly"}); code != ExitOK {
-		t.Errorf("disable returned %d", code)
+	if code := Run([]string{"plugin", "grant", "readonly"}); code != ExitOK {
+		t.Errorf("grant returned %d", code)
 	}
 }
 
-func TestPluginEnable_UnknownPlugin(t *testing.T) {
+func TestPluginGrant_UnknownPlugin(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
-	if code := Run([]string{"plugin", "enable", "nope"}); code != ExitNotFound {
+	if code := Run([]string{"plugin", "grant", "nope"}); code != ExitNotFound {
 		t.Errorf("expected ExitNotFound, got %d", code)
 	}
 }

@@ -481,6 +481,59 @@ func TestStart_BadCwd(t *testing.T) {
 	}
 }
 
+func TestPruneInstances(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	// 30 stopped instances, oldest first.
+	d := &state.Data{Instances: map[string]state.Instance{}}
+	for i := 0; i < 30; i++ {
+		d.Instances[fmt.Sprintf("s%02d", i)] = state.Instance{
+			ID: fmt.Sprintf("s%02d", i), Status: state.StatusStopped,
+			StartedAt: base.Add(time.Duration(i) * time.Minute),
+		}
+	}
+	// Plus one running and one crashed whose removal must never happen.
+	d.Instances["run"] = state.Instance{ID: "run", Status: state.StatusRunning, StartedAt: base.Add(31 * time.Minute)}
+	d.Instances["crashed"] = state.Instance{ID: "crashed", Status: state.StatusCrashed, StartedAt: base.Add(32 * time.Minute)}
+
+	pruneInstances(d)
+
+	got := len(d.Instances)
+	if got != InstanceHistoryLimit+2 {
+		t.Fatalf("after prune: %d instances, want %d", got, InstanceHistoryLimit+2)
+	}
+	if _, ok := d.Instances["run"]; !ok {
+		t.Errorf("running instance was pruned")
+	}
+	if _, ok := d.Instances["crashed"]; !ok {
+		t.Errorf("crashed instance was pruned")
+	}
+	// Oldest stopped entries are dropped first: s00..s09 are the 10
+	// overflow slots past the 20-entry cap among the 30 stopped.
+	for _, id := range []string{"s00", "s05", "s09"} {
+		if _, ok := d.Instances[id]; ok {
+			t.Errorf("old stopped instance %q survived the prune", id)
+		}
+	}
+	for _, id := range []string{"s29", "s28", "s10"} {
+		if _, ok := d.Instances[id]; !ok {
+			t.Errorf("recent stopped instance %q was pruned", id)
+		}
+	}
+}
+
+func TestPruneInstances_UnderLimit(t *testing.T) {
+	d := &state.Data{Instances: map[string]state.Instance{}}
+	for i := 0; i < 5; i++ {
+		d.Instances[fmt.Sprintf("s%d", i)] = state.Instance{
+			ID: fmt.Sprintf("s%d", i), Status: state.StatusStopped,
+		}
+	}
+	pruneInstances(d)
+	if len(d.Instances) != 5 {
+		t.Errorf("prune removed instances below the limit: got %d, want 5", len(d.Instances))
+	}
+}
+
 func TestStop_Running(t *testing.T) {
 	rt, pf, st := newTestRuntime(t)
 	w := &config.Workspace{Name: "x", Apps: []config.App{{Type: "local", Cmd: "echo"}}}

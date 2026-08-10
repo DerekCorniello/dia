@@ -1,0 +1,20 @@
+{
+  "id": "api-playground",
+  "name": "API Playground",
+  "version": "0.1.0",
+  "description": "A mini Postman: fire HTTP requests against an API, save them as templates, and inspect responses.",
+  "author": "dia",
+  "entry": "index.js",
+  "capabilities": ["fetch"],
+  "config_schema": {
+    "base_url": { "type": "string", "default": "", "label": "Base URL (optional)" }
+  },
+  "ui": {
+    "type": "window",
+    "title": "API Playground",
+    "entry": "panel/panel.js",
+    "width": 880,
+    "height": 640,
+    "refreshable": false
+  }
+}

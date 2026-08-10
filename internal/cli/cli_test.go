@@ -9,6 +9,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/DerekCorniello/dia/internal/daemon"
 )
 
 // runWith runs args with the given env overrides. It returns
@@ -206,7 +209,9 @@ func TestStart_InvalidArgs(t *testing.T) {
 }
 
 func TestStatus_Empty(t *testing.T) {
-	code, out, _ := runWith(t, nil, "status")
+	home := t.TempDir()
+	startCLIDaemon(t, home)
+	code, out, _ := runWith(t, map[string]string{"XDG_STATE_HOME": home}, "status")
 	if code != 0 {
 		t.Errorf("exit = %d, want 0", code)
 	}
@@ -216,7 +221,9 @@ func TestStatus_Empty(t *testing.T) {
 }
 
 func TestStop_NotRunning(t *testing.T) {
-	code, _, errOut := runWith(t, nil, "stop", "nope")
+	home := t.TempDir()
+	startCLIDaemon(t, home)
+	code, _, errOut := runWith(t, map[string]string{"XDG_STATE_HOME": home}, "stop", "nope")
 	if code != ExitNotFound {
 		t.Errorf("exit = %d, want %d", code, ExitNotFound)
 	}
@@ -226,7 +233,9 @@ func TestStop_NotRunning(t *testing.T) {
 }
 
 func TestReconcile_Empty(t *testing.T) {
-	code, out, _ := runWith(t, nil, "reconcile")
+	home := t.TempDir()
+	startCLIDaemon(t, home)
+	code, out, _ := runWith(t, map[string]string{"XDG_STATE_HOME": home}, "reconcile")
 	if code != 0 {
 		t.Errorf("exit = %d, want 0", code)
 	}
@@ -236,7 +245,9 @@ func TestReconcile_Empty(t *testing.T) {
 }
 
 func TestReconcile_JSON(t *testing.T) {
-	code, out, _ := runWith(t, nil, "--json", "reconcile")
+	home := t.TempDir()
+	startCLIDaemon(t, home)
+	code, out, _ := runWith(t, map[string]string{"XDG_STATE_HOME": home}, "--json", "reconcile")
 	if code != 0 {
 		t.Errorf("exit = %d, want 0", code)
 	}
@@ -277,6 +288,7 @@ func TestStartStopRoundtrip(t *testing.T) {
 		"XDG_STATE_HOME":  stateDir,
 		"XDG_CONFIG_HOME": cfgDir,
 	}
+	startCLIDaemon(t, stateDir)
 
 	code, startOut, _ := runWith(t, env, "start", "rt")
 	if code != 0 {
@@ -329,6 +341,7 @@ func TestStartStopRoundtrip_JSON(t *testing.T) {
 		"XDG_STATE_HOME":  stateDir,
 		"XDG_CONFIG_HOME": cfgDir,
 	}
+	startCLIDaemon(t, stateDir)
 
 	code, startOut, _ := runWith(t, env, "--json", "start", "rt2")
 	if code != 0 {
@@ -353,11 +366,81 @@ func TestStartStopRoundtrip_JSON(t *testing.T) {
 }
 
 func TestStopAll_NoArgs(t *testing.T) {
-	code, out, _ := runWith(t, nil, "stop", "--all")
+	home := t.TempDir()
+	startCLIDaemon(t, home)
+	code, out, _ := runWith(t, map[string]string{"XDG_STATE_HOME": home}, "stop", "--all")
 	if code != 0 {
 		t.Errorf("exit = %d, want 0", code)
 	}
 	if !strings.Contains(out, "stopped all") {
 		t.Errorf("expected 'stopped all', got: %q", out)
 	}
+}
+
+func TestRestartCreatesFreshInstance(t *testing.T) {
+	stateDir := t.TempDir()
+	cfgDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cfgDir, "dia", "workspaces"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	yamlPath := filepath.Join(cfgDir, "dia", "workspaces", "rs.yaml")
+	if err := os.WriteFile(yamlPath, []byte("version: 1\nname: rs\napps:\n  - type: local\n    cmd: sleep 30\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{
+		"XDG_STATE_HOME":  stateDir,
+		"XDG_CONFIG_HOME": cfgDir,
+	}
+	startCLIDaemon(t, stateDir)
+
+	code, startOut, _ := runWith(t, env, "--json", "start", "rs")
+	if code != 0 {
+		t.Fatalf("start exit = %d, out: %s", code, startOut)
+	}
+	var started map[string]any
+	if err := json.Unmarshal([]byte(startOut), &started); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, startOut)
+	}
+	firstID := started["id"].(string)
+
+	code, restartOut, _ := runWith(t, env, "--json", "restart", "rs")
+	if code != 0 {
+		t.Fatalf("restart exit = %d, out: %s", code, restartOut)
+	}
+	var restarted map[string]any
+	if err := json.Unmarshal([]byte(restartOut), &restarted); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, restartOut)
+	}
+	if restarted["id"] == firstID {
+		t.Errorf("restart reused instance %s; want a fresh one", firstID)
+	}
+
+	code, _, _ = runWith(t, env, "stop", "rs")
+	if code != 0 {
+		t.Errorf("stop exit = %d", code)
+	}
+}
+
+func TestShutdown(t *testing.T) {
+	home := t.TempDir()
+	startCLIDaemon(t, home)
+	code, out, _ := runWith(t, map[string]string{"XDG_STATE_HOME": home}, "shutdown")
+	if code != 0 {
+		t.Errorf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(out, "daemon stopped") {
+		t.Errorf("expected 'daemon stopped', got: %q", out)
+	}
+	// After shutdown the daemon is gone; dialing must fail.
+	stateDir := filepath.Join(home, "dia")
+	for i := 0; i < 50; i++ {
+		c, err := daemon.Dial(stateDir)
+		if err == nil {
+			_ = c.Close()
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		return
+	}
+	t.Fatal("daemon still reachable after shutdown")
 }

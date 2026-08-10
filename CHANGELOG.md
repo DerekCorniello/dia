@@ -5,6 +5,34 @@ All notable changes to dia are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [0.5.0] - 2026-08-09
+
+### Added
+
+- **Session daemon.** dia now has a tmux-like session model. A headless
+  daemon owns the workspace runtime and supervises app processes; the
+  GUI and CLI are clients over a unix socket (named pipe on Windows).
+  Workspaces survive closing the GUI: detaching is just disconnecting,
+  and the daemon keeps supervising until `dia shutdown`. The CLI gained
+  `dia serve` (run the daemon in the foreground) and `restart`, and
+  `start` is now idempotent -- starting an already-running workspace
+  attaches to the existing instance instead of launching a duplicate.
+  There is no auto-respawn: dead apps stay dead until an explicit
+  `restart`.
+
+### Changed
+
+- **`dia plugin enable` became `dia plugin grant`; `plugin disable` is
+  gone.** The persisted `enabled` flag was never read to gate anything
+  -- every discovered plugin loaded at startup regardless -- so the
+  flag, the `PluginInfo.enabled` API field, and the `disable` command
+  are removed. `dia plugin grant <id> [--caps ...]` now does what
+  `enable` did for real: persist the granted capability list, which is
+  the only user-facing on/off for a plugin's access. Existing state
+  files keep working; the leftover `enabled` key is ignored.
+
 ## [0.4.0] - 2026-07-25
 
 ### Added
@@ -33,8 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   requires confirmation when any of them are mutating. `--yes` skips
   the prompt; `--json` requires it.
 - **`dia plugin update <id>`.** Re-clones a git-installed plugin from
-  its recorded source, preserving granted capabilities and enabled
-  state. The old copy is only replaced after the new one clones and
+  its recorded source, preserving granted capabilities. The old copy
+  is only replaced after the new one clones and
   validates, and an id mismatch is refused.
 - **Workspace lifecycle hooks.** `hooks.pre_start`, `post_start`,
   `pre_stop`, and `post_stop` run shell-style commands around a
@@ -57,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   id is not silently pre-authorized.
 - **`dia plugin new --type=app`.** Scaffolds an app-type plugin
   (claims a `type:`, exports `resolveApp`) rather than a GUI panel,
-  and prints the `dia plugin enable --caps apps:resolve` line needed
+  and prints the `dia plugin grant --caps apps:resolve` line needed
   to make the type resolve.
 - `platform.Platform` gained `Run(opts, timeout)`, a blocking
   run-to-completion counterpart to the detached `Launch`, used by
@@ -94,14 +122,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `cmd:exec` received it without the user ever approving it,
   contradicting the documented "read-only by default, mutating are
   opt-in" model. All three now intersect against the read-only
-  defaults. Only `dia plugin enable --caps` (or the GUI's grant flow)
+  defaults. Only `dia plugin grant --caps` (or the GUI's grant flow)
   hands out a mutating capability. The GUI was already correcting this
   at startup; the CLI was not. Pre-existing.
 - **`dia plugin enable` and `dia plugin disable` did not exist.** Both
   were documented in the README but never registered on the `plugin`
   command, so there was no way to grant a capability from the CLI at
-  all. Now implemented, with `--caps` intersected against the
-  manifest's requested set.
+  all. Now implemented as `dia plugin grant`, with `--caps`
+  intersected against the manifest's requested set.
 - **Writing plugin state on a fresh install panicked.** `state.OpenAt`
   initialized `Instances` and `CustomThemes` but not `Plugins` when no
   `state.json` existed yet, so the first write to `d.Plugins[id]`
@@ -213,18 +241,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   wins. CLI flag `--local` switches between the two for
   `plugin new` and `plugin list`.
 - **Plugin CLI (`dia plugin ...`).** `new`, `list`, `install`,
-  `uninstall`, `enable`, `disable`, `info` subcommands for
+  `uninstall`, `grant`, `info` subcommands for
   authoring, discovery, and toggling persisted state.
-- **Plugin state persistence.** `state.Data.Plugins` records
-  each plugin's `Enabled` flag and the granted capability list
-  so the GUI starts the right goja runtime on launch.
+- **Plugin state persistence.** `state.Data.Plugins` records the
+  granted capability list so the GUI starts the right goja runtime
+  on launch.
 - **`examples/hello-plugin`** showing the manifest + entry shape
   for a `list` panel that reads workspaces.
 - **`examples/whiteboard`** showing a `ui.type=window` plugin
   that opens a new window with a free-draw `<canvas>`.
 - **Workspace plugins.** A workspace YAML can list plugin IDs
   under `plugins: [{ id: whiteboard }]`. Listed plugins are
-  enabled when the workspace starts and disabled when it stops.
+  started when the workspace starts and stopped when it stops.
   Window-type plugins show an "open" button on the workspace card
   while the workspace is running.
 - **Escape key closes new workspace dialog.** The `+ New` dialog

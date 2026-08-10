@@ -21,6 +21,12 @@ import (
 // "recent" list. Older entries are dropped on overflow.
 const RecentLimit = 10
 
+// InstanceHistoryLimit is the maximum number of stopped instances kept
+// in the state file. Running and crashed instances are never pruned;
+// when history exceeds the limit the oldest stopped entries are dropped
+// on the next Start or Reconcile so the map does not grow unbounded.
+const InstanceHistoryLimit = 20
+
 // GracePeriod is how long Stop waits between SIGTERM and SIGKILL when
 // force is false.
 const GracePeriod = 5 * time.Second
@@ -141,6 +147,7 @@ func (r *Runtime) Start(w *config.Workspace, src config.Source) (*state.Instance
 	if err := r.st.Mutate(func(d *state.Data) {
 		d.Instances[inst.ID] = inst
 		d.Recent = pushRecent(d.Recent, w.Name, RecentLimit)
+		pruneInstances(d)
 	}); err != nil {
 		r.log.Warn("save instance after launch", "id", inst.ID, "error", err)
 	}
@@ -449,6 +456,7 @@ func (r *Runtime) StopAllWithIDs(force bool) ([]string, error) {
 // shutdown do not accumulate.
 func (r *Runtime) Reconcile() error {
 	return r.st.Mutate(func(d *state.Data) {
+		pruneInstances(d)
 		for id, inst := range d.Instances {
 			if inst.Status != state.StatusRunning {
 				continue
@@ -475,6 +483,35 @@ func (r *Runtime) Reconcile() error {
 			d.Instances[id] = inst
 		}
 	})
+}
+
+// pruneInstances caps the stopped-instance history at
+// InstanceHistoryLimit. Running and crashed entries are kept (a running
+// instance must never be dropped; a crashed one carries the failure the
+// user has not acknowledged yet). The oldest stopped entries are
+// removed first, so the map is bounded and the recent list stays
+// meaningful without the state file growing without bound.
+func pruneInstances(d *state.Data) {
+	if d.Instances == nil || len(d.Instances) <= InstanceHistoryLimit {
+		return
+	}
+	stopped := make([]string, 0, len(d.Instances))
+	for id, inst := range d.Instances {
+		if inst.Status == state.StatusStopped {
+			stopped = append(stopped, id)
+		}
+	}
+	if len(stopped) <= InstanceHistoryLimit {
+		return
+	}
+	// Remove oldest stopped entries until history fits the limit.
+	sort.Slice(stopped, func(i, j int) bool {
+		return d.Instances[stopped[i]].StartedAt.Before(d.Instances[stopped[j]].StartedAt)
+	})
+	overflow := len(stopped) - InstanceHistoryLimit
+	for _, id := range stopped[:overflow] {
+		delete(d.Instances, id)
+	}
 }
 
 // pushRecent inserts name at the front of recent, de-duplicates, and

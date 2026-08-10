@@ -2,15 +2,16 @@ package wailsapp
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
-	"github.com/DerekCorniello/dia/internal/platform"
+	"github.com/DerekCorniello/dia/internal/daemon"
 	"github.com/DerekCorniello/dia/internal/plugins"
 	"github.com/DerekCorniello/dia/internal/registry"
-	dia "github.com/DerekCorniello/dia/internal/runtime"
 	"github.com/DerekCorniello/dia/internal/state"
 	"github.com/fsnotify/fsnotify"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -19,17 +20,24 @@ import (
 // App is the wails-bound application surface. Methods on App are
 // exposed to the Svelte frontend via the generated
 // wailsjs/go/wailsapp/App module. main.go binds *App directly;
-// routing this through a main-package facade was tried first and
-// the generator still followed the methods' return types into
-// the wailsapp package.
+// routing this through a main-package facade binding the generator
+// still followed the methods' return types into the wailsapp package.
+//
+// App owns what has to stay in-process: the plugin panels, grants,
+// themes, and workspace files. Session lifecycle (start/stop/restart/
+// reconcile) belongs to the daemon; StartWorkspace et al. are thin
+// clients over its socket, exactly like the CLI.
 type App struct {
 	ctx context.Context
 
 	store  *state.Store
-	rt     *dia.Runtime
 	reg    *registry.Registry
 	pmgr   *plugins.Manager
 	logger *slog.Logger
+
+	dialOnce sync.Once
+	dae      *daemon.Client
+	dialErr  error
 }
 
 // New returns an App with no context set; Startup fills it in and
@@ -40,7 +48,9 @@ func New() *App {
 
 // Startup is called by the wails runtime after the window is created.
 // The context is required for any runtime calls (events, dialogs).
-// Startup also reconciles stale state from a prior crash.
+// Startup wires up the plugin and state handles; the session daemon
+// is dialed lazily on first use so tests that only exercise the
+// plugin/theme surface never spawn the daemon.
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	a.logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -57,15 +67,6 @@ func (a *App) Startup(ctx context.Context) {
 	}
 	a.store = st
 	a.reg = registry.New()
-	a.rt = dia.New(dia.Options{
-		Platform: platform.New(),
-		Store:    st,
-		Registry: a.reg,
-		Logger:   a.logger,
-	})
-	if err := a.rt.Reconcile(); err != nil {
-		a.logger.Warn("reconcile on startup", "error", err)
-	}
 
 	pmgr, err := plugins.NewManager(plugins.GlobalPluginsDir(dir), &wailsHost{app: a})
 	if err != nil {
@@ -81,6 +82,32 @@ func (a *App) Startup(ctx context.Context) {
 		a.registerPluginAppTypes(pmgr)
 		a.pmgr = pmgr
 	}
+}
+
+// StateDir returns the state directory this app is bound to, or "" when
+// not initialized.
+func (a *App) StateDir() string {
+	if a.store == nil {
+		return ""
+	}
+	return filepath.Dir(a.store.Path())
+}
+
+// daemonClient dials the single daemon for this app, spawning it once
+// via the current executable. The connection lives for the whole app
+// lifetime (Close is never called); the daemon is what keeps
+// workspaces alive when the GUI quits.
+func (a *App) daemonClient() (*daemon.Client, error) {
+	if a.store == nil {
+		return nil, errors.New("not initialized")
+	}
+	a.dialOnce.Do(func() {
+		a.dae, a.dialErr = daemon.Ensure(daemon.EnsureOpts{StateDir: a.StateDir()})
+	})
+	if a.dialErr != nil {
+		return nil, a.dialErr
+	}
+	return a.dae, nil
 }
 
 // registerPluginAppTypes adds every app type claimed by a plugin to

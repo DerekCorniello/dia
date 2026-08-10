@@ -90,9 +90,12 @@ func newRootCmd() *cobra.Command {
 		newNewCmd(),
 		newEditCmd(),
 		newOpenCmd(),
+		newRestartCmd(),
 		newReconcileCmd(),
+		newShutdownCmd(),
 		newDoctorCmd(),
 		newPluginCmd(),
+		newServeCmd(),
 	)
 	return cmd
 }

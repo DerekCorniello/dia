@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=dia
+Comment=Cross-platform launcher for dev workspaces
+Exec=@EXEC@
+Icon=@ICON@
+Terminal=false
+Categories=Development;Utility;
+Keywords=workspace;launcher;dev;developer;environment;
+StartupNotify=false
+StartupWMClass=dia

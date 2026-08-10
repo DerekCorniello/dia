@@ -58,13 +58,11 @@ type CustomTheme struct {
 }
 
 // PluginState persists a plugin's per-user settings across restarts.
-// Enabled controls whether the host starts the goja runtime; the
-// GrantedCapabilities list is the user-approved subset of the
+// The GrantedCapabilities list is the user-approved subset of the
 // manifest's requested capabilities. A plugin whose manifest changes
 // its requested set will see the stored grants intersect with the
 // new set on next load.
 type PluginState struct {
-	Enabled             bool           `json:"enabled"`
 	GrantedCapabilities []string       `json:"granted_capabilities,omitempty"`
 	Config              map[string]any `json:"config,omitempty"`
 }
@@ -212,6 +210,23 @@ func migrateRecent(in []json.RawMessage) []RecentEntry {
 // Path returns the absolute path to the backing file.
 func (s *Store) Path() string {
 	return s.path
+}
+
+// Reload re-reads the backing file, replacing the in-memory state with
+// whatever is on disk. The daemon holds the store open for its whole
+// life and applies persisted grants and roots on each start, so it must
+// reload after another client (the GUI, a plugin grant, a `dia new
+// --dir` root) has written the file behind its back. Slow only for the
+// caller's snapshot; Mutate flushes it back.
+func (s *Store) Reload() error {
+	fresh, err := OpenAt(s.path)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.data = fresh.data
+	s.mu.Unlock()
+	return nil
 }
 
 // Snapshot returns a deep-enough copy of the current state for the

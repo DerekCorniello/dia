@@ -310,7 +310,6 @@ export namespace wailsapp {
 	    author: string;
 	    source: string;
 	    dir: string;
-	    enabled: boolean;
 	    status: string;
 	    lastError?: string;
 	    grantedCapabilities: string[];
@@ -332,7 +331,6 @@ export namespace wailsapp {
 	        this.author = source["author"];
 	        this.source = source["source"];
 	        this.dir = source["dir"];
-	        this.enabled = source["enabled"];
 	        this.status = source["status"];
 	        this.lastError = source["lastError"];
 	        this.grantedCapabilities = source["grantedCapabilities"];

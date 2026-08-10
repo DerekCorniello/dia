@@ -7,6 +7,7 @@ vi.mock('../../wailsjs/go/wailsapp/App', () => ({
   ListWorkspaces: vi.fn(),
   GetWorkspace: vi.fn(),
   StartWorkspace: vi.fn(),
+  RestartWorkspace: vi.fn(),
   StopWorkspace: vi.fn(),
   Reconcile: vi.fn(),
   Doctor: vi.fn(),
@@ -26,12 +27,9 @@ vi.mock('../../wailsjs/go/wailsapp/App', () => ({
   SetCustomTheme: vi.fn(),
   DeleteCustomTheme: vi.fn(),
   ListPlugins: vi.fn(),
-  EnablePlugin: vi.fn(),
-  DisablePlugin: vi.fn(),
   PluginCall: vi.fn(),
   PluginPaths: vi.fn(),
   OpenPluginFolder: vi.fn(),
-  SetPluginEnabled: vi.fn(),
   GetRecent: vi.fn(),
   GetKeybindings: vi.fn(),
   SetKeybinding: vi.fn(),
@@ -136,7 +134,7 @@ describe('WorkspaceCard', () => {
       },
       onChanged: vi.fn(),
     });
-    expect(screen.getByText('running')).toBeTruthy();
+    expect(screen.getByLabelText('running')).toBeTruthy();
     expect(screen.getByText('stop')).toBeTruthy();
   });
 

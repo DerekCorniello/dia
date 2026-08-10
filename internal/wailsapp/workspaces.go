@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/DerekCorniello/dia/internal/config"
+	"github.com/DerekCorniello/dia/internal/daemon"
 	"github.com/DerekCorniello/dia/internal/platform"
 	"github.com/DerekCorniello/dia/internal/plugins"
 	"github.com/DerekCorniello/dia/internal/state"
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"gopkg.in/yaml.v3"
 )
 
@@ -19,9 +21,10 @@ import (
 // flag attached. Every workspace is returned regardless of CWD:
 // global workspaces, workspaces from every persisted root, and the
 // project-local workspace in the CWD walk-up. Errors during discovery
-// are returned to the UI.
+// are returned to the UI. The running flag comes from the daemon's
+// live instance list, not the state file.
 func (a *App) ListWorkspaces() ([]WorkspaceInfo, error) {
-	if a.store == nil || a.rt == nil {
+	if a.store == nil {
 		return nil, errors.New("not initialized")
 	}
 	cwd, _ := os.Getwd()
@@ -96,11 +99,27 @@ func pluginIDs(refs []config.PluginRef) []string {
 	return ids
 }
 
+// instances returns the daemon's live instance list, or nil when the
+// daemon can't be reached. Status reads are best-effort: the UI
+// should not fail simply because the daemon is not up yet.
+func (a *App) instances() []state.Instance {
+	dae, err := a.daemonClient()
+	if err != nil {
+		return nil
+	}
+	var insts []state.Instance
+	if err := dae.Do(daemon.MethodList, nil, &insts); err != nil {
+		a.logger.Warn("list instances", "error", err)
+		return nil
+	}
+	return insts
+}
+
 // runningWorkspaces returns the set of workspace names that have at
 // least one running instance.
 func (a *App) runningWorkspaces() map[string]bool {
 	out := map[string]bool{}
-	for _, inst := range a.rt.Instances() {
+	for _, inst := range a.instances() {
 		if inst.Status == state.StatusRunning {
 			out[inst.WorkspaceName] = true
 		}
@@ -111,13 +130,12 @@ func (a *App) runningWorkspaces() map[string]bool {
 // GetWorkspace returns the full detail of one workspace, including
 // the list of apps.
 func (a *App) GetWorkspace(name string) (*WorkspaceDetail, error) {
-	if a.rt == nil {
+	if a.store == nil {
 		return nil, errors.New("not initialized")
 	}
 	var roots []string
-	if a.store != nil {
-		roots = a.store.Snapshot().Roots
-	}
+	snap := a.store.Snapshot()
+	roots = snap.Roots
 	sources, err := config.Discover(config.DiscoverOptions{
 		GlobalDir: config.DefaultGlobalDir(),
 		Roots:     roots,
@@ -154,13 +172,13 @@ func (a *App) GetWorkspace(name string) (*WorkspaceDetail, error) {
 	return nil, fmt.Errorf("workspace %q not found", name)
 }
 
-// StartWorkspace launches the named workspace. Per-app failures are
-// recorded on the instance; only an all-apps-failed workspace returns
-// an error. Workspace plugins are enabled before apps launch. For
-// window-type plugins, a dia --plugin-window process is spawned and
-// tracked alongside the apps so it is killed on stop.
+// StartWorkspace launches the named workspace on the daemon. The app
+// enables its panel plugins first so their panels render in the GUI;
+// the daemon does the same for its resolver and spawns window-type
+// plugin windows. Starting an already-running name attaches to the
+// existing instance (tmux server semantics).
 func (a *App) StartWorkspace(name string) error {
-	if a.rt == nil {
+	if a.store == nil {
 		return errors.New("not initialized")
 	}
 	ws, src, err := a.findWorkspace(name)
@@ -174,56 +192,83 @@ func (a *App) StartWorkspace(name string) error {
 			}
 		}
 	}
-	inst, err := a.rt.Start(ws, src)
+	dae, err := a.daemonClient()
 	if err != nil {
 		return err
 	}
-	if len(ws.Plugins) > 0 {
-		ids := make([]string, 0, len(ws.Plugins))
-		for _, ref := range ws.Plugins {
-			ids = append(ids, ref.ID)
-		}
-		if err := a.store.Mutate(func(d *state.Data) {
-			i := d.Instances[inst.ID]
-			i.Plugins = ids
-			d.Instances[inst.ID] = i
-		}); err != nil {
-			a.logger.Warn("mutate instance plugins", "error", err)
-		}
+	var reply daemon.StartReply
+	if err := dae.Do(daemon.MethodStart, daemon.StartParams{Name: name, Path: src.Path}, &reply); err != nil {
+		return err
 	}
-	// Spawn plugin windows for window-type plugins.
-	if a.pmgr != nil {
-		for _, ref := range ws.Plugins {
-			if loaded, ok := a.pmgr.Loaded(ref.ID); ok && loaded.Manifest != nil && loaded.Manifest.UI.Type == "window" {
-				pid, err := a.spawnPluginWindow(ref.ID, name, src.Path)
-				if err != nil {
-					a.logger.Warn("spawn plugin window", "id", ref.ID, "error", err)
-					continue
-				}
-				if err := a.store.Mutate(func(d *state.Data) {
-					i := d.Instances[inst.ID]
-					i.PluginPIDs = append(i.PluginPIDs, pid)
-					d.Instances[inst.ID] = i
-				}); err != nil {
-					a.logger.Warn("mutate instance plugin PIDs", "error", err)
-				}
-			}
-		}
-	}
+	// The daemon persists the instance and spawns plugin windows, so
+	// the GUI does not; it only needs its panels enabled (done above)
+	// and a push so the frontend refreshes from the live list.
+	a.notifyStateChanged()
 	return nil
 }
 
-// StopWorkspace finds the running instance for name and stops it.
-func (a *App) StopWorkspace(name string) error {
-	if a.rt == nil {
-		return errors.New("runtime not initialized")
+// RestartWorkspace stops the running instance for name (if any) and
+// starts a fresh one, via the daemon.
+func (a *App) RestartWorkspace(name string) error {
+	if a.store == nil {
+		return errors.New("not initialized")
 	}
-	for _, inst := range a.rt.Instances() {
-		if inst.WorkspaceName == name && inst.Status == state.StatusRunning {
-			return a.StopInstance(inst.ID)
+	ws, src, err := a.findWorkspace(name)
+	if err != nil {
+		return err
+	}
+	if a.pmgr != nil {
+		for _, ref := range ws.Plugins {
+			if err := a.enableWorkspacePlugin(ref.ID, ref.Config); err != nil {
+				a.logger.Warn("enable workspace plugin", "id", ref.ID, "error", err)
+			}
 		}
 	}
+	dae, err := a.daemonClient()
+	if err != nil {
+		return err
+	}
+	var reply daemon.StartReply
+	if err := dae.Do(daemon.MethodRestart, daemon.StartParams{Name: name, Path: src.Path}, &reply); err != nil {
+		return err
+	}
+	a.notifyStateChanged()
 	return nil
+}
+
+// notifyStateChanged tells the frontend to refresh workspace state
+// after the daemon has mutated it. If ctx is unset (a test) the call
+// is a no-op.
+func (a *App) notifyStateChanged() {
+	if a.ctx != nil {
+		wailsRuntime.EventsEmit(a.ctx, "workspace:state-changed")
+	}
+}
+
+// StopWorkspace stops the running instance for name via the daemon.
+// Stopping a name with nothing running is a no-op, not an error.
+func (a *App) StopWorkspace(name string) error {
+	dae, err := a.daemonClient()
+	if err != nil {
+		return err
+	}
+	var stopped map[string]any
+	if err := dae.Do(daemon.MethodStop, daemon.StopParams{Name: name}, &stopped); err != nil {
+		if isNoWorkspace(err) {
+			return nil
+		}
+		return err
+	}
+	a.notifyStateChanged()
+	return nil
+}
+
+// isNoWorkspace reports whether a daemon error means the workspace
+// does not exist / is not running. The daemon serializes
+// NoWorkspaceError across the socket as a plain error string, so we
+// match on the message.
+func isNoWorkspace(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "not found")
 }
 
 // spawnPluginWindow spawns a dia --plugin-window process for the
@@ -255,6 +300,44 @@ func (a *App) launchProcess(cmd string, args []string) (int, error) {
 	return handle.PID(), nil
 }
 
+// OpenWorkspacePluginWindow spawns a window plugin bound to a
+// workspace: the spawned process gets the workspace name and path so
+// it loads the workspace's config for that plugin. Unlike StartWorkspace
+// it does not launch the workspace's apps; it only opens the plugin
+// window for the workspace it belongs to.
+func (a *App) OpenWorkspacePluginWindow(name, pluginID string) (int, error) {
+	if a.pmgr == nil {
+		return 0, errors.New("plugin manager not initialized")
+	}
+	ws, src, err := a.findWorkspace(name)
+	if err != nil {
+		return 0, err
+	}
+	var refCfg map[string]any
+	found := false
+	for _, ref := range ws.Plugins {
+		if ref.ID == pluginID {
+			refCfg = ref.Config
+			found = true
+			break
+		}
+	}
+	if !found {
+		return 0, fmt.Errorf("workspace %q does not include plugin %q", name, pluginID)
+	}
+	if a.pmgr != nil {
+		if err := a.enableWorkspacePlugin(pluginID, refCfg); err != nil {
+			a.logger.Warn("enable workspace plugin", "id", pluginID, "error", err)
+		}
+	}
+	return a.spawnPluginWindow(pluginID, name, src.Path)
+}
+
+// enableWorkspacePlugin loads a workspace plugin into the GUI's panel
+// manager and persists its config and grants so the daemon and the
+// next launch pick them up. Capabilities are never granted by being
+// enabled; grants are intersected against the manifest from the
+// user-approved list.
 func (a *App) enableWorkspacePlugin(id string, cfg map[string]any) error {
 	loaded, ok := a.pmgr.Loaded(id)
 	if !ok {
@@ -263,7 +346,7 @@ func (a *App) enableWorkspacePlugin(id string, cfg map[string]any) error {
 	if loaded.Manifest == nil {
 		return fmt.Errorf("plugin %q has no valid manifest: %s", id, loaded.LastError)
 	}
-	granted := plugins.GrantCapabilities(loaded.Manifest.Capabilities, plugins.DefaultReadCapabilities())
+	granted := workspacePluginGrants(a.store, loaded.Manifest, id)
 	if err := a.pmgr.SetConfig(id, cfg); err != nil {
 		a.logger.Warn("set plugin config", "id", id, "error", err)
 	}
@@ -274,89 +357,113 @@ func (a *App) enableWorkspacePlugin(id string, cfg map[string]any) error {
 		if d.Plugins == nil {
 			d.Plugins = map[string]state.PluginState{}
 		}
-		d.Plugins[id] = state.PluginState{Enabled: true, GrantedCapabilities: granted, Config: cfg}
+		prev := d.Plugins[id]
+		prev.GrantedCapabilities = granted
+		prev.Config = cfg
+		d.Plugins[id] = prev
 	}); err != nil {
 		a.logger.Warn("mutate enable plugin state", "error", err)
 	}
 	return nil
 }
 
-// StopInstance terminates one running instance by ID.
-func (a *App) StopInstance(id string) error {
-	if a.rt == nil {
-		return errors.New("runtime not initialized")
-	}
-	var inst state.Instance
-	if a.store != nil {
-		snap := a.store.Snapshot()
-		inst = snap.Instances[id]
-	}
-	// Kill plugin window processes.
-	pf := platform.New()
-	for _, ppid := range inst.PluginPIDs {
-		if ppid > 0 {
-			if err := pf.Kill(ppid, true); err != nil {
-				a.logger.Warn("kill plugin window", "pid", ppid, "error", err)
-			}
+// workspacePluginGrants derives the granted capability set for a
+// plugin from the persisted state (the user-approved list) rather
+// than always starting from the read-only defaults. Intersect with
+// the manifest so capabilities the manifest no longer requests are
+// dropped; the store is only read and may be nil.
+func workspacePluginGrants(st *state.Store, m *plugins.Manifest, id string) []string {
+	granted := plugins.DefaultReadCapabilities()
+	if st != nil {
+		if ps, ok := st.Snapshot().Plugins[id]; ok && ps.GrantedCapabilities != nil {
+			granted = ps.GrantedCapabilities
 		}
 	}
-	if err := a.rt.Stop(id, false); err != nil {
+	return plugins.GrantCapabilities(m.Capabilities, granted)
+}
+
+// StopInstance terminates one running instance by ID. The daemon stops
+// workspaces by name, so the ID is translated through its list first.
+func (a *App) StopInstance(id string) error {
+	dae, err := a.daemonClient()
+	if err != nil {
 		return err
 	}
+	var insts []state.Instance
+	if err := dae.Do(daemon.MethodList, nil, &insts); err != nil {
+		return err
+	}
+	name := ""
+	for _, inst := range insts {
+		if inst.ID == id {
+			name = inst.WorkspaceName
+			break
+		}
+	}
+	if name == "" {
+		return fmt.Errorf("instance %s not found", id)
+	}
+	var result map[string]any
+	if err := dae.Do(daemon.MethodStop, daemon.StopParams{Name: name}, &result); err != nil {
+		return err
+	}
+	a.notifyStateChanged()
 	return nil
 }
 
-// StopAll terminates every running instance. Returns the number
-// stopped.
+// StopAll terminates every running instance via the daemon. Returns
+// the number stopped.
 func (a *App) StopAll() (int, error) {
-	if a.rt == nil {
-		return 0, errors.New("runtime not initialized")
+	dae, err := a.daemonClient()
+	if err != nil {
+		return 0, err
 	}
-	running := 0
-	for _, inst := range a.rt.Instances() {
-		if inst.Status == state.StatusRunning {
-			running++
-		}
+	var result map[string][]string
+	if err := dae.Do(daemon.MethodStopAll, nil, &result); err != nil {
+		return 0, err
 	}
-	for _, inst := range a.rt.Instances() {
-		if inst.Status != state.StatusRunning {
-			continue
-		}
-		if err := a.StopInstance(inst.ID); err != nil {
-			a.logger.Warn("stop instance during StopAll", "id", inst.ID, "error", err)
-		}
+	n := len(result["stopped"])
+	if len(result["stopped"]) > 0 {
+		a.notifyStateChanged()
 	}
-	return running, nil
+	return n, nil
 }
 
-// ListInstances returns the current set of tracked instances, most
-// recently started first.
+// ListInstances returns the current set of tracked instances from the
+// daemon, most recently started first.
 func (a *App) ListInstances() []InstanceInfo {
-	if a.rt == nil {
+	insts := a.instances()
+	if insts == nil {
 		return nil
 	}
-	insts := a.rt.Instances()
 	out := make([]InstanceInfo, 0, len(insts))
-	for _, inst := range insts {
+	for i := range insts {
+		inst := insts[i]
 		out = append(out, *toInstanceInfo(&inst))
 	}
 	return out
 }
 
-// Reconcile walks the state and drops dead PIDs. Returns a summary.
+// Reconcile walks the daemon state and drops dead PIDs. Returns a
+// summary.
 func (a *App) Reconcile() (ReconcileInfo, error) {
-	if a.rt == nil {
-		return ReconcileInfo{}, errors.New("runtime not initialized")
-	}
-	before := len(a.rt.Instances())
-	if err := a.rt.Reconcile(); err != nil {
+	dae, err := a.daemonClient()
+	if err != nil {
 		return ReconcileInfo{}, err
 	}
-	after := len(a.rt.Instances())
+	var summary struct {
+		Reconciled int `json:"reconciled"`
+		Remaining  int `json:"remaining"`
+		Total      int `json:"total"`
+	}
+	if err := dae.Do(daemon.MethodReconcile, nil, &summary); err != nil {
+		return ReconcileInfo{}, err
+	}
+	a.notifyStateChanged()
 	return ReconcileInfo{
-		Reconciled: before - after,
-		Remaining:  after,
-		Total:      after,
+		Reconciled: summary.Reconciled,
+		Remaining:  summary.Remaining,
+		Total:      summary.Total,
 	}, nil
 }
 
@@ -521,12 +628,8 @@ func (a *App) SaveWorkspaceEditor(editor WorkspaceEditor) error {
 // DeleteWorkspace removes the workspace YAML file. Refuses if the
 // workspace has a running instance.
 func (a *App) DeleteWorkspace(name string) error {
-	if a.rt != nil {
-		for _, inst := range a.rt.Instances() {
-			if inst.WorkspaceName == name && inst.Status == state.StatusRunning {
-				return fmt.Errorf("workspace %q is running; stop it first", name)
-			}
-		}
+	if running := a.runningWorkspaces(); running[name] {
+		return fmt.Errorf("workspace %q is running; stop it first", name)
 	}
 	_, src, err := a.findWorkspace(name)
 	if err != nil {

@@ -43,7 +43,6 @@ function plugin(overrides: Record<string, unknown> = {}): PluginInfo {
     author: '',
     source: 'global',
     dir: '/tmp/caps-plug',
-    enabled: true,
     status: 'active',
     grantedCapabilities: ['workspaces:read'],
     ui: { type: 'kv', title: 'T', refreshable: false },

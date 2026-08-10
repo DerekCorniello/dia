@@ -38,10 +38,26 @@ run: build
 	./build/bin/$(BIN)
 
 # install builds and copies the binary to GOPATH/bin, making it
-# available as a system-wide command.
+# available as a system-wide command. On Linux it also installs the
+# .desktop entry and icon so launchers (GNOME, KDE, etc.) find the
+# app; macOS and Windows register themselves via the .app bundle and
+# the .exe resources, so there is nothing to do there.
 install: build
 	cp build/bin/$(BIN) $(shell go env GOPATH)/bin/$(BIN)
 	@echo "installed to $(shell go env GOPATH)/bin/$(BIN)"
+	@if [ "$$(uname -s)" = "Linux" ]; then \
+		DATA="$${XDG_DATA_HOME:-$$HOME/.local/share}"; \
+		APPS="$$DATA/applications"; \
+		ICONS="$$DATA/icons/hicolor/512x512/apps"; \
+		mkdir -p "$$APPS" "$$ICONS"; \
+		cp build/appicon.png "$$ICONS/$(BIN).png"; \
+		sed -e "s|@EXEC@|$(shell go env GOPATH)/bin/$(BIN)|" \
+			-e "s|@ICON@|$$ICONS/$(BIN).png|" \
+			packaging/$(BIN).desktop > "$$APPS/$(BIN).desktop"; \
+		chmod +x "$$APPS/$(BIN).desktop"; \
+		update-desktop-database "$$APPS" >/dev/null 2>&1 || true; \
+		echo "desktop entry installed to $$APPS/$(BIN).desktop"; \
+	fi
 
 test:
 	$(GO) test -count=1 -timeout 60s ./...

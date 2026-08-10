@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/DerekCorniello/dia/internal/config"
+	"github.com/DerekCorniello/dia/internal/daemon"
 	"github.com/DerekCorniello/dia/internal/registry"
 	"github.com/DerekCorniello/dia/internal/state"
 )
@@ -25,63 +26,124 @@ func newStartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if cwdFlag != "" {
-				for i := range w.Apps {
-					if w.Apps[i].Cwd == "" {
-						w.Apps[i].Cwd = cwdFlag
-					}
-				}
-			}
-
 			out := newOutput(cmd)
-			s, err := newSetup(flagsFromCmd(cmd).StateDir, cmd.ErrOrStderr())
-			if err != nil {
-				return err
-			}
 			if dryRun {
+				s, err := newSetup(flagsFromCmd(cmd).StateDir, cmd.ErrOrStderr())
+				if err != nil {
+					return err
+				}
 				return printDryRun(out, name, src.Path, w, s)
 			}
-			inst, err := s.Runtime.Start(w, src)
+
+			c, err := newDialClient(cmd)
 			if err != nil {
-				return fmt.Errorf("start: %w", err)
-			}
-			if out.IsJSON() {
-				return out.JSON(map[string]any{
-					"id":             inst.ID,
-					"workspace":      inst.WorkspaceName,
-					"workspace_path": inst.WorkspacePath,
-					"started_at":     inst.StartedAt,
-					"status":         inst.Status,
-					"apps":           inst.Apps,
-				})
-			}
-			if err := out.Printf("started %s [%s]\n", inst.WorkspaceName, inst.ID); err != nil {
 				return err
 			}
-			for _, a := range inst.Apps {
-				switch a.Status {
-				case state.StatusRunning:
-					if a.PID > 0 {
-						if err := out.Printf("  ok   %-10s pid=%d  %s\n", a.Type, a.PID, a.Cmd); err != nil {
-							return err
-						}
-					} else {
-						if err := out.Printf("  ok   %-10s url     %s\n", a.Type, a.Cmd); err != nil {
-							return err
-						}
-					}
-				default:
-					if err := out.Printf("  fail %-10s        %s  (%s)\n", a.Type, a.Cmd, a.Err); err != nil {
-						return err
-					}
-				}
+			defer func() { _ = c.Close() }()
+			var reply daemon.StartReply
+			if err := c.Do(daemon.MethodStart, daemon.StartParams{
+				Name: name,
+				Path: src.Path,
+				Cwd:  cwdFlag,
+			}, &reply); err != nil {
+				return lifecycleError(err)
 			}
-			return nil
+			return printStart(out, reply.Instance, reply.Attached)
 		},
 	}
 	cmd.Flags().StringVar(&cwdFlag, "cwd", "", "override the cwd of every app in the workspace")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "resolve and print what would launch without executing")
 	return cmd
+}
+
+func newRestartCmd() *cobra.Command {
+	var cwdFlag string
+	cmd := &cobra.Command{
+		Use:   "restart <name>",
+		Short: "Restart a workspace",
+		Long:  "Stop the named workspace if it is running, then start it again. A fresh instance is always launched: workspaces do not auto-respawn, so restart is the way to get new config into a running session.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			_, src, err := resolveWorkspace(name)
+			if err != nil {
+				return err
+			}
+			c, err := newDialClient(cmd)
+			if err != nil {
+				return err
+			}
+			defer func() { _ = c.Close() }()
+			var reply daemon.StartReply
+			if err := c.Do(daemon.MethodRestart, daemon.StartParams{
+				Name: name,
+				Path: src.Path,
+				Cwd:  cwdFlag,
+			}, &reply); err != nil {
+				return lifecycleError(err)
+			}
+			return printStart(newOutput(cmd), reply.Instance, reply.Attached)
+		},
+	}
+	cmd.Flags().StringVar(&cwdFlag, "cwd", "", "override the cwd of every app in the workspace")
+	return cmd
+}
+
+// printStart writes the human or JSON start report for an instance.
+func printStart(out *output, inst *state.Instance, attached bool) error {
+	if out.IsJSON() {
+		payload := map[string]any{
+			"id":             inst.ID,
+			"workspace":      inst.WorkspaceName,
+			"workspace_path": inst.WorkspacePath,
+			"started_at":     inst.StartedAt,
+			"status":         inst.Status,
+			"apps":           inst.Apps,
+			"attached":       attached,
+		}
+		return out.JSON(payload)
+	}
+	verb := "started"
+	if attached {
+		verb = "attached to"
+	}
+	if err := out.Printf("%s %s [%s]\n", verb, inst.WorkspaceName, inst.ID); err != nil {
+		return err
+	}
+	for _, a := range inst.Apps {
+		switch a.Status {
+		case state.StatusRunning:
+			if a.PID > 0 {
+				if err := out.Printf("  ok   %-10s pid=%d  %s\n", a.Type, a.PID, a.Cmd); err != nil {
+					return err
+				}
+			} else {
+				if err := out.Printf("  ok   %-10s url     %s\n", a.Type, a.Cmd); err != nil {
+					return err
+				}
+			}
+		default:
+			if err := out.Printf("  fail %-10s        %s  (%s)\n", a.Type, a.Cmd, a.Err); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// lifecycleError maps daemon errors back into the CLI's typed errors
+// so exit codes stay meaningful. The daemon only reports strings; the
+// shapes we care about are "not found". What is the message minus the
+// trailing " not found" (which NotFoundError.Error appends back on).
+func lifecycleError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), "not found") {
+		what := strings.TrimSuffix(err.Error(), " not found")
+		return &NotFoundError{What: what}
+	}
+	return err
 }
 
 // dryRunApp is one resolved app in a --dry-run report.

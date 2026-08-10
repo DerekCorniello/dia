@@ -12,7 +12,7 @@ import (
 // installAppTypePlugin writes a plugin claiming `compose` into the
 // global plugins dir under stateDir, and grants it apps:resolve in the
 // state file -- the same two things the user does with
-// `dia plugin install` and `dia plugin enable --caps`.
+// `dia plugin install` and `dia plugin grant --caps`.
 func installAppTypePlugin(t *testing.T, stateDir string) {
 	t.Helper()
 	pdir := filepath.Join(stateDir, "dia", "plugins", "compose-type")
@@ -38,7 +38,7 @@ func installAppTypePlugin(t *testing.T, stateDir string) {
 		t.Fatal(err)
 	}
 	data := `{"version":1,"instances":{},"plugins":{"compose-type":` +
-		`{"enabled":true,"granted_capabilities":["apps:resolve"]}}}`
+		`{"granted_capabilities":["apps:resolve"]}}}`
 	if err := os.WriteFile(stateFile, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestDryRun_UngrantedPluginTypeDoesNotResolve(t *testing.T) {
 	// Revoke the grant.
 	stateFile := filepath.Join(stateDir, "dia", "state.json")
 	if err := os.WriteFile(stateFile,
-		[]byte(`{"version":1,"instances":{},"plugins":{"compose-type":{"enabled":true,"granted_capabilities":[]}}}`),
+		[]byte(`{"version":1,"instances":{},"plugins":{"compose-type":{"granted_capabilities":[]}}}`),
 		0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -238,8 +238,8 @@ func TestDoctor_WarnsOnAppTypeConflict(t *testing.T) {
 	}
 	stateFile := filepath.Join(stateDir, "dia", "state.json")
 	data := `{"version":1,"instances":{},"plugins":{` +
-		`"compose-type":{"enabled":true,"granted_capabilities":["apps:resolve"]},` +
-		`"rival-type":{"enabled":true,"granted_capabilities":["apps:resolve"]}}}`
+		`"compose-type":{"granted_capabilities":["apps:resolve"]},` +
+		`"rival-type":{"granted_capabilities":["apps:resolve"]}}}`
 	if err := os.WriteFile(stateFile, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}

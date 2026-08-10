@@ -118,7 +118,7 @@ func RunPluginWindow(id string, workspaceName string, workspacePath string) erro
 		return err
 	}
 
-	grants := plugins.GrantCapabilities(manifest.Capabilities, plugins.DefaultReadCapabilities())
+	grants := workspacePluginGrants(host.store, manifest, id)
 	rt, err := plugins.NewRuntime(manifest, full, host, grants, cfg)
 	if err != nil {
 		return err

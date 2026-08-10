@@ -284,12 +284,12 @@ func TestOpenAt_FreshStoreHasNonNilMaps(t *testing.T) {
 	err = s.Mutate(func(d *Data) {
 		d.Instances["i"] = Instance{ID: "i"}
 		d.CustomThemes["t"] = CustomTheme{}
-		d.Plugins["p"] = PluginState{Enabled: true}
+		d.Plugins["p"] = PluginState{GrantedCapabilities: []string{"workspaces:read"}}
 	})
 	if err != nil {
 		t.Fatalf("Mutate on a fresh store: %v", err)
 	}
-	if !s.Snapshot().Plugins["p"].Enabled {
+	if len(s.Snapshot().Plugins["p"].GrantedCapabilities) != 1 {
 		t.Error("plugin state was not persisted")
 	}
 }

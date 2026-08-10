@@ -122,8 +122,8 @@ func TestPluginNew_AppTypeResolvesAfterGranting(t *testing.T) {
 	if code := Run([]string{"plugin", "new", "mytype", "--type", "app"}); code != ExitOK {
 		t.Fatal("plugin new failed")
 	}
-	if code := Run([]string{"plugin", "enable", "mytype", "--caps", "apps:resolve"}); code != ExitOK {
-		t.Fatal("plugin enable failed")
+	if code := Run([]string{"plugin", "grant", "mytype", "--caps", "apps:resolve"}); code != ExitOK {
+		t.Fatal("plugin grant failed")
 	}
 
 	wsDir := filepath.Join(configHome, "dia", "workspaces")

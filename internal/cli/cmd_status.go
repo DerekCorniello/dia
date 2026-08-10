@@ -5,6 +5,9 @@ import (
 	"strconv"
 
 	"github.com/spf13/cobra"
+
+	"github.com/DerekCorniello/dia/internal/daemon"
+	"github.com/DerekCorniello/dia/internal/state"
 )
 
 func newStatusCmd() *cobra.Command {
@@ -13,18 +16,23 @@ func newStatusCmd() *cobra.Command {
 		Short: "Show running workspace instances",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := newSetup(flagsFromCmd(cmd).StateDir, cmd.ErrOrStderr())
+			c, err := newDialClient(cmd)
 			if err != nil {
 				return err
 			}
-			out := newOutput(cmd)
-			insts := s.Runtime.Instances()
+			defer func() { _ = c.Close() }()
+			var insts []state.Instance
+			if err := c.Do(daemon.MethodList, nil, &insts); err != nil {
+				return err
+			}
 			sort.SliceStable(insts, func(i, j int) bool {
 				if insts[i].Status != insts[j].Status {
 					return insts[i].Status == "running"
 				}
 				return insts[i].StartedAt.After(insts[j].StartedAt)
 			})
+
+			out := newOutput(cmd)
 			if out.IsJSON() {
 				return out.JSON(insts)
 			}

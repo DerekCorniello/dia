@@ -343,7 +343,6 @@ func (a *App) SetPluginCapabilities(id string, caps []string) error {
 	if a.store != nil {
 		if err := a.store.Mutate(func(d *state.Data) {
 			prev := d.Plugins[id]
-			prev.Enabled = true
 			prev.GrantedCapabilities = granted
 			d.Plugins[id] = prev
 		}); err != nil {
@@ -369,7 +368,6 @@ func loadedToInfo(l plugins.Loaded) PluginInfo {
 		ID:                  l.ID,
 		Source:              string(l.Source),
 		Dir:                 l.Dir,
-		Enabled:             true,
 		Status:              string(l.Status),
 		LastError:           l.LastError,
 		GrantedCapabilities: l.GrantedCaps,

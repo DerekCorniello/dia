@@ -14,17 +14,47 @@ CLI. See `README.md` for the feature surface and `CHANGELOG.md` for history.
 main.go            Wails entrypoint; routes GUI vs CLI vs plugin-window
 internal/config    YAML parsing, validation, discovery
 internal/runtime   instance lifecycle, PID tracking, reconcile
+internal/daemon    session daemon: owns the runtime, socket server + client
 internal/platform  OS-specific process launching (build-tagged files)
 internal/registry  app-type registry and built-ins
 internal/plugins   JS plugin host (goja + capability bridge)
 internal/state     XDG paths, JSON state store
 internal/diag      shared smoke checks (doctor)
-internal/cli       cobra commands
-internal/wailsapp  bindings exposed to the Svelte UI
+internal/cli       cobra commands (lifecycle verbs are daemon clients)
+internal/wailsapp  bindings exposed to the Svelte UI (also a daemon client)
 frontend/          Svelte + TypeScript + Vite + Tailwind
 examples/          sample workspaces and plugins
 tools/             developer tools run via `go run` (not shipped)
 ```
+
+## Daemon session model
+
+dia is tmux-like: a headless daemon owns the workspace runtime and
+supervises app processes; the GUI and CLI are clients over a unix
+socket (named pipe on Windows) in `internal/daemon`. Workspaces survive
+the GUI closing; `start` is idempotent (attach if running), `restart`
+replaces a session, and `dia shutdown` ends the daemon. There is no
+auto-respawn. `internal/cli` and `internal/wailsapp` do not build a
+runtime; `StartWorkspace`/`stop`/`list`/`reconcile` are thin calls over
+the daemon client. The GUI keeps the in-process things (plugin panels,
+grants, themes, workspace files) plus the node that spawns plugin
+windows. `main.go` routes the hidden `serve` verb to run the daemon in
+the foreground (logs to `dia.log` in the state dir).
+
+Protocol files: `message.go` (verbs + request/response envelope),
+`client.go` (dial + Ensure), `server.go` (dispatch + handlers). Keep
+verbs stable; append, never rename. `daemon.Ensure` spawns the daemon
+by relaunching the current executable with `serve`. **Never let a test
+binary be spawned**: `Ensure` refuses executables named `*.test`
+because relaunching `go test` re-runs the suite and fork-bombs the
+machine. Tests must host an in-process `daemon.Server` on the state
+dir socket (see `internal/cli/daemon_test.go` and
+`internal/wailsapp/app_test.go`) so client methods dial instead of
+spawn. The GUI refreshes from the daemon via its `workspace:state-changed`
+event (fsnotify over the state file plus an explicit emit after each
+daemon call). `state.Store.Reload()` exists so the daemon re-reads
+state another client (the GUI, a plugin grant, `dia new --dir`) wrote
+behind its back; call it before mutating.
 
 ## Build, test, lint
 
@@ -114,8 +144,8 @@ Call it after anything that changes grants.
 Capabilities are never granted by being requested. `MergeCapabilities`
 unions and is the wrong tool for deriving grants; use
 `GrantCapabilities(manifest.Capabilities, approved)`, which intersects.
-Discovery, `Enable`, and install all default to the read-only set, and
-only an explicit user action (`dia plugin enable --caps`, or
+Discovery and install default to the read-only set, and only an
+explicit user action (`dia plugin grant --caps`, or
 `App.SetPluginCapabilities`) hands out a mutating one.
 
 Any plugin-supplied path must go through `plugins.ContainedRelPath`.

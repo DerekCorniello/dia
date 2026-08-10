@@ -110,6 +110,10 @@ export function OpenStateFolder() {
   return window['go']['wailsapp']['App']['OpenStateFolder']();
 }
 
+export function OpenWorkspacePluginWindow(arg1, arg2) {
+  return window['go']['wailsapp']['App']['OpenWorkspacePluginWindow'](arg1, arg2);
+}
+
 export function Paths() {
   return window['go']['wailsapp']['App']['Paths']();
 }
@@ -136,6 +140,10 @@ export function RemoveRoot(arg1) {
 
 export function ResetKeybindings() {
   return window['go']['wailsapp']['App']['ResetKeybindings']();
+}
+
+export function RestartWorkspace(arg1) {
+  return window['go']['wailsapp']['App']['RestartWorkspace'](arg1);
 }
 
 export function RevealPath(arg1) {
@@ -172,6 +180,10 @@ export function StartWorkspace(arg1) {
 
 export function Startup(arg1) {
   return window['go']['wailsapp']['App']['Startup'](arg1);
+}
+
+export function StateDir() {
+  return window['go']['wailsapp']['App']['StateDir']();
 }
 
 export function StopAll() {

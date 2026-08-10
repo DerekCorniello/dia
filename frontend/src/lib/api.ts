@@ -6,6 +6,7 @@ import {
   ListWorkspaces as _ListWorkspaces,
   GetWorkspace as _GetWorkspace,
   StartWorkspace as _StartWorkspace,
+  RestartWorkspace as _RestartWorkspace,
   StopWorkspace as _StopWorkspace,
   Reconcile as _Reconcile,
   Doctor as _Doctor,
@@ -26,6 +27,7 @@ import {
   DeleteCustomTheme as _DeleteCustomTheme,
   ListPlugins as _ListPlugins,
   GetPluginCapabilities as _GetPluginCapabilities,
+  OpenWorkspacePluginWindow as _OpenWorkspacePluginWindow,
   InspectPluginSource as _InspectPluginSource,
   InstallPluginFromSource as _InstallPluginFromSource,
   PluginIsUpdatable as _PluginIsUpdatable,
@@ -111,6 +113,7 @@ export const api = {
   listWorkspaces: (): Promise<WorkspaceInfo[]> => array(_ListWorkspaces()),
   getWorkspace: (name: string): Promise<WorkspaceDetail> => _GetWorkspace(name),
   startWorkspace: (name: string): Promise<void> => _StartWorkspace(name),
+  restartWorkspace: (name: string): Promise<void> => _RestartWorkspace(name),
   stopWorkspace: (name: string): Promise<void> => _StopWorkspace(name),
   reconcile: (): Promise<ReconcileInfo> => _Reconcile(),
   doctor: (): Promise<CheckInfo[]> => array(_Doctor()),
@@ -128,6 +131,8 @@ export const api = {
   pluginCall: (id: string, method: string, argsJSON: string): Promise<string> =>
     _PluginCall(id, method, argsJSON),
   getPluginCapabilities: (id: string): Promise<PluginCapabilityInfo> => _GetPluginCapabilities(id),
+  openWorkspacePluginWindow: (name: string, id: string): Promise<number> =>
+    _OpenWorkspacePluginWindow(name, id),
   setPluginCapabilities: (id: string, caps: string[]): Promise<void> =>
     _SetPluginCapabilities(id, caps),
   inspectPluginSource: (source: string, ref: string): Promise<PluginSourceInfo> =>

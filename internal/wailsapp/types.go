@@ -102,7 +102,6 @@ type PluginInfo struct {
 	Author              string            `json:"author"`
 	Source              string            `json:"source"`
 	Dir                 string            `json:"dir"`
-	Enabled             bool              `json:"enabled"`
 	Status              string            `json:"status"`
 	LastError           string            `json:"lastError,omitempty"`
 	GrantedCapabilities []string          `json:"grantedCapabilities"`

@@ -303,12 +303,7 @@
     btn.style.cssText = 'padding:2px 6px;background:#313244;color:#a6adc8;border:0;border-radius:4px;cursor:pointer;font:12px sans-serif;';
     btn.addEventListener('click', function (e) {
       e.stopPropagation();
-      if (window.dia && window.dia.call) {
-        window.dia.call('exec', ['gh', url ? url.split('/').slice(-2).join('/') : '']).catch(function () {});
-        window.open(url, '_blank');
-      } else {
-        window.open(url, '_blank');
-      }
+      window.open(url, '_blank');
     });
     return btn;
   }

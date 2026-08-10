@@ -58,6 +58,8 @@ export function OpenStateFile():Promise<void>;
 
 export function OpenStateFolder():Promise<void>;
 
+export function OpenWorkspacePluginWindow(arg1:string,arg2:string):Promise<number>;
+
 export function Paths():Promise<wailsapp.PathsInfo>;
 
 export function PluginCall(arg1:string,arg2:string,arg3:string):Promise<string>;
@@ -71,6 +73,8 @@ export function Reconcile():Promise<wailsapp.ReconcileInfo>;
 export function RemoveRoot(arg1:string):Promise<void>;
 
 export function ResetKeybindings():Promise<void>;
+
+export function RestartWorkspace(arg1:string):Promise<void>;
 
 export function RevealPath(arg1:string):Promise<void>;
 
@@ -89,6 +93,8 @@ export function StartStateWatcher():Promise<void>;
 export function StartWorkspace(arg1:string):Promise<void>;
 
 export function Startup(arg1:context.Context):Promise<void>;
+
+export function StateDir():Promise<string>;
 
 export function StopAll():Promise<number>;
 

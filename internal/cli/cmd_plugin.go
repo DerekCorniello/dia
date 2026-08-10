@@ -35,8 +35,7 @@ func newPluginCmd() *cobra.Command {
 		newPluginUpdateCmd(),
 		newPluginUninstallCmd(),
 		newPluginInfoCmd(),
-		newPluginEnableCmd(),
-		newPluginDisableCmd(),
+		newPluginGrantCmd(),
 	)
 	return cmd
 }
@@ -52,7 +51,7 @@ func newPluginNewCmd() *cobra.Command {
 			"--type=panel (the default) scaffolds a plugin that renders a list panel in the GUI.\n" +
 			"--type=app scaffolds a plugin that provides a workspace app type: it exports " +
 			"resolveApp(app) and claims a `type:` name workspaces can use. That needs the " +
-			"mutating apps:resolve capability, so grant it with `dia plugin enable <id> " +
+			"mutating apps:resolve capability, so grant it with `dia plugin grant <id> " +
 			"--caps apps:resolve` before the type will resolve.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -103,7 +102,7 @@ func newPluginNewCmd() *cobra.Command {
 				// The type stays unresolvable until the capability is
 				// granted, and there is nothing in the scaffold to hint
 				// at that, so say it here.
-				return out.Printf("grant it with: dia plugin enable %s --caps apps:resolve\n", id)
+				return out.Printf("grant it with: dia plugin grant %s --caps apps:resolve\n", id)
 			}
 			return nil
 		},
@@ -237,7 +236,7 @@ func newPluginUpdateCmd() *cobra.Command {
 		Use:   "update <id>",
 		Short: "Re-clone a git-installed plugin",
 		Long: "Fetch the plugin's recorded git source again and replace the installed copy. " +
-			"Granted capabilities and enabled state are preserved. Plugins installed from a " +
+			"Granted capabilities are preserved. Plugins installed from a " +
 			"local path have no recorded source and cannot be updated this way.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -269,16 +268,16 @@ func newPluginUpdateCmd() *cobra.Command {
 	return cmd
 }
 
-// newPluginEnableCmd persists a plugin's enabled flag and granted
-// capabilities. This is the only way to grant a mutating capability
-// from the CLI: discovery and install grant read-only capabilities
-// only, no matter what the manifest requests.
-func newPluginEnableCmd() *cobra.Command {
+// newPluginGrantCmd persists a plugin's granted capabilities. This is
+// the only way to grant a mutating capability from the CLI: discovery
+// and install grant read-only capabilities only, no matter what the
+// manifest requests.
+func newPluginGrantCmd() *cobra.Command {
 	var caps string
 	cmd := &cobra.Command{
-		Use:   "enable <id>",
-		Short: "Enable a plugin and set its granted capabilities",
-		Long: "Mark a plugin enabled in the persisted state. --caps takes a comma-separated " +
+		Use:   "grant <id>",
+		Short: "Grant capabilities to a plugin",
+		Long: "Persist a capability grant for a plugin. --caps takes a comma-separated " +
 			"capability list; anything the manifest does not request is dropped. Without " +
 			"--caps the plugin keeps the read-only defaults.\n\n" +
 			"Granting a mutating capability lets the plugin change your system: cmd:exec runs " +
@@ -308,7 +307,6 @@ func newPluginEnableCmd() *cobra.Command {
 			if err := s.Store.Mutate(func(d *state.Data) {
 				prev := d.Plugins[id]
 				d.Plugins[id] = state.PluginState{
-					Enabled:             true,
 					GrantedCapabilities: granted,
 					Config:              prev.Config,
 				}
@@ -318,51 +316,15 @@ func newPluginEnableCmd() *cobra.Command {
 
 			out := newOutput(cmd)
 			if out.IsJSON() {
-				return out.JSON(map[string]any{"id": id, "enabled": true, "granted": granted})
+				return out.JSON(map[string]any{"id": id, "granted": granted})
 			}
 			if len(granted) == 0 {
-				return out.Printf("enabled %s with no capabilities\n", id)
+				return out.Printf("granted %s no capabilities\n", id)
 			}
-			return out.Printf("enabled %s with %s\n", id, strings.Join(granted, ", "))
+			return out.Printf("granted %s %s\n", id, strings.Join(granted, ", "))
 		},
 	}
 	cmd.Flags().StringVar(&caps, "caps", "", "comma-separated capabilities to grant")
-	return cmd
-}
-
-func newPluginDisableCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "disable <id>",
-		Short: "Disable a plugin",
-		Long:  "Mark a plugin disabled in the persisted state. Granted capabilities are kept so re-enabling does not re-prompt.",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			id := args[0]
-			s, err := newSetup(flagsFromCmd(cmd).StateDir, cmd.ErrOrStderr())
-			if err != nil {
-				return err
-			}
-			mgr, err := discoveredManager(s)
-			if err != nil {
-				return err
-			}
-			if _, ok := mgr.Get(id); !ok {
-				return &NotFoundError{What: "plugin " + id}
-			}
-			if err := s.Store.Mutate(func(d *state.Data) {
-				prev := d.Plugins[id]
-				prev.Enabled = false
-				d.Plugins[id] = prev
-			}); err != nil {
-				return err
-			}
-			out := newOutput(cmd)
-			if out.IsJSON() {
-				return out.JSON(map[string]any{"id": id, "enabled": false})
-			}
-			return out.Printf("disabled %s\n", id)
-		},
-	}
 	return cmd
 }
 
@@ -527,7 +489,6 @@ func newPluginInfoCmd() *cobra.Command {
 					"manifest":   loaded.Manifest,
 					"dir":        loaded.Dir,
 					"source":     loaded.Source,
-					"enabled":    ps.Enabled,
 					"grants":     ps.GrantedCapabilities,
 					"last_error": loaded.LastError,
 				})
@@ -547,7 +508,6 @@ func newPluginInfoCmd() *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "version: %s\n", loaded.Manifest.Version)
 			fmt.Fprintf(cmd.OutOrStdout(), "ui:      %s (%s)\n", loaded.Manifest.UI.Type, loaded.Manifest.UI.Title)
 			fmt.Fprintf(cmd.OutOrStdout(), "caps:    %s\n", strings.Join(loaded.Manifest.Capabilities, ", "))
-			fmt.Fprintf(cmd.OutOrStdout(), "enabled: %v\n", ps.Enabled)
 			if len(ps.GrantedCapabilities) > 0 {
 				fmt.Fprintf(cmd.OutOrStdout(), "grants:  %s\n", strings.Join(ps.GrantedCapabilities, ", "))
 			}

@@ -26,7 +26,6 @@ function basePlugin(overrides: Record<string, unknown> = {}): PluginInfo {
     author: '',
     source: 'global',
     dir: '/tmp/p1',
-    enabled: true,
     status: 'ok',
     grantedCapabilities: [],
     ui: { type: 'list', title: 'Test Plugin', refreshable: false },
