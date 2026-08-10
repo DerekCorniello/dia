@@ -131,7 +131,14 @@ func gitClone(url, ref, dst string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cloneTimeout)
 	defer cancel()
 
-	args := []string{"clone", "--depth", "1"}
+	args := []string{"clone"}
+	// Shallow clone only for remotes. --depth makes git negotiate a
+	// pack over the upload-pack protocol, which adds nothing for a
+	// file:// source already on disk and is a known intermittent hang
+	// on Windows; a local clone via the filesystem is what we want.
+	if !strings.HasPrefix(url, "file://") {
+		args = append(args, "--depth", "1")
+	}
 	if ref != "" {
 		args = append(args, "--branch", ref)
 	}
