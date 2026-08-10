@@ -41,7 +41,8 @@ management (v0.4.0).
 - Plugins install from a git repository, and update in place
 - Lifecycle hooks (`pre_start`/`post_start`/`pre_stop`/`post_stop`)
 - Session daemon: workspaces survive the GUI closing; `start` attaches
-  to a running instance and `restart` replaces it
+  to a running instance and `restart` replaces it. Heavily inspired by
+  tmux
 - Cross-platform: Linux, macOS, Windows
 - Frameless window with custom title bar (no OS decoration)
 - A scriptable CLI, for scripting and automation
@@ -737,7 +738,8 @@ output.
 
 ### Sessions
 
-Like tmux, a headless daemon owns every running workspace. The first
+dia's session model is heavily inspired by tmux. A headless daemon
+owns every running workspace. The first
 `dia start`, `stop`, `status`, `reconcile`, or GUI session spawns the
 daemon; it survives the client and keeps supervising your apps until
 `dia shutdown` (or you quit the GUI -- the daemon runs on). `start` is
