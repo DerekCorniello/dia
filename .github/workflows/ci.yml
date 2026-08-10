@@ -85,8 +85,12 @@ jobs:
         with:
           version: v1.64.8
 
+      # The per-package timeout must exceed the plugins cloneTimeout
+      # (2m) so a hung git clone surfaces as a clean error instead of
+      # a test panic, and to absorb intermittent temp-dir I/O stalls on
+      # the Windows runner.
       - name: Test
-        run: go test -count=1 -timeout 60s ./...
+        run: go test -count=1 -timeout 10m ./...
 
   build-frontend:
     name: build frontend
