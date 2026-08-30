@@ -28,7 +28,8 @@ management (v0.4.0).
 - JetBrains-style desktop launcher (Wails + Svelte)
 - Workspace definitions in YAML
 - Built-in app types: `local`, `editor`, `terminal`, `service`, `custom`
-  (all spawn a command), `open` and `browser` (open a URL), `gh` and
+  (all spawn a command), `open` and `browser` (open a URL, with
+  owned-profile support for precise window cleanup), `gh` and
   `gh:pr`/`gh:issue`/`gh:checkout`/`gh:repo-clone` (wrappers around
   the `gh` CLI)
 - AI tool detection: claude, copilot, cursor, windsurf, t3code, codex
@@ -46,6 +47,35 @@ management (v0.4.0).
 - Cross-platform: Linux, macOS, Windows
 - Frameless window with custom title bar (no OS decoration)
 - A scriptable CLI, for scripting and automation
+
+The desktop launcher opens as a compact 760x620 window on every OS and can
+still be maximised from its title bar. On Hyprland, add a floating rule if
+your configuration tiles new windows by default:
+
+For the traditional Hyprland configuration format:
+
+```ini
+windowrulev2 = float, class:^(dia)$
+windowrulev2 = center, class:^(dia)$
+```
+
+For Hyprland 0.55+ Lua configuration:
+
+```lua
+hl.window_rule({
+    name = "dia-launcher-float",
+    match = { class = "^(dia)$" },
+    float = true,
+    center = true,
+})
+```
+
+This rule is intentional on Wayland. dia's launcher is an independent normal
+application window (`xdg_toplevel`), not a child dialog or popup. Wayland has
+no compositor-agnostic utility-window hint that asks an independent top-level
+window to float. Child dialogs use native parent relationships, while a
+launcher-style shell surface would require a different layer-shell UI. Use a
+window-manager rule for the normal application window.
 
 ## Install
 
@@ -119,7 +149,7 @@ More examples live in `examples/`.
 | `service`       | `cmd`                    | Label for `local`; renders with a service icon.           |
 | `custom`        | `cmd`                    | Label for `local`; renders with a generic icon.           |
 | `open`          | `url`                    | Opens the URL in the OS default handler.                  |
-| `browser`       | `url` (http/https)        | Opens the URL in the default browser.                     |
+| `browser`       | `url` (http/https)        | Opens the URL in the default browser. When `browser` is set to a named binary (e.g. `zen-browser`, `firefox`), dia launches a dia-owned instance against a managed copy of your real profile so it can close exactly that window on stop -- your logins are preserved. See [Browser owned profiles](#browser-owned-profiles). |
 | `gh`            | `cmd` (subcommand)       | Runs `gh <cmd> <args...>`.                                |
 | `gh:pr`         | -                        | Runs `gh pr <args...>`.                                   |
 | `gh:issue`      | -                        | Runs `gh issue <args...>`.                                |
@@ -131,6 +161,48 @@ All launch types accept `cwd` (path, `~` and `$VAR` expanded) and `env`
 
 Plugins can add more app types; see
 [Plugin-provided app types](#plugin-provided-app-types).
+
+### Browser owned profiles
+
+When a `browser` app names a specific browser binary, dia launches a
+dia-owned instance against a managed copy of your real profile. This
+lets dia close exactly the window it opened on workspace stop, without
+touching your other browser windows.
+
+```yaml
+apps:
+  - type: browser
+    browser: zen-browser
+    new_window: true
+    urls:
+      - https://grafana.internal
+      - https://logs.internal
+```
+
+How it works:
+
+- On first launch, dia clones your real profile (e.g. `~/.zen/`) into a
+  managed seed. This is a one-time cost; on btrfs/APFS reflink clones
+  are near-instant and near-zero space.
+- Each workspace start clones the seed into an ephemeral runtime profile
+  and launches the browser against that clone. Because the clone is a
+  unique profile directory, the browser starts a fresh instance dia owns
+  outright -- a real PID it can kill without disturbing your own windows.
+- On stop, dia closes the owned instance, writes any changes back to the
+  seed (so logins made inside the dia window persist), and removes the
+  ephemeral clone.
+- `dia browser refresh [browser]` re-clones the seed from your current
+  real profile, discarding dia-side state. Run this when you want the dia
+  profile to pick up logins you made in your normal browser.
+
+Firefox and Chromium families are supported. A bare `url` with no
+`browser` set still opens in your default browser as before.
+
+```
+dia browser list            # show dia-managed browser profiles
+dia browser refresh         # refresh all seeded browsers
+dia browser refresh zen-browser  # refresh one browser
+```
 
 Project-local configs are also supported. Drop a `.dia.yaml` at the root of
 your repo and dia will pick it up automatically.
@@ -729,6 +801,8 @@ dia doctor              # smoke checks
 dia plugin list         # list installed plugins
 dia plugin install <path|url>  # install from a directory or git repo
 dia plugin update <id>  # re-clone a git-installed plugin
+dia browser list        # list dia-managed browser profiles
+dia browser refresh     # re-pull browser profiles from real browsers
 dia completion bash     # generate shell completion (bash/zsh/fish/powershell)
 dia --version           # print version and exit
 ```

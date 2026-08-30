@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/DerekCorniello/dia/internal/browser"
 	"github.com/DerekCorniello/dia/internal/config"
 	"github.com/DerekCorniello/dia/internal/platform"
 	"github.com/DerekCorniello/dia/internal/registry"
@@ -38,6 +40,7 @@ type Runtime struct {
 	pf  platform.Platform
 	st  *state.Store
 	reg *registry.Registry
+	br  browser.Surface
 	log *slog.Logger
 }
 
@@ -47,6 +50,11 @@ type Options struct {
 	Store    *state.Store
 	Registry *registry.Registry
 	Logger   *slog.Logger
+	// Browser is the owned-profile browser strategy. When nil, New
+	// constructs the default dedicated-profile surface rooted at the
+	// store's state directory; if that cannot be built, owned-profile
+	// browser apps fail gracefully and legacy launches are unaffected.
+	Browser browser.Surface
 }
 
 // New returns a Runtime. Platform and Store are required; Registry
@@ -60,10 +68,24 @@ func New(opts Options) *Runtime {
 	if reg == nil {
 		reg = registry.New()
 	}
+	br := opts.Browser
+	if br == nil && opts.Store != nil {
+		d, err := browser.NewDedicatedProfile(browser.Options{
+			Platform: opts.Platform,
+			Logger:   log,
+			StateDir: filepath.Dir(opts.Store.Path()),
+		})
+		if err != nil {
+			log.Warn("owned-profile browser support unavailable", "error", err)
+		} else {
+			br = d
+		}
+	}
 	return &Runtime{
 		pf:  opts.Platform,
 		st:  opts.Store,
 		reg: reg,
+		br:  br,
 		log: log,
 	}
 }
@@ -199,6 +221,9 @@ func (r *Runtime) launchOne(app config.App, workspaceName, instanceID string) st
 		)
 		return out
 
+	case registry.ActionBrowser:
+		return r.launchBrowser(action.Browser, workspaceName, instanceID, out)
+
 	case registry.ActionLaunch:
 		// fall through to launch handling below
 	default:
@@ -241,6 +266,87 @@ func (r *Runtime) launchOne(app config.App, workspaceName, instanceID string) st
 		"app", app.Type,
 		"pid", out.PID,
 	)
+	return out
+}
+
+// launchBrowser opens an owned-profile browser URL group through the
+// browser.Surface, recording the returned handle on the AppProcess so
+// Stop can close exactly that window. The PID is mirrored into out.PID
+// so the existing liveness poll (which watches app PIDs) sees the owned
+// browser process like any other app.
+func (r *Runtime) launchBrowser(spec *registry.BrowserSpec, workspaceName, instanceID string, out state.AppProcess) state.AppProcess {
+	if spec == nil {
+		out.Status = state.StatusCrashed
+		out.Err = "browser: nil spec"
+		return out
+	}
+	if r.br != nil {
+		h, err := r.br.Open(browser.OpenOpts{
+			Bin:       spec.Bin,
+			URLs:      spec.URLs,
+			NewWindow: spec.NewWindow,
+			Env:       spec.Env,
+			Instance:  instanceID,
+		})
+		switch {
+		case err == nil:
+			handle := h
+			out.Browser = &handle
+			out.PID = h.PID
+			out.Cmd = spec.Bin
+			if len(spec.URLs) > 0 {
+				out.Cmd = spec.Bin + " " + spec.URLs[0]
+			}
+			r.log.Info("launched browser (owned profile)",
+				"workspace", workspaceName, "instance", instanceID,
+				"bin", spec.Bin, "pid", h.PID)
+			return out
+		case errors.Is(err, browser.ErrUnsupportedBrowser), errors.Is(err, browser.ErrNoSeedProfile):
+			// Not a browser dia can manage, or no profile to clone:
+			// fall through to the plain launch below so it still opens
+			// (without the reliable close).
+			r.log.Info("browser owned-profile unavailable, using plain launch",
+				"workspace", workspaceName, "bin", spec.Bin, "reason", err)
+		default:
+			out.Status = state.StatusCrashed
+			out.Err = err.Error()
+			r.log.Error("browser open", "workspace", workspaceName, "bin", spec.Bin, "error", err)
+			return out
+		}
+	}
+
+	// Fallback: plain command-line launch. No managed close.
+	if spec.Fallback == nil || spec.Fallback.Cmd == "" {
+		out.Status = state.StatusCrashed
+		out.Err = "browser: owned-profile unavailable and no fallback launch"
+		return out
+	}
+	cwd, err := resolvePath(spec.Fallback.Cwd)
+	if err != nil {
+		out.Status = state.StatusCrashed
+		out.Err = "resolve cwd: " + err.Error()
+		return out
+	}
+	handle, err := r.pf.Launch(platform.LaunchOpts{
+		Cmd:  spec.Fallback.Cmd,
+		Args: spec.Fallback.Args,
+		Cwd:  cwd,
+		Env:  spec.Fallback.Env,
+	})
+	if err != nil {
+		out.Status = state.StatusCrashed
+		out.Err = err.Error()
+		r.log.Error("browser fallback launch", "workspace", workspaceName, "bin", spec.Bin, "error", err)
+		return out
+	}
+	out.PID = handle.PID()
+	out.Cmd = spec.Bin
+	if len(spec.URLs) > 0 {
+		out.Cmd = spec.Bin + " " + spec.URLs[0]
+	}
+	r.log.Info("launched browser (plain)",
+		"workspace", workspaceName, "instance", instanceID,
+		"bin", spec.Bin, "pid", out.PID)
 	return out
 }
 
@@ -296,6 +402,14 @@ func (r *Runtime) tickInstance(id string) bool {
 		} else {
 			apps[i].Status = state.StatusStopped
 			appsChanged = true
+			// The owned browser exited on its own (user closed the
+			// window). Close still runs so the ephemeral clone is
+			// removed and, in persist mode, written back to the seed.
+			if apps[i].Browser != nil && r.br != nil {
+				if err := r.br.Close(*apps[i].Browser); err != nil {
+					r.log.Warn("browser cleanup after exit", "id", id, "error", err)
+				}
+			}
 		}
 	}
 	for _, ppid := range inst.PluginPIDs {
@@ -371,7 +485,24 @@ func (r *Runtime) Stop(id string, force bool) error {
 	}
 
 	for i, app := range inst.Apps {
-		if app.PID <= 0 || app.Status != state.StatusRunning {
+		if app.Status != state.StatusRunning {
+			inst.Apps[i].Status = state.StatusStopped
+			continue
+		}
+		// Owned-profile browser apps close through the Surface, which
+		// kills the owned instance and removes (writing back first, in
+		// persist mode) its ephemeral profile. Killing the bare PID
+		// would skip that cleanup.
+		if app.Browser != nil {
+			if r.br != nil {
+				if err := r.br.Close(*app.Browser); err != nil {
+					r.log.Warn("browser close", "instance", id, "error", err)
+				}
+			}
+			inst.Apps[i].Status = state.StatusStopped
+			continue
+		}
+		if app.PID <= 0 {
 			inst.Apps[i].Status = state.StatusStopped
 			continue
 		}
@@ -386,7 +517,8 @@ func (r *Runtime) Stop(id string, force bool) error {
 		// Wait up to GracePeriod for processes to actually exit.
 		deadline := time.Now().Add(GracePeriod)
 		for _, app := range inst.Apps {
-			if app.PID <= 0 {
+			// Browser apps already waited inside Surface.Close.
+			if app.PID <= 0 || app.Browser != nil {
 				continue
 			}
 			for {
@@ -475,6 +607,13 @@ func (r *Runtime) Reconcile() error {
 					anyRunning = true
 				} else {
 					inst.Apps[i].Status = state.StatusStopped
+					// Reap an orphaned browser clone left by a crash
+					// or unclean shutdown.
+					if inst.Apps[i].Browser != nil && r.br != nil {
+						if err := r.br.Close(*inst.Apps[i].Browser); err != nil {
+							r.log.Warn("browser reconcile cleanup", "pid", app.PID, "error", err)
+						}
+					}
 				}
 			}
 			if !anyRunning {

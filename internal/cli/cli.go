@@ -95,6 +95,7 @@ func newRootCmd() *cobra.Command {
 		newShutdownCmd(),
 		newDoctorCmd(),
 		newPluginCmd(),
+		newBrowserCmd(),
 		newServeCmd(),
 	)
 	return cmd

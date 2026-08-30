@@ -151,10 +151,11 @@ func (a *App) GetWorkspace(name string) (*WorkspaceDetail, error) {
 		apps := make([]AppInfo, 0, len(s.Workspace.Apps))
 		for _, app := range s.Workspace.Apps {
 			apps = append(apps, AppInfo{
-				Type: app.Type,
-				Cmd:  app.Cmd,
-				Args: strings.Join(app.Args, " "),
-				URL:  app.Url,
+				Label: app.Label,
+				Type:  app.Type,
+				Cmd:   app.Cmd,
+				Args:  strings.Join(app.Args, " "),
+				URL:   app.Url,
 			})
 		}
 		return &WorkspaceDetail{

@@ -4,6 +4,7 @@
   import type { WorkspaceInfo, PluginInfo } from '../api';
   import WorkspaceEditor from './WorkspaceEditor.svelte';
   import ConfirmDialog from './ConfirmDialog.svelte';
+  import Spinner from './Spinner.svelte';
   import { slide } from 'svelte/transition';
 
   export let workspace: WorkspaceInfo;
@@ -11,7 +12,7 @@
 
   let busy = false;
   let expanded = false;
-  let detail: { app_details: { type: string; cmd: string; args: string; url?: string }[] } | null =
+  let detail: { app_details: { label?: string; type: string; cmd: string; args: string; url?: string }[] } | null =
     null;
   let showEditor = false;
   let showDeleteConfirm = false;
@@ -152,26 +153,26 @@
           type="button"
           on:click={() => (showStopConfirm = true)}
           disabled={busy || $loading}
-          class="rounded bg-error/20 px-2 py-1 text-[10px] font-medium text-error hover:bg-error/30 disabled:opacity-50"
+          class="inline-flex items-center gap-1 rounded bg-error/20 px-2 py-1 text-[10px] font-medium text-error hover:bg-error/30 disabled:opacity-50"
         >
-          stop
+          {#if busy}<Spinner size={10} />{:else}stop{/if}
         </button>
         <button
           type="button"
           on:click={restart}
           disabled={busy || $loading}
-          class="rounded bg-bg-600 px-2 py-1 text-[10px] font-medium text-fg-dim hover:bg-primary/20 hover:text-primary disabled:opacity-50"
+          class="inline-flex items-center gap-1 rounded bg-bg-600 px-2 py-1 text-[10px] font-medium text-fg-dim hover:bg-primary/20 hover:text-primary disabled:opacity-50"
         >
-          {busy ? '...' : 'restart'}
+          {#if busy}<Spinner size={10} />{:else}restart{/if}
         </button>
       {:else}
         <button
           type="button"
           on:click={start}
           disabled={busy || $loading}
-          class="rounded bg-primary/20 px-2 py-1 text-[10px] font-medium text-primary hover:bg-primary/30 disabled:opacity-50"
+          class="inline-flex items-center gap-1 rounded bg-primary/20 px-2 py-1 text-[10px] font-medium text-primary hover:bg-primary/30 disabled:opacity-50"
         >
-          {busy ? '...' : 'start'}
+          {#if busy}<Spinner size={10} />{:else}start{/if}
         </button>
       {/if}
       <button
@@ -201,7 +202,7 @@
           <li class="flex items-baseline gap-2 font-mono">
             <span class="w-16 text-fg-mute shrink-0">{app.type}</span>
             <span class="flex-1 break-all text-fg-dim"
-              >{app.url || app.cmd}{app.args ? ' ' + app.args : ''}</span
+              >{app.label || app.url || app.cmd}{app.args ? ' ' + app.args : ''}</span
             >
           </li>
         {/each}

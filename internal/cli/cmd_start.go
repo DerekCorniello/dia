@@ -193,6 +193,9 @@ func printDryRun(out *output, name, srcPath string, w *config.Workspace, s *setu
 			if action.Launch.Cwd != "" {
 				entry.Cwd = action.Launch.Cwd
 			}
+		case registry.ActionBrowser:
+			entry.Action = "browser (owned profile)"
+			entry.Cmd = strings.TrimSpace(action.Browser.Bin + " " + strings.Join(action.Browser.URLs, " "))
 		}
 		apps = append(apps, entry)
 	}

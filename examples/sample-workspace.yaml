@@ -21,6 +21,21 @@ apps:
   - type: browser
     url: https://example.com
 
+  # Naming a specific browser lets dia open the URLs in a window it owns
+  # and can close exactly -- without touching your other windows -- when
+  # the workspace stops. dia keeps a managed copy of your real profile
+  # (seeded once from it), so your logins are there; anything you do in
+  # the dia window persists to the next launch. Run `dia browser refresh`
+  # to re-pull your current real-browser logins into it.
+  # Firefox and Chromium families are supported. A bare url with no
+  # browser (above) just opens in your default browser as before.
+  # - type: browser
+  #   browser: zen-browser
+  #   new_window: true
+  #   urls:
+  #     - https://grafana.internal
+  #     - https://logs.internal
+
 # Plugins listed here are started when the workspace starts and
 # stopped when it stops. Window-type plugins show an "open" button
 # on the workspace card while the workspace is running.

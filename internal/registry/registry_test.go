@@ -112,15 +112,15 @@ func TestResolve_BrowserWithBrowserLaunchesFirefoxFamilyWithNewTabFlags(t *testi
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if a.Kind != ActionLaunch {
-		t.Fatalf("Kind = %v, want ActionLaunch", a.Kind)
+	if a.Kind != ActionBrowser {
+		t.Fatalf("Kind = %v, want ActionBrowser", a.Kind)
 	}
-	if a.Launch.Cmd != "zen-browser" {
-		t.Errorf("Cmd = %q, want zen-browser", a.Launch.Cmd)
+	if a.Browser.Fallback.Cmd != "zen-browser" {
+		t.Errorf("Cmd = %q, want zen-browser", a.Browser.Fallback.Cmd)
 	}
 	want := []string{"-new-tab", "dc/gh/mux/prs", "-new-tab", "dc/gh/mux/issues"}
-	if strings.Join(a.Launch.Args, ",") != strings.Join(want, ",") {
-		t.Errorf("Args = %v, want %v", a.Launch.Args, want)
+	if strings.Join(a.Browser.Fallback.Args, ",") != strings.Join(want, ",") {
+		t.Errorf("Args = %v, want %v", a.Browser.Fallback.Args, want)
 	}
 }
 
@@ -136,8 +136,8 @@ func TestResolve_BrowserWithBrowserChromiumFamilyUsesPlainArgs(t *testing.T) {
 		t.Fatalf("Resolve: %v", err)
 	}
 	want := []string{"https://a.example.com", "https://b.example.com"}
-	if strings.Join(a.Launch.Args, ",") != strings.Join(want, ",") {
-		t.Errorf("Args = %v, want %v", a.Launch.Args, want)
+	if strings.Join(a.Browser.Fallback.Args, ",") != strings.Join(want, ",") {
+		t.Errorf("Args = %v, want %v", a.Browser.Fallback.Args, want)
 	}
 }
 
@@ -159,13 +159,13 @@ func TestResolve_BrowserNewWindowFirefoxFamilyMultiURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if a.Launch.Cmd != "sh" {
-		t.Fatalf("Cmd = %q, want sh (shell wrapper for the two-call split)", a.Launch.Cmd)
+	if a.Browser.Fallback.Cmd != "sh" {
+		t.Fatalf("Cmd = %q, want sh (shell wrapper for the two-call split)", a.Browser.Fallback.Cmd)
 	}
-	if len(a.Launch.Args) != 2 || a.Launch.Args[0] != "-c" {
-		t.Fatalf("Args = %v, want [-c, <script>]", a.Launch.Args)
+	if len(a.Browser.Fallback.Args) != 2 || a.Browser.Fallback.Args[0] != "-c" {
+		t.Fatalf("Args = %v, want [-c, <script>]", a.Browser.Fallback.Args)
 	}
-	script := a.Launch.Args[1]
+	script := a.Browser.Fallback.Args[1]
 	for _, want := range []string{"-new-window", "dc/gh/mux/prs", "sleep", "-new-tab", "dc/gh/mux/issues"} {
 		if !strings.Contains(script, want) {
 			t.Errorf("script = %q, missing %q", script, want)
@@ -191,12 +191,12 @@ func TestResolve_BrowserNewWindowFirefoxFamilySingleURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if a.Launch.Cmd != "zen-browser" {
-		t.Fatalf("Cmd = %q, want zen-browser", a.Launch.Cmd)
+	if a.Browser.Fallback.Cmd != "zen-browser" {
+		t.Fatalf("Cmd = %q, want zen-browser", a.Browser.Fallback.Cmd)
 	}
 	want := []string{"-new-window", "dc/gh/mux/prs"}
-	if strings.Join(a.Launch.Args, ",") != strings.Join(want, ",") {
-		t.Errorf("Args = %v, want %v", a.Launch.Args, want)
+	if strings.Join(a.Browser.Fallback.Args, ",") != strings.Join(want, ",") {
+		t.Errorf("Args = %v, want %v", a.Browser.Fallback.Args, want)
 	}
 }
 
@@ -213,8 +213,8 @@ func TestResolve_BrowserNewWindowChromiumFamily(t *testing.T) {
 		t.Fatalf("Resolve: %v", err)
 	}
 	want := []string{"--new-window", "https://a.example.com", "https://b.example.com"}
-	if strings.Join(a.Launch.Args, ",") != strings.Join(want, ",") {
-		t.Errorf("Args = %v, want %v", a.Launch.Args, want)
+	if strings.Join(a.Browser.Fallback.Args, ",") != strings.Join(want, ",") {
+		t.Errorf("Args = %v, want %v", a.Browser.Fallback.Args, want)
 	}
 }
 
@@ -231,8 +231,8 @@ func TestResolve_BrowserUrlAndUrlsCombine(t *testing.T) {
 		t.Fatalf("Resolve: %v", err)
 	}
 	want := []string{"-new-tab", "https://first.example.com", "-new-tab", "https://second.example.com"}
-	if strings.Join(a.Launch.Args, ",") != strings.Join(want, ",") {
-		t.Errorf("Args = %v, want %v", a.Launch.Args, want)
+	if strings.Join(a.Browser.Fallback.Args, ",") != strings.Join(want, ",") {
+		t.Errorf("Args = %v, want %v", a.Browser.Fallback.Args, want)
 	}
 }
 
@@ -346,5 +346,42 @@ func TestResolve_UnknownType(t *testing.T) {
 	r := New()
 	if _, err := r.Resolve(config.App{Type: "nope"}); err == nil {
 		t.Errorf("expected error for unknown type")
+	}
+}
+
+func TestResolveBrowserOwnedProfile(t *testing.T) {
+	r := New()
+	// A bare url with no browser named still opens in the OS handler.
+	bare, err := r.Resolve(config.App{Type: "browser", Url: "https://a"})
+	if err != nil {
+		t.Fatalf("bare resolve: %v", err)
+	}
+	if bare.Kind != ActionOpenURL {
+		t.Fatalf("bare Kind = %v, want ActionOpenURL", bare.Kind)
+	}
+
+	// A named browser -> ActionBrowser (owned profile) carrying both the
+	// spec and a plain-launch fallback.
+	a, err := r.Resolve(config.App{
+		Type: "browser", Browser: "zen-browser",
+		Urls: []string{"https://a", "https://b"}, NewWindow: true,
+	})
+	if err != nil {
+		t.Fatalf("owned resolve: %v", err)
+	}
+	if a.Kind != ActionBrowser {
+		t.Fatalf("Kind = %v, want ActionBrowser", a.Kind)
+	}
+	if a.Browser == nil {
+		t.Fatal("Browser spec is nil")
+	}
+	if a.Browser.Bin != "zen-browser" || !a.Browser.NewWindow {
+		t.Errorf("unexpected spec: %+v", a.Browser)
+	}
+	if len(a.Browser.URLs) != 2 {
+		t.Errorf("URLs = %v", a.Browser.URLs)
+	}
+	if a.Browser.Fallback == nil || a.Browser.Fallback.Cmd == "" {
+		t.Error("expected a fallback command for unmanaged-browser degradation")
 	}
 }

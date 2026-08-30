@@ -10,6 +10,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
 
 	"github.com/DerekCorniello/dia/internal/cli"
 	"github.com/DerekCorniello/dia/internal/wailsapp"
@@ -42,10 +43,17 @@ func main() {
 
 	app := wailsapp.New()
 	err := wails.Run(&options.App{
-		Title:     "dia",
-		Width:     1024,
-		Height:    768,
+		Title: "dia",
+		// Keep the launcher compact at startup. Users can still maximise it
+		// from the custom title bar when they want a larger workspace view.
+		Width:     760,
+		Height:    620,
 		Frameless: true,
+		Linux: &linux.Options{
+			// This becomes the stable application id/class used by Wayland
+			// compositors, including Hyprland window rules.
+			ProgramName: "dia",
+		},
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

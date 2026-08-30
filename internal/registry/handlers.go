@@ -69,9 +69,19 @@ func resolveBrowser(app config.App) (Action, error) {
 		}
 		return Action{Kind: ActionOpenURL, URL: urls[0]}, nil
 	}
+	// A named browser is opened under a dia-managed profile so the
+	// window can be closed precisely on stop, with the plain
+	// command-line launch carried as a fallback for browsers dia cannot
+	// manage. The runtime decides which to use.
 	cmd, args := browserLaunch(app.Browser, urls, app.NewWindow)
-	opts := buildLaunch(app, cmd, args...)
-	return Action{Kind: ActionLaunch, Launch: &opts}, nil
+	fallback := buildLaunch(app, cmd, args...)
+	return Action{Kind: ActionBrowser, Browser: &BrowserSpec{
+		Bin:       app.Browser,
+		URLs:      urls,
+		NewWindow: app.NewWindow,
+		Env:       envMapToSlice(app.Env),
+		Fallback:  &fallback,
+	}}, nil
 }
 
 // collectURLs merges an app's singular Url and its Urls list, in that

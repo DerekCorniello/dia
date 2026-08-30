@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -25,6 +24,7 @@ var ErrNoDaemon = errors.New("no daemon is running")
 type Client struct {
 	conn   net.Conn
 	nextID int64
+	br     *bufio.Reader
 }
 
 // Dial connects to the daemon socket for the given state dir. It does
@@ -41,6 +41,7 @@ func dialPath(path string) (*Client, error) {
 	return &Client{
 		conn:   conn,
 		nextID: 1,
+		br:     bufio.NewReader(conn),
 	}, nil
 }
 
@@ -57,7 +58,7 @@ func (c *Client) Do(method string, params, result any) error {
 		return fmt.Errorf("send %s: %w", method, err)
 	}
 
-	line, err := readLine(c.conn)
+	line, err := c.readLine()
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
 	}
@@ -79,12 +80,8 @@ func (c *Client) Do(method string, params, result any) error {
 	return nil
 }
 
-func readLine(r io.Reader) ([]byte, error) {
-	br, ok := r.(*bufio.Reader)
-	if !ok {
-		br = bufio.NewReader(r)
-	}
-	return br.ReadBytes('\n')
+func (c *Client) readLine() ([]byte, error) {
+	return c.br.ReadBytes('\n')
 }
 
 // EnsureOpts controls Ensure's dial-and-maybe-spawn behavior.

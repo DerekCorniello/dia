@@ -9,8 +9,8 @@
     <div
       class="pointer-events-auto flex items-center gap-2 rounded px-3 py-1.5 text-xs shadow {t.kind ===
       'ok'
-        ? 'border-l-2 border-success bg-success/15 text-success'
-        : 'border-l-2 border-error bg-error/15 text-error'}"
+        ?       'border-l-2 border-green-500 bg-green-500 text-white'
+        : 'border-l-2 border-red-500 bg-red-500 text-white'}"
     >
       <span class="break-all">{t.text}</span>
       <button

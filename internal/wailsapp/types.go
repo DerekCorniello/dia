@@ -18,10 +18,11 @@ type WorkspaceInfo struct {
 // list. Cmd is the executable (or URL for type=open/browser); Args is
 // the joined argument string.
 type AppInfo struct {
-	Type string `json:"type"`
-	Cmd  string `json:"cmd"`
-	Args string `json:"args"`
-	URL  string `json:"url,omitempty"`
+	Label string `json:"label,omitempty"`
+	Type  string `json:"type"`
+	Cmd   string `json:"cmd"`
+	Args  string `json:"args"`
+	URL   string `json:"url,omitempty"`
 }
 
 // WorkspaceDetail is everything the UI needs to render a workspace

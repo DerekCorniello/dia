@@ -22,14 +22,37 @@ const (
 	ActionLaunch ActionKind = iota
 	// ActionOpenURL asks the OS to open URL via platform.OpenURL.
 	ActionOpenURL
+	// ActionBrowser opens a URL group under an owned browser profile
+	// via the runtime's browser.Surface, so it can be closed precisely
+	// on stop. Set when a "browser" app requests profile mirror/persist.
+	ActionBrowser
 )
 
+// BrowserSpec is the plan for an owned-profile browser launch. It is
+// plain data so the registry has no dependency on the browser package;
+// the runtime translates it into a browser.OpenOpts.
+//
+// Fallback is the plain command-line launch to use when the
+// owned-profile path is not available for this browser (an unsupported
+// binary, or no profile found). The runtime tries the owned launch first
+// and falls back to this, so a browser dia cannot manage still opens --
+// just without the reliable close.
+type BrowserSpec struct {
+	Bin       string
+	URLs      []string
+	NewWindow bool
+	// Env is honored by both the owned and the fallback launch.
+	Env      []string
+	Fallback *platform.LaunchOpts
+}
+
 // Action is the concrete plan the runtime should execute for an app.
-// Exactly one of Launch or URL is set, depending on Kind.
+// Exactly one of Launch, URL, or Browser is set, depending on Kind.
 type Action struct {
-	Kind   ActionKind
-	Launch *platform.LaunchOpts
-	URL    string
+	Kind    ActionKind
+	Launch  *platform.LaunchOpts
+	URL     string
+	Browser *BrowserSpec
 }
 
 // Handler resolves an app's config to an Action or an error.

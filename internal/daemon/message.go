@@ -7,6 +7,7 @@
 package daemon
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -60,4 +61,12 @@ func writeRequest(w io.Writer, id int64, method string, params any) error {
 
 func writeResponse(w io.Writer, r response) error {
 	return json.NewEncoder(w).Encode(r)
+}
+
+func readLine(r io.Reader) ([]byte, error) {
+	br, ok := r.(*bufio.Reader)
+	if !ok {
+		br = bufio.NewReader(r)
+	}
+	return br.ReadBytes('\n')
 }

@@ -27,12 +27,39 @@ const (
 )
 
 // AppProcess describes a single spawned process tracked by dia.
+//
+// Browser is set only for "browser" apps launched under an owned
+// profile (the dedicated-profile strategy). For those, teardown goes
+// through the browser.Surface using Browser rather than killing PID
+// directly, because the meaningful thing to clean up is the owned
+// browser instance and its ephemeral profile, not a bare PID.
 type AppProcess struct {
-	Type   string `json:"type"`
-	Cmd    string `json:"cmd"`
-	PID    int    `json:"pid"`
-	Status Status `json:"status"`
-	Err    string `json:"err,omitempty"`
+	Type    string         `json:"type"`
+	Cmd     string         `json:"cmd"`
+	PID     int            `json:"pid"`
+	Status  Status         `json:"status"`
+	Err     string         `json:"err,omitempty"`
+	Browser *BrowserHandle `json:"browser,omitempty"`
+}
+
+// BrowserHandle identifies a browser URL group dia opened under an
+// owned profile, so it can be closed later -- even across a dia
+// restart. It is self-describing: Strategy records which
+// browser.Surface minted it, so teardown always uses the mechanism
+// that actually opened the window.
+type BrowserHandle struct {
+	// Strategy is the browser.Surface identifier (e.g.
+	// "dedicated-profile").
+	Strategy string `json:"strategy"`
+	// PID is the owned browser process. Because the launch used a
+	// unique profile, this is a fresh instance dia owns and may kill.
+	PID int `json:"pid"`
+	// ProfileDir is the ephemeral clone that backs this launch. It is
+	// removed on close.
+	ProfileDir string `json:"profile_dir"`
+	// SeedDir is the writeback target: the dia-managed seed profile the
+	// runtime profile is copied back to on close.
+	SeedDir string `json:"seed_dir,omitempty"`
 }
 
 // Instance is a running workspace: its generated ID, the workspace it
