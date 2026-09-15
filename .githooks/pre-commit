@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# dia builds with Go 1.24: the Wails build breaks under 1.27 and the
+# pinned golangci-lint cannot read 1.27 export data, so every gate must
+# run under the same toolchain. DIA_GO overrides; otherwise prefer a
+# go1.24 toolchain when one is installed.
+if [ -n "${DIA_GO:-}" ]; then
+	GO_BIN="$DIA_GO"
+elif [ -x "$HOME/go1.24/bin/go" ]; then
+	GO_BIN="$HOME/go1.24/bin/go"
+else
+	GO_BIN="$(command -v go)"
+fi
+export PATH="$(dirname "$GO_BIN"):$PATH"
+echo "=== pre-commit: go $($GO_BIN version) ==="
+
 echo "=== pre-commit: gofmt ==="
 unformatted=$(gofmt -l .)
 if [ -n "$unformatted" ]; then
