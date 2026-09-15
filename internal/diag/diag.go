@@ -133,6 +133,13 @@ func permissionCheck(name, path string, want os.FileMode, missingDetail string) 
 	if err != nil {
 		return Check{Name: name, Status: "warn", Detail: missingDetail}
 	}
+	if runtime.GOOS == "windows" {
+		// Unix permission bits are not enforced on Windows (Go
+		// always reports 0777/0666); access is governed by ACLs,
+		// and the daemon pipe gets an owner-only descriptor at
+		// creation. Reporting fail here would be permanently red.
+		return Check{Name: name, Status: "ok", Detail: path + " (ACLs apply)"}
+	}
 	if info.Mode().Perm()&0o077 != 0 {
 		return Check{Name: name, Status: "fail", Detail: fmt.Sprintf("permissions %o; want %o or stricter", info.Mode().Perm(), want.Perm())}
 	}

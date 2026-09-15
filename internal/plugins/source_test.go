@@ -166,6 +166,24 @@ func gitRepo(t *testing.T, manifest string) string {
 
 const gitManifest = `{"id":"from-git","name":"From Git","version":"0.1.0","ui":{"type":"list","title":"T"}}`
 
+func TestLocalDirFromFileURL(t *testing.T) {
+	dir := t.TempDir()
+	if got, ok := localDirFromFileURL("file://" + filepath.ToSlash(dir)); !ok || got != dir {
+		t.Errorf("local file URL: got %q, %v; want %q, true", got, ok, dir)
+	}
+	for _, bad := range []string{
+		"https://github.com/o/r",
+		"file://somehost/share/repo",
+		"file:///does/not/exist-dia-test",
+		"/tmp",
+		"",
+	} {
+		if got, ok := localDirFromFileURL(bad); ok {
+			t.Errorf("%q unexpectedly resolved to %q", bad, got)
+		}
+	}
+}
+
 func TestInstallFrom_GitClone(t *testing.T) {
 	url := gitRepo(t, gitManifest)
 	mgr, err := NewManager(t.TempDir(), &fakeHost{})

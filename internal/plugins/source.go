@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -128,6 +130,14 @@ func gitClone(url, ref, dst string) error {
 	if _, err := exec.LookPath("git"); err != nil {
 		return errors.New("git is required to install a plugin from a URL, but it was not found on PATH")
 	}
+	// A hostless file:// URL that resolves to a local directory is
+	// cloned as a plain path. The file:// transport spawns upload-pack
+	// negotiation even for repositories already on disk, which is a
+	// known intermittent hang on Windows; a plain path uses git's
+	// direct filesystem copy instead. Ref selection still works.
+	if dir, ok := localDirFromFileURL(url); ok {
+		url = dir
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), cloneTimeout)
 	defer cancel()
 
@@ -161,4 +171,30 @@ func gitClone(url, ref, dst string) error {
 		return fmt.Errorf("git clone %s: %v\n%s", url, err, msg)
 	}
 	return nil
+}
+
+// localDirFromFileURL converts a hostless file:// URL that points at an
+// existing local directory into the plain filesystem path. Callers
+// clone the path directly instead of going through the file://
+// transport.
+func localDirFromFileURL(raw string) (string, bool) {
+	if !strings.HasPrefix(raw, "file://") {
+		return "", false
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", false
+	}
+	if u.Host != "" && u.Host != "localhost" {
+		return "", false
+	}
+	p := u.Path
+	if runtime.GOOS == "windows" && len(p) >= 3 && p[0] == '/' && p[2] == ':' {
+		p = strings.TrimPrefix(p, "/")
+	}
+	dir := filepath.FromSlash(p)
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return "", false
+	}
+	return dir, true
 }

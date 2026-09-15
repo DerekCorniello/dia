@@ -88,10 +88,15 @@ func zenSeedRoot(t *testing.T, home string) string {
 
 // writeZenSeed builds a minimal but realistic Zen profile tree under
 // home and returns the home dir. It includes a cache dir that must be
-// excluded and a login-critical file that must survive.
+// excluded and a login-critical file that must survive. OS profile
+// roots are redirected into the temp home first: Windows resolves
+// them via APPDATA, so without this the tests would read (and in the
+// seed-creation path, write) the real user profile.
 func writeZenSeed(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
+	t.Setenv("APPDATA", filepath.Join(home, "appdata"))
+	t.Setenv("LOCALAPPDATA", filepath.Join(home, "localappdata"))
 	root := zenSeedRoot(t, home)
 	prof := filepath.Join(root, "abcd1234.Default (release)")
 	mustMkdir(t, prof)
@@ -349,8 +354,11 @@ func TestUnsupportedBrowser(t *testing.T) {
 }
 
 func TestMissingSeedProfile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("APPDATA", filepath.Join(home, "appdata"))
+	t.Setenv("LOCALAPPDATA", filepath.Join(home, "localappdata"))
 	pf := newFakePlatform()
-	d := newSurface(t, t.TempDir(), pf) // empty home, no ~/.zen
+	d := newSurface(t, home, pf) // empty home, no seed anywhere
 	_, err := d.Open(OpenOpts{Bin: "zen-browser", URLs: []string{"https://x"}})
 	if err == nil {
 		t.Fatal("expected ErrNoSeedProfile")
