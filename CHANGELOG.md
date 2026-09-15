@@ -5,7 +5,53 @@ All notable changes to dia are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.6.0] - 2026-09-14
+
+### Added
+
+- **Owned browser profiles.** A `browser` app that names a binary
+  (e.g. `zen-browser`) now launches against a dia-managed copy of
+  your real profile, so `stop` closes exactly the window dia opened.
+  The copy is seeded once, cloned per launch, and written back on
+  close. `dia browser status` shows seed and clone disk usage, and
+  `dia browser refresh` re-pulls your real-browser logins.
+- **Degraded status.** A workspace where some apps fail now reports
+  `degraded` instead of `started`, naming the failed app on the card.
+  A browser that falls back to a plain launch carries a visible note
+  that dia cannot close it on stop.
+- **Plugin window placement.** Window plugins advertise their own
+  Wayland app-id (`dia-plugin-<id>`), so launcher float rules no
+  longer catch them. `ui.window_mode` (`tiling`, default, or
+  `floating`) requests placement per plugin; Hyprland is enforced
+  via hyprctl.
+- **`dia backup`.** Archives workspace YAMLs and `state.json`
+  (+ `.bak`) to a tar.gz. Browser seeds stay out unless
+  `--include-seeds` is passed.
+- **Daemon disconnect banner.** The GUI now says when the daemon is
+  unreachable instead of showing an empty list.
+- **Demo video** (`examples/demo.mp4`), embedded in the README.
+- **Threat model and compatibility policy** (`docs/THREAT_MODEL.md`,
+  `docs/COMPATIBILITY.md`).
+
+### Changed
+
+- The workspace editor drives its type picker from registry
+  descriptors instead of a hardcoded list, round-trips all 15 app
+  types losslessly, warns that saving rewrites formatting, and keeps
+  a `.bak` beside every file it writes.
+- `doctor` now checks state parsing, stale sockets, disk space, and
+  browser profile permissions.
+- List endpoints paginate (`limit`/`offset`) and stay under a payload
+  budget so large collections cannot crash the UI.
+
+### Fixed
+
+- Concurrent GUI refreshes corrupted the daemon socket protocol;
+  client calls are now serialized and covered by a regression test.
+- Degraded workspaces could not be stopped, restarted, or watched;
+  all lifecycle decisions share one liveness check, also covered.
+- The pre-commit hook pins Go 1.24 so gates run under the toolchain
+  the project builds with.
 
 ## [0.5.0] - 2026-08-09
 
