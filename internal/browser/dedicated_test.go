@@ -70,15 +70,32 @@ func (f *fakePlatform) lastLaunch(t *testing.T) platform.LaunchOpts {
 	return f.launches[len(f.launches)-1]
 }
 
+// zenSeedRoot returns the directory the adapter actually searches for
+// Zen profiles under home. The tests run against the real lookup path
+// on every OS instead of assuming the Linux layout.
+func zenSeedRoot(t *testing.T, home string) string {
+	t.Helper()
+	ad, err := adapterFor("zen-browser", home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, ok := ad.(*geckoAdapter)
+	if !ok {
+		t.Fatal("zen-browser is not a gecko adapter")
+	}
+	return g.geckoRoot()
+}
+
 // writeZenSeed builds a minimal but realistic Zen profile tree under
 // home and returns the home dir. It includes a cache dir that must be
 // excluded and a login-critical file that must survive.
 func writeZenSeed(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
-	prof := filepath.Join(home, ".zen", "abcd1234.Default (release)")
+	root := zenSeedRoot(t, home)
+	prof := filepath.Join(root, "abcd1234.Default (release)")
 	mustMkdir(t, prof)
-	mustWrite(t, filepath.Join(home, ".zen", "profiles.ini"), ""+
+	mustWrite(t, filepath.Join(root, "profiles.ini"), ""+
 		"[Profile0]\nName=Default (release)\nIsRelative=1\nPath=abcd1234.Default (release)\nDefault=1\n\n"+
 		"[General]\nStartWithLastProfile=1\nVersion=2\n\n"+
 		"[Install12345]\nDefault=abcd1234.Default (release)\nLocked=1\n")

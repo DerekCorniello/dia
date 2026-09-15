@@ -11,7 +11,7 @@ import (
 // ProcessIdentity returns the kernel creation time together with the PID.
 // Windows exposes this through the process handle, and the creation time
 // changes whenever the system recycles a PID.
-func (winPlatform) ProcessIdentity(pid int) (string, error) {
+func (*winPlatform) ProcessIdentity(pid int) (string, error) {
 	if pid <= 0 {
 		return "", nil
 	}

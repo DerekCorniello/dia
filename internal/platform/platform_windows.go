@@ -87,7 +87,7 @@ func (p *winPlatform) Launch(opts LaunchOpts) (ProcessHandle, error) {
 	return &winProcess{cmd: cmd, pid: pid, job: job, done: done}, nil
 }
 
-func (winPlatform) IsRunning(pid int) (bool, error) {
+func (*winPlatform) IsRunning(pid int) (bool, error) {
 	if pid <= 0 {
 		return false, nil
 	}
@@ -181,17 +181,17 @@ func createProcessJob(pid uint32) (windows.Handle, error) {
 	return job, nil
 }
 
-func (winPlatform) OpenURL(url string) error {
+func (*winPlatform) OpenURL(url string) error {
 	// The leading empty "" is the window title; required so cmd
 	// does not try to interpret the URL as the title.
 	return runDetached("cmd", "/c", "start", "", url)
 }
 
-func (winPlatform) RevealInFileManager(path string) error {
+func (*winPlatform) RevealInFileManager(path string) error {
 	return runDetached("explorer", path)
 }
 
-func (winPlatform) OpenFile(path string) error {
+func (*winPlatform) OpenFile(path string) error {
 	return runDetached("cmd", "/c", "start", "", path)
 }
 

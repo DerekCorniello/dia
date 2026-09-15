@@ -8,8 +8,21 @@ import (
 	"testing"
 )
 
+// shortTempDir returns a temp dir under /tmp instead of the OS default.
+// t.TempDir on macOS lives under /var/folders with a long per-test
+// name, which blows past the 104-byte sun_path limit for unix sockets.
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "diasock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
 func TestListenSocketProtectsAndRefusesLiveSocket(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "serve.sock")
+	path := filepath.Join(shortTempDir(t), "serve.sock")
 	ln, err := listenSocket(path)
 	if err != nil {
 		t.Fatal(err)

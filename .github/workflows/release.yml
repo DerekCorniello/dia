@@ -33,12 +33,8 @@ jobs:
           go mod tidy
           git diff --exit-code -- go.mod go.sum
 
-      - name: Go checks
-        run: |
-          go vet ./...
-          go test -count=1 -p 1 -timeout 10m ./...
-          go test -race -count=1 -p 1 -timeout 10m ./internal/...
-
+      # Frontend first: main.go embeds frontend/dist, so vet and
+      # tests fail on a fresh checkout until the frontend is built.
       - name: Frontend checks
         working-directory: frontend
         run: |
@@ -48,6 +44,12 @@ jobs:
           npm run format:check
           npm test -- --run
           npm run build
+
+      - name: Go checks
+        run: |
+          go vet ./...
+          go test -count=1 -p 1 -timeout 10m ./...
+          go test -race -count=1 -p 1 -timeout 10m ./internal/...
 
   build:
     name: build (${{ matrix.os }}/${{ matrix.arch }})
