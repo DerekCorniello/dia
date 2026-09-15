@@ -55,10 +55,7 @@ import { wailsapp } from '../../wailsjs/go/models';
 // Resolve optional bindings at call time so partial test mocks work.
 async function optionalCall<T>(name: string, fallback: T): Promise<T> {
   try {
-    const mod = bindings as unknown as Record<
-      string,
-      (() => Promise<T>) | undefined
-    >;
+    const mod = bindings as unknown as Record<string, (() => Promise<T>) | undefined>;
     const fn = mod[name];
     if (typeof fn === 'function') return await fn();
   } catch {

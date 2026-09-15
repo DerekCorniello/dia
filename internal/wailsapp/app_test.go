@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -15,12 +16,23 @@ import (
 	"github.com/DerekCorniello/dia/internal/daemon"
 )
 
-// withTempXDG sets XDG_CONFIG_HOME and XDG_STATE_HOME to t.TempDir
+// withTempXDG sets XDG_CONFIG_HOME and XDG_STATE_HOME to a temp dir
 // for the duration of the test so config/state resolve to a clean
-// scratch space.
+// scratch space. The dir lives directly under /tmp (except Windows)
+// because tests that host a daemon bind serve.sock inside it, and
+// t.TempDir on macOS nests under /var/folders with names long enough
+// to blow past the 104-byte sun_path limit.
 func withTempXDG(t *testing.T) {
 	t.Helper()
 	tmp := t.TempDir()
+	if runtime.GOOS != "windows" {
+		short, err := os.MkdirTemp("/tmp", "dia-xdg")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(short) })
+		tmp = short
+	}
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 	t.Setenv("XDG_STATE_HOME", tmp)
 }
