@@ -168,7 +168,8 @@ const gitManifest = `{"id":"from-git","name":"From Git","version":"0.1.0","ui":{
 
 func TestLocalDirFromFileURL(t *testing.T) {
 	dir := t.TempDir()
-	if got, ok := localDirFromFileURL("file://" + filepath.ToSlash(dir)); !ok || got != dir {
+	// EqualFold: URL parsing lowercases the drive letter on Windows.
+	if got, ok := localDirFromFileURL("file://" + filepath.ToSlash(dir)); !ok || !strings.EqualFold(got, dir) {
 		t.Errorf("local file URL: got %q, %v; want %q, true", got, ok, dir)
 	}
 	for _, bad := range []string{

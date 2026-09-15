@@ -185,12 +185,22 @@ func localDirFromFileURL(raw string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	if u.Host != "" && u.Host != "localhost" {
-		return "", false
+	host, p := u.Host, u.Path
+	if runtime.GOOS == "windows" {
+		// file://C:/... parses the drive letter as the URL host,
+		// so reattach it before treating anything as remote. A
+		// single-character host is never real here, and the Stat
+		// below rejects anything bogus.
+		if h := u.Hostname(); len(h) == 1 && u.Port() == "" && strings.HasPrefix(u.Path, "/") {
+			p = h + ":" + u.Path
+			host = ""
+		}
+		if len(p) >= 3 && p[0] == '/' && p[2] == ':' {
+			p = strings.TrimPrefix(p, "/")
+		}
 	}
-	p := u.Path
-	if runtime.GOOS == "windows" && len(p) >= 3 && p[0] == '/' && p[2] == ':' {
-		p = strings.TrimPrefix(p, "/")
+	if host != "" && host != "localhost" {
+		return "", false
 	}
 	dir := filepath.FromSlash(p)
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
