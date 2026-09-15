@@ -3,9 +3,13 @@
 package daemon
 
 import (
+	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
+	"time"
 )
 
 // socketName is the basename of the daemon's unix socket, kept under
@@ -28,12 +32,31 @@ func dialSocket(path string) (net.Conn, error) {
 // listenSocket binds the unix socket, removing any stale file first
 // so a crash that left the path behind does not prevent a restart.
 func listenSocket(path string) (net.Listener, error) {
-	// Best-effort: if the file exists it is either a live socket (see
-	// below) or stale. Unlink is only safe immediately before bind;
-	// the daemon is single-instance per state dir, so a race with a
-	// second daemon is acceptable.
-	_ = os.Remove(path)
-	return net.Listen("unix", path)
+	if _, err := os.Stat(path); err == nil {
+		conn, dialErr := net.DialTimeout("unix", path, 100*time.Millisecond)
+		if dialErr == nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("daemon already running")
+		}
+		if !errors.Is(dialErr, syscall.ECONNREFUSED) && !errors.Is(dialErr, syscall.ENOENT) {
+			return nil, fmt.Errorf("probe existing socket: %w", dialErr)
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		_ = ln.Close()
+		_ = os.Remove(path)
+		return nil, err
+	}
+	return ln, nil
 }
 
 // removeSocket cleans up the socket file on server exit.

@@ -154,16 +154,22 @@ func (r *Runtime) Start(w *config.Workspace, src config.Source) (*state.Instance
 	}
 	inst.Apps = apps
 
-	// All apps failed -> the workspace did not actually start.
-	allFailed := true
+	// Degraded: some apps failed, or a running app carries a
+	// caveat (e.g. unmanaged browser fallback). Crashed: none running.
+	runningCount := 0
+	noted := false
 	for _, a := range apps {
 		if a.Status == state.StatusRunning {
-			allFailed = false
-			break
+			runningCount++
+			if a.Note != "" {
+				noted = true
+			}
 		}
 	}
-	if allFailed {
+	if runningCount == 0 && len(apps) > 0 {
 		inst.Status = state.StatusCrashed
+	} else if (runningCount > 0 && runningCount < len(apps)) || noted {
+		inst.Status = state.StatusDegraded
 	}
 
 	if err := r.st.Mutate(func(d *state.Data) {
@@ -178,10 +184,9 @@ func (r *Runtime) Start(w *config.Workspace, src config.Source) (*state.Instance
 		r.log.Warn("post_start hook failed", "workspace", w.Name, "error", err)
 	}
 
-	if inst.Status == state.StatusRunning {
+	if inst.Status.Live() {
 		go r.watchInstance(inst.ID)
 	}
-
 	return &inst, nil
 }
 
@@ -213,11 +218,10 @@ func (r *Runtime) launchOne(app config.App, workspaceName, instanceID string) st
 		// Record the URL in the Cmd field so the user can see what
 		// was opened in the UI and the state file.
 		out.Cmd = action.URL
-		r.log.Info("opened url",
+		r.log.Info("opened URL",
 			"workspace", workspaceName,
 			"instance", instanceID,
 			"app", app.Type,
-			"url", action.URL,
 		)
 		return out
 
@@ -260,6 +264,7 @@ func (r *Runtime) launchOne(app config.App, workspaceName, instanceID string) st
 	}
 
 	out.PID = handle.PID()
+	r.captureIdentity(&out)
 	r.log.Info("launched",
 		"workspace", workspaceName,
 		"instance", instanceID,
@@ -293,6 +298,7 @@ func (r *Runtime) launchBrowser(spec *registry.BrowserSpec, workspaceName, insta
 			handle := h
 			out.Browser = &handle
 			out.PID = h.PID
+			r.captureIdentity(&out)
 			out.Cmd = spec.Bin
 			if len(spec.URLs) > 0 {
 				out.Cmd = spec.Bin + " " + spec.URLs[0]
@@ -340,14 +346,41 @@ func (r *Runtime) launchBrowser(spec *registry.BrowserSpec, workspaceName, insta
 		return out
 	}
 	out.PID = handle.PID()
+	r.captureIdentity(&out)
 	out.Cmd = spec.Bin
 	if len(spec.URLs) > 0 {
 		out.Cmd = spec.Bin + " " + spec.URLs[0]
 	}
-	r.log.Info("launched browser (plain)",
+	// Never silently downgrade: a plain launch cannot be closed
+	// precisely on stop, so the app carries a visible caveat.
+	out.Note = "plain launch; dia cannot close this window on stop"
+	r.log.Warn("launched browser (plain fallback)",
 		"workspace", workspaceName, "instance", instanceID,
 		"bin", spec.Bin, "pid", out.PID)
 	return out
+}
+
+func (r *Runtime) captureIdentity(app *state.AppProcess) {
+	if p, ok := r.pf.(interface{ ProcessIdentity(int) (string, error) }); ok {
+		if identity, err := p.ProcessIdentity(app.PID); err == nil {
+			app.Identity = identity
+			if app.Browser != nil {
+				app.Browser.Identity = identity
+			}
+		}
+	}
+}
+
+func (r *Runtime) ownsProcess(app state.AppProcess) bool {
+	if app.Identity == "" {
+		return true
+	}
+	p, ok := r.pf.(interface{ ProcessIdentity(int) (string, error) })
+	if !ok {
+		return false
+	}
+	identity, err := p.ProcessIdentity(app.PID)
+	return err == nil && identity == app.Identity
 }
 
 // watchInstance polls the instance's apps and plugin windows until all
@@ -381,7 +414,7 @@ func (r *Runtime) watchInstance(id string) {
 func (r *Runtime) tickInstance(id string) bool {
 	snap := r.st.Snapshot()
 	inst, ok := snap.Instances[id]
-	if !ok || inst.Status != state.StatusRunning {
+	if !ok || !inst.Status.Live() {
 		return false
 	}
 
@@ -391,6 +424,16 @@ func (r *Runtime) tickInstance(id string) bool {
 	for i, app := range apps {
 		if app.PID <= 0 || app.Status != state.StatusRunning {
 			continue
+		}
+		if app.Identity != "" {
+			if p, ok := r.pf.(interface{ ProcessIdentity(int) (string, error) }); ok {
+				identity, identityErr := p.ProcessIdentity(app.PID)
+				if identityErr == nil && identity != app.Identity {
+					apps[i].Status = state.StatusStopped
+					appsChanged = true
+					continue
+				}
+			}
 		}
 		running, err := r.pf.IsRunning(app.PID)
 		if err != nil {
@@ -434,7 +477,7 @@ func (r *Runtime) tickInstance(id string) bool {
 	keepWatching := true
 	_ = r.st.MutateIfChanged(func(d *state.Data) bool {
 		cur, ok := d.Instances[id]
-		if !ok || cur.Status != state.StatusRunning {
+		if !ok || !cur.Status.Live() {
 			keepWatching = false
 			return false
 		}
@@ -471,7 +514,7 @@ func (r *Runtime) Stop(id string, force bool) error {
 	if !ok {
 		return fmt.Errorf("instance %q not found", id)
 	}
-	if inst.Status != state.StatusRunning {
+	if !inst.Status.Live() {
 		return nil
 	}
 
@@ -494,6 +537,11 @@ func (r *Runtime) Stop(id string, force bool) error {
 		// persist mode) its ephemeral profile. Killing the bare PID
 		// would skip that cleanup.
 		if app.Browser != nil {
+			if !r.ownsProcess(app) {
+				r.log.Warn("skip browser close for PID identity mismatch", "instance", id, "pid", app.PID)
+				inst.Apps[i].Status = state.StatusStopped
+				continue
+			}
 			if r.br != nil {
 				if err := r.br.Close(*app.Browser); err != nil {
 					r.log.Warn("browser close", "instance", id, "error", err)
@@ -503,6 +551,11 @@ func (r *Runtime) Stop(id string, force bool) error {
 			continue
 		}
 		if app.PID <= 0 {
+			inst.Apps[i].Status = state.StatusStopped
+			continue
+		}
+		if !r.ownsProcess(app) {
+			r.log.Warn("skip kill for PID identity mismatch", "instance", id, "pid", app.PID)
 			inst.Apps[i].Status = state.StatusStopped
 			continue
 		}
@@ -555,7 +608,7 @@ func (r *Runtime) StopAll(force bool) error {
 	snap := r.st.Snapshot()
 	var errs []error
 	for id, inst := range snap.Instances {
-		if inst.Status != state.StatusRunning {
+		if !inst.Status.Live() {
 			continue
 		}
 		if err := r.Stop(id, force); err != nil {
@@ -572,7 +625,7 @@ func (r *Runtime) StopAllWithIDs(force bool) ([]string, error) {
 	var ids []string
 	var errs []error
 	for id, inst := range snap.Instances {
-		if inst.Status != state.StatusRunning {
+		if !inst.Status.Live() {
 			continue
 		}
 		ids = append(ids, id)
@@ -590,13 +643,22 @@ func (r *Runtime) Reconcile() error {
 	return r.st.Mutate(func(d *state.Data) {
 		pruneInstances(d)
 		for id, inst := range d.Instances {
-			if inst.Status != state.StatusRunning {
+			if !inst.Status.Live() {
 				continue
 			}
 			anyRunning := false
 			for i, app := range inst.Apps {
 				if app.PID <= 0 {
 					continue
+				}
+				if app.Identity != "" {
+					if p, ok := r.pf.(interface{ ProcessIdentity(int) (string, error) }); ok {
+						identity, identityErr := p.ProcessIdentity(app.PID)
+						if identityErr == nil && identity != app.Identity {
+							inst.Apps[i].Status = state.StatusStopped
+							continue
+						}
+					}
 				}
 				running, err := r.pf.IsRunning(app.PID)
 				if err != nil {

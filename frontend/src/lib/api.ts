@@ -26,6 +26,7 @@ import {
   SetCustomTheme as _SetCustomTheme,
   DeleteCustomTheme as _DeleteCustomTheme,
   ListPlugins as _ListPlugins,
+  GetPlugin as _GetPlugin,
   GetPluginCapabilities as _GetPluginCapabilities,
   OpenWorkspacePluginWindow as _OpenWorkspacePluginWindow,
   InspectPluginSource as _InspectPluginSource,
@@ -50,6 +51,30 @@ import {
 } from '../../wailsjs/go/wailsapp/App';
 import { wailsapp } from '../../wailsjs/go/models';
 
+// Optional bindings are resolved lazily (not at module load) so unit
+// tests that mock the generated module keep working, and so the UI
+// degrades gracefully when bindings predate the backend method.
+async function optionalCall<T>(name: string, fallback: T): Promise<T> {
+  try {
+    const mod = (await import('../../wailsjs/go/wailsapp/App')) as unknown as Record<
+      string,
+      (() => Promise<T>) | undefined
+    >;
+    const fn = mod[name];
+    if (typeof fn === 'function') return await fn();
+  } catch {
+    // fall through to fallback
+  }
+  return fallback;
+}
+
+export type DaemonInfo = {
+  reachable: boolean;
+  version?: string;
+  protocol?: number;
+  error?: string;
+};
+
 export type WorkspaceInfo = wailsapp.WorkspaceInfo;
 export type WorkspaceDetail = wailsapp.WorkspaceDetail;
 export type ReconcileInfo = wailsapp.ReconcileInfo;
@@ -65,11 +90,19 @@ export type PluginUIColumn = wailsapp.PluginUIColumn;
 export type PluginActionDef = wailsapp.PluginActionDef;
 export type PluginPathsInfo = wailsapp.PluginPathsInfo;
 
+export type AppInfo = wailsapp.AppInfo;
+
 export type AppEditor = {
   label: string;
+  type: string;
   cmd: string;
   cwd: string;
   url: string;
+  browser: string;
+  urls: string[];
+  newWindow: boolean;
+  env: Record<string, string>;
+  args: string[];
   termCmd: string;
   _cat?: string;
   _showUrl?: boolean;
@@ -78,7 +111,7 @@ export type AppEditor = {
 export type PluginRefEditor = {
   _key?: string;
   id: string;
-  config: Record<string, any>;
+  config: Record<string, unknown>;
 };
 
 export type WorkspaceEditor = {
@@ -89,6 +122,12 @@ export type WorkspaceEditor = {
   defaultCwd: string;
   apps: AppEditor[];
   plugins: PluginRefEditor[];
+  hooks?: {
+    preStart?: string[];
+    postStart?: string[];
+    preStop?: string[];
+    postStop?: string[];
+  };
 };
 
 export type RecentEntry = {
@@ -105,6 +144,23 @@ export type DetectedTool = {
   label: string;
   command: string;
   url: string;
+};
+
+export type FieldDescriptor = {
+  name: string;
+  label: string;
+  type: string;
+  required?: boolean;
+  sensitive?: boolean;
+  help?: string;
+};
+
+export type AppTypeDescriptor = {
+  type: string;
+  label: string;
+  description: string;
+  fields: FieldDescriptor[];
+  summary?: string;
 };
 
 const array = <T>(p: Promise<T[]>): Promise<T[]> => p.then((v) => v ?? []);
@@ -128,6 +184,7 @@ export const api = {
   setCustomTheme: (info: CustomThemeInfo): Promise<void> => _SetCustomTheme(info),
   deleteCustomTheme: (name: string): Promise<void> => _DeleteCustomTheme(name),
   listPlugins: (): Promise<PluginInfo[]> => array(_ListPlugins()),
+  getPlugin: (id: string): Promise<PluginInfo> => _GetPlugin(id),
   pluginCall: (id: string, method: string, argsJSON: string): Promise<string> =>
     _PluginCall(id, method, argsJSON),
   getPluginCapabilities: (id: string): Promise<PluginCapabilityInfo> => _GetPluginCapabilities(id),
@@ -149,7 +206,7 @@ export const api = {
   getWorkspaceEditor: (name: string): Promise<WorkspaceEditor> =>
     _GetWorkspaceEditor(name) as Promise<WorkspaceEditor>,
   saveWorkspaceEditor: (editor: WorkspaceEditor): Promise<void> =>
-    _SaveWorkspaceEditor(editor as any),
+    _SaveWorkspaceEditor(editor as unknown as wailsapp.WorkspaceEditor),
   deleteWorkspace: (name: string): Promise<void> => _DeleteWorkspace(name),
   detectTools: (): Promise<ToolCategory[]> => array(_DetectTools()),
   getRecent: (): Promise<RecentEntry[]> => array(_GetRecent()) as Promise<RecentEntry[]>,
@@ -158,9 +215,13 @@ export const api = {
   resetKeybindings: (): Promise<void> => _ResetKeybindings(),
   getCwd: (): Promise<string> => _GetCwd(),
   getHomeDir: (): Promise<string> => _GetHomeDir(),
+  daemonStatus: (): Promise<DaemonInfo> =>
+    optionalCall<DaemonInfo>('DaemonStatus', { reachable: true }),
   addRoot: (dir: string): Promise<void> => _AddRoot(dir),
   removeRoot: (dir: string): Promise<void> => _RemoveRoot(dir),
   listRoots: (): Promise<string[]> => _ListRoots(),
+  listAppTypes: (): Promise<AppTypeDescriptor[]> =>
+    optionalCall<AppTypeDescriptor[]>('ListAppTypes', []).then((v) => v ?? []),
 };
 
 export function describeError(err: unknown): string {

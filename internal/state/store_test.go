@@ -4,10 +4,37 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestOpenAtRejectsFutureSchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	data := []byte(`{"version":2,"instances":{}}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := OpenAt(path)
+	if err == nil || !strings.Contains(err.Error(), "newer than supported") {
+		t.Fatalf("OpenAt error = %v, want future-schema error", err)
+	}
+}
+
+func TestOpenAtNormalizesMissingSchemaVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := os.WriteFile(path, []byte(`{"instances":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := OpenAt(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Snapshot().Version; got != SchemaVersion {
+		t.Fatalf("version = %d, want %d", got, SchemaVersion)
+	}
+}
 
 func TestOpenAtCreatesEmptyOnMissing(t *testing.T) {
 	dir := t.TempDir()
@@ -107,6 +134,27 @@ func TestSnapshotIndependentOfMutations(t *testing.T) {
 	}
 }
 
+func TestSnapshotDeepCopiesNestedValues(t *testing.T) {
+	s, err := OpenAt(filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Mutate(func(d *Data) {
+		d.Instances["x"] = Instance{Apps: []AppProcess{{Browser: &BrowserHandle{PID: 7}}}}
+		d.Plugins["p"] = PluginState{GrantedCapabilities: []string{"read"}, Config: map[string]any{"nested": map[string]any{"ok": true}}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	snap := s.Snapshot()
+	snap.Instances["x"].Apps[0].Browser.PID = 99
+	snap.Plugins["p"].GrantedCapabilities[0] = "write"
+	snap.Plugins["p"].Config["nested"].(map[string]any)["ok"] = false
+	got := s.Snapshot()
+	if got.Instances["x"].Apps[0].Browser.PID != 7 || got.Plugins["p"].GrantedCapabilities[0] != "read" || !got.Plugins["p"].Config["nested"].(map[string]any)["ok"].(bool) {
+		t.Fatal("nested Snapshot values alias store state")
+	}
+}
+
 func TestAtomicWriteLeavesNoTempOnSuccess(t *testing.T) {
 	dir := t.TempDir()
 	s, err := OpenAt(filepath.Join(dir, "state.json"))
@@ -122,6 +170,31 @@ func TestAtomicWriteLeavesNoTempOnSuccess(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Errorf("expected only state.json, got %d entries: %v", len(entries), entries)
+	}
+}
+
+func TestStateBackupRetainsPreviousSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	s, err := OpenAt(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Mutate(func(d *Data) { d.Theme = "first" }); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Mutate(func(d *Data) { d.Theme = "second" }); err != nil {
+		t.Fatal(err)
+	}
+	backup, err := os.ReadFile(path + ".bak")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var previous Data
+	if err := json.Unmarshal(backup, &previous); err != nil {
+		t.Fatal(err)
+	}
+	if previous.Theme != "first" {
+		t.Fatalf("backup theme = %q, want first", previous.Theme)
 	}
 }
 
@@ -200,6 +273,96 @@ func TestConcurrentMutationsPreserveAllWrites(t *testing.T) {
 	got := s.Snapshot().Instances
 	if len(got) != goroutines*perGoroutine {
 		t.Errorf("expected %d instances, got %d", goroutines*perGoroutine, len(got))
+	}
+}
+
+func TestConcurrentStoresPreserveUnrelatedMutations(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	a, err := OpenAt(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := OpenAt(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	go func() {
+		<-start
+		errs <- a.Mutate(func(d *Data) { d.Theme = "one" })
+	}()
+	go func() {
+		<-start
+		errs <- b.Mutate(func(d *Data) { d.ProjectDir = "/projects" })
+	}()
+	close(start)
+	for i := 0; i < 2; i++ {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	final, err := OpenAt(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap := final.Snapshot()
+	if snap.Theme != "one" || snap.ProjectDir != "/projects" {
+		t.Fatalf("concurrent stores lost an update: %+v", snap)
+	}
+}
+
+// TestCorruptStateFailsWithBackupHint simulates a crash mid-write: a
+// torn state.json must fail loudly with a pointer to the backup, and
+// the backup must contain the last good snapshot so recovery is exact.
+func TestCorruptStateFailsWithBackupHint(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	s, err := OpenAt(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Mutate(func(d *Data) { d.Theme = "dia" }); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Mutate(func(d *Data) { d.Theme = "midnight" }); err != nil {
+		t.Fatal(err)
+	}
+	// Tear the file as a killed process would.
+	if err := os.WriteFile(path, []byte(`{"version": 1, "instances": {`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = OpenAt(path)
+	if err == nil {
+		t.Fatal("expected error opening torn state, got nil")
+	}
+	if !strings.Contains(err.Error(), ".bak") {
+		t.Errorf("error should point at the backup, got: %v", err)
+	}
+	backup, err := os.ReadFile(path + ".bak")
+	if err != nil {
+		t.Fatalf("read backup: %v", err)
+	}
+	var data Data
+	if err := json.Unmarshal(backup, &data); err != nil {
+		t.Fatalf("backup is not valid JSON: %v", err)
+	}
+	// The backup is the previous persisted snapshot (one write behind
+	// the torn tip), which is the documented recovery point.
+	if data.Theme != "dia" {
+		t.Errorf("backup theme = %q, want %q (previous snapshot)", data.Theme, "dia")
+	}
+	// Restoring the backup recovers to that snapshot.
+	if err := os.WriteFile(path, backup, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := OpenAt(path)
+	if err != nil {
+		t.Fatalf("reopen after restore: %v", err)
+	}
+	if recovered.Snapshot().Theme != "dia" {
+		t.Errorf("recovered theme = %q, want dia", recovered.Snapshot().Theme)
 	}
 }
 

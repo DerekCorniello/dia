@@ -28,7 +28,10 @@ func ResolveStateDirAt(stateHome string) (string, error) {
 		return "", errors.New("state home is empty")
 	}
 	dir := filepath.Join(stateHome, AppName)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
 		return "", err
 	}
 	return dir, nil

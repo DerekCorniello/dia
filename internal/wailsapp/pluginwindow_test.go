@@ -65,6 +65,9 @@ func TestPluginAssetHandler_ServesPanelJS(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
 	}
+	if got := rr.Header().Get("Content-Security-Policy"); got != pluginContentSecurityPolicy {
+		t.Fatalf("CSP = %q, want %q", got, pluginContentSecurityPolicy)
+	}
 	body, _ := io.ReadAll(rr.Result().Body)
 	if !strings.Contains(string(body), "document.getElementById") {
 		t.Errorf("body did not contain panel.js contents: %q", body)

@@ -47,6 +47,7 @@
 
   let customThemeStyle: HTMLStyleElement | null = null;
   let unsubStateChanged: (() => void) | null = null;
+  let refreshToken = 0;
 
   function applyCustomThemes(css: string) {
     if (typeof document === 'undefined') return;
@@ -154,10 +155,13 @@
     unsubStateChanged?.();
   });
 
+  let daemonDown = false;
+
   async function refresh() {
+    const token = ++refreshToken;
     loading.set(true);
     try {
-      const [ws, doc, p, ct, pl, pp, rec, rs] = await Promise.all([
+      const [ws, doc, p, ct, pl, pp, rec, rs, daemon] = await Promise.all([
         api.listWorkspaces(),
         api.doctor(),
         api.paths(),
@@ -166,19 +170,31 @@
         api.pluginPaths(),
         api.getRecent(),
         api.listRoots(),
+        api.daemonStatus(),
       ]);
+      const pluginDetails = await Promise.all(
+        pl.map(async (plugin) => {
+          try {
+            return await api.getPlugin(plugin.id);
+          } catch {
+            return plugin;
+          }
+        }),
+      );
+      if (token !== refreshToken) return;
       workspaces.set(ws);
       doctor.set(doc);
       paths.set(p);
       customThemes.set(ct);
-      pluginsStore.set(pl);
+      pluginsStore.set(pluginDetails);
       pluginPathsStore.set(pp);
       recent = rec;
       roots.set(rs);
+      daemonDown = !daemon.reachable;
     } catch (e) {
       pushToast('err', `refresh: ${describeError(e)}`);
     } finally {
-      loading.set(false);
+      if (token === refreshToken) loading.set(false);
     }
   }
 
@@ -351,6 +367,11 @@
 <svelte:window on:keydown={onGlobalKey} />
 
 <div class="flex h-screen flex-col">
+  {#if daemonDown}
+    <div class="bg-warning/15 px-5 py-1.5 text-center text-xs text-warning" role="alert">
+      Session daemon unreachable — running flags may be stale. It starts on demand; try Refresh.
+    </div>
+  {/if}
   <header
     class="flex items-center gap-3 border-b border-primary/20 px-5 py-3"
     style="--wails-draggable: drag"
@@ -371,6 +392,7 @@
           bind:this={searchInput}
           type="text"
           bind:value={search}
+          aria-label="Search workspaces and plugins"
           placeholder="Search..."
           class="block w-full rounded border border-bg-600 bg-bg-800 pl-6 pr-3 py-1.5 text-xs placeholder:text-fg-mute focus:border-primary focus:ring-2 focus:ring-primary/30 focus:outline-none"
         />
@@ -668,7 +690,7 @@
         type="button"
         on:click={zoomOut}
         disabled={zoomLevel <= ZOOM_MIN}
-        class="rounded px-1 py-0.5 text-fg-dim hover:text-fg disabled:opacity-40">−</button
+        class="rounded px-1 py-0.5 text-fg-dim hover:text-fg disabled:opacity-40">-</button
       >
       <span class="min-w-[3ch] text-center font-mono text-fg-dim"
         >{Math.round(zoomLevel * 100)}%</span

@@ -38,6 +38,7 @@ func (a *App) ListWorkspaces() ([]WorkspaceInfo, error) {
 		return nil, fmt.Errorf("discover: %w", err)
 	}
 	running := a.runningWorkspaces()
+	latest := a.latestInstanceByWorkspace()
 	useCount := a.useCountByName()
 	out := make([]WorkspaceInfo, 0, len(sources))
 	for _, s := range sources {
@@ -48,18 +49,44 @@ func (a *App) ListWorkspaces() ([]WorkspaceInfo, error) {
 			Source:      sourceLabel(s),
 			Path:        s.Path,
 			Running:     running[s.Workspace.Name],
+			PluginCount: len(s.Workspace.Plugins),
 			UseCount:    useCount[s.Workspace.Name],
 		}
-		if len(s.Workspace.Plugins) > 0 {
-			ids := make([]string, 0, len(s.Workspace.Plugins))
-			for _, ref := range s.Workspace.Plugins {
-				ids = append(ids, ref.ID)
-			}
-			info.Plugins = ids
+		if inst, ok := latest[s.Workspace.Name]; ok {
+			info.LastStatus = string(inst.Status)
+			info.LastError = firstAppProblem(inst)
 		}
 		out = append(out, info)
 	}
 	return out, nil
+}
+
+// firstAppProblem returns the first per-app error, else the first
+// non-fatal caveat note, so degraded launches (e.g. unmanaged browser
+// fallback) are visible on the card even when nothing crashed.
+func firstAppProblem(inst state.Instance) string {
+	for _, app := range inst.Apps {
+		if app.Err != "" {
+			return app.Err
+		}
+	}
+	for _, app := range inst.Apps {
+		if app.Note != "" {
+			return app.Note
+		}
+	}
+	return ""
+}
+
+func (a *App) latestInstanceByWorkspace() map[string]state.Instance {
+	out := map[string]state.Instance{}
+	for _, inst := range a.store.Snapshot().Instances {
+		cur, ok := out[inst.WorkspaceName]
+		if !ok || inst.StartedAt.After(cur.StartedAt) {
+			out[inst.WorkspaceName] = inst
+		}
+	}
+	return out
 }
 
 // useCountByName returns a map of workspace name -> usage count for
@@ -80,7 +107,7 @@ func sourceLabel(s config.Source) string {
 	}
 	dir := filepath.Dir(s.Path)
 	// Show the directory the workspace YAML lives in for root-based workspaces.
-	// This is more informative than "local" — it tells you where to find it.
+	// This is more informative than "local" because it tells you where to find it.
 	base := filepath.Base(dir)
 	if base == ".dia" {
 		base = filepath.Base(filepath.Dir(dir))
@@ -109,6 +136,7 @@ func (a *App) instances() []state.Instance {
 	}
 	var insts []state.Instance
 	if err := dae.Do(daemon.MethodList, nil, &insts); err != nil {
+		a.invalidateDaemon(dae)
 		a.logger.Warn("list instances", "error", err)
 		return nil
 	}
@@ -116,11 +144,11 @@ func (a *App) instances() []state.Instance {
 }
 
 // runningWorkspaces returns the set of workspace names that have at
-// least one running instance.
+// least one running or degraded instance.
 func (a *App) runningWorkspaces() map[string]bool {
 	out := map[string]bool{}
 	for _, inst := range a.instances() {
-		if inst.Status == state.StatusRunning {
+		if inst.Status.Live() {
 			out[inst.WorkspaceName] = true
 		}
 	}
@@ -144,30 +172,57 @@ func (a *App) GetWorkspace(name string) (*WorkspaceDetail, error) {
 		return nil, fmt.Errorf("discover: %w", err)
 	}
 	running := a.runningWorkspaces()
+	latest := a.latestInstanceByWorkspace()
 	for _, s := range sources {
 		if s.Workspace.Name != name {
 			continue
 		}
 		apps := make([]AppInfo, 0, len(s.Workspace.Apps))
 		for _, app := range s.Workspace.Apps {
-			apps = append(apps, AppInfo{
+			info := AppInfo{
 				Label: app.Label,
 				Type:  app.Type,
 				Cmd:   app.Cmd,
 				Args:  strings.Join(app.Args, " "),
 				URL:   app.Url,
-			})
+				Cwd:   app.Cwd,
+			}
+			if app.Browser != "" {
+				info.Browser = app.Browser
+				info.Urls = app.Urls
+				info.NewWindow = app.NewWindow
+				if info.Type == "" {
+					info.Type = "browser"
+				}
+			}
+			if len(app.Env) > 0 {
+				info.Env = app.Env
+			}
+			if info.Type == "" && app.Cmd != "" {
+				info.Type = "local"
+			}
+			if info.Type == "" && app.Url != "" {
+				info.Type = "open"
+			}
+			apps = append(apps, info)
+		}
+		info := WorkspaceInfo{
+			Name:        s.Workspace.Name,
+			Description: s.Workspace.Description,
+			Apps:        len(s.Workspace.Apps),
+			Source:      sourceLabel(s),
+			Path:        s.Path,
+			Running:     running[s.Workspace.Name],
+			Plugins:     pluginIDs(s.Workspace.Plugins),
+			PluginCount: len(s.Workspace.Plugins),
+		}
+		if inst, ok := latest[s.Workspace.Name]; ok {
+			info.LastStatus = string(inst.Status)
+			info.LastError = firstAppProblem(inst)
 		}
 		return &WorkspaceDetail{
-			WorkspaceInfo: WorkspaceInfo{
-				Name:    s.Workspace.Name,
-				Apps:    len(s.Workspace.Apps),
-				Source:  sourceLabel(s),
-				Path:    s.Path,
-				Running: running[s.Workspace.Name],
-				Plugins: pluginIDs(s.Workspace.Plugins),
-			},
-			AppDetails: apps,
+			WorkspaceInfo: info,
+			AppDetails:    apps,
 		}, nil
 	}
 	return nil, fmt.Errorf("workspace %q not found", name)
@@ -199,7 +254,11 @@ func (a *App) StartWorkspace(name string) error {
 	}
 	var reply daemon.StartReply
 	if err := dae.Do(daemon.MethodStart, daemon.StartParams{Name: name, Path: src.Path}, &reply); err != nil {
+		a.invalidateDaemon(dae)
 		return err
+	}
+	if reply.Instance != nil && reply.Instance.Status == state.StatusCrashed {
+		return fmt.Errorf("workspace %q failed to launch any apps; inspect the instance details for errors", name)
 	}
 	// The daemon persists the instance and spawns plugin windows, so
 	// the GUI does not; it only needs its panels enabled (done above)
@@ -231,7 +290,11 @@ func (a *App) RestartWorkspace(name string) error {
 	}
 	var reply daemon.StartReply
 	if err := dae.Do(daemon.MethodRestart, daemon.StartParams{Name: name, Path: src.Path}, &reply); err != nil {
+		a.invalidateDaemon(dae)
 		return err
+	}
+	if reply.Instance != nil && reply.Instance.Status == state.StatusCrashed {
+		return fmt.Errorf("workspace %q failed to launch any apps; inspect the instance details for errors", name)
 	}
 	a.notifyStateChanged()
 	return nil
@@ -255,6 +318,7 @@ func (a *App) StopWorkspace(name string) error {
 	}
 	var stopped map[string]any
 	if err := dae.Do(daemon.MethodStop, daemon.StopParams{Name: name}, &stopped); err != nil {
+		a.invalidateDaemon(dae)
 		if isNoWorkspace(err) {
 			return nil
 		}
@@ -280,13 +344,33 @@ func (a *App) spawnPluginWindow(pluginID, workspaceName, workspacePath string) (
 		return 0, fmt.Errorf("get executable: %w", err)
 	}
 	args := []string{"--plugin-window=" + pluginID, "--workspace=" + workspaceName, "--workspace-path=" + workspacePath}
-	a.logger.Debug("spawn plugin window", "pluginID", pluginID, "workspaceName", workspaceName, "workspacePath", workspacePath, "args", args)
+	a.logger.Debug("spawn plugin window", "pluginID", pluginID, "workspaceName", workspaceName, "argCount", len(args))
 	pid, err := a.launchProcess(exe, args)
 	if err != nil {
 		return 0, fmt.Errorf("launch plugin window: %w", err)
 	}
 	a.logger.Debug("spawn plugin window: done", "pid", pid)
+	a.applyPluginWindowMode(pluginID, pid)
 	return pid, nil
+}
+
+// applyPluginWindowMode enforces the manifest's floating/tiling request
+// once the window process exists. Async and advisory: if the window
+// never appears, it just follows the compositor default.
+func (a *App) applyPluginWindowMode(pluginID string, pid int) {
+	if a.pmgr == nil || pid <= 0 {
+		return
+	}
+	loaded, ok := a.pmgr.Loaded(pluginID)
+	if !ok || loaded.Manifest == nil {
+		return
+	}
+	floating := loaded.Manifest.UI.WindowFloating()
+	go func() {
+		if err := platform.SetFloating(pid, floating); err != nil {
+			a.logger.Debug("apply plugin window mode", "id", pluginID, "error", err)
+		}
+	}()
 }
 
 // launchProcess starts a detached process and returns its PID.
@@ -392,6 +476,7 @@ func (a *App) StopInstance(id string) error {
 	}
 	var insts []state.Instance
 	if err := dae.Do(daemon.MethodList, nil, &insts); err != nil {
+		a.invalidateDaemon(dae)
 		return err
 	}
 	name := ""
@@ -406,6 +491,7 @@ func (a *App) StopInstance(id string) error {
 	}
 	var result map[string]any
 	if err := dae.Do(daemon.MethodStop, daemon.StopParams{Name: name}, &result); err != nil {
+		a.invalidateDaemon(dae)
 		return err
 	}
 	a.notifyStateChanged()
@@ -421,6 +507,7 @@ func (a *App) StopAll() (int, error) {
 	}
 	var result map[string][]string
 	if err := dae.Do(daemon.MethodStopAll, nil, &result); err != nil {
+		a.invalidateDaemon(dae)
 		return 0, err
 	}
 	n := len(result["stopped"])
@@ -431,7 +518,10 @@ func (a *App) StopAll() (int, error) {
 }
 
 // ListInstances returns the current set of tracked instances from the
-// daemon, most recently started first.
+// daemon, most recently started first. Only running instances are
+// returned because stopped history is not rendered by the GUI.
+// Degraded instances are included alongside running ones so the UI can
+// surface per-app errors.
 func (a *App) ListInstances() []InstanceInfo {
 	insts := a.instances()
 	if insts == nil {
@@ -440,6 +530,9 @@ func (a *App) ListInstances() []InstanceInfo {
 	out := make([]InstanceInfo, 0, len(insts))
 	for i := range insts {
 		inst := insts[i]
+		if !inst.Status.Live() {
+			continue
+		}
 		out = append(out, *toInstanceInfo(&inst))
 	}
 	return out
@@ -458,6 +551,7 @@ func (a *App) Reconcile() (ReconcileInfo, error) {
 		Total      int `json:"total"`
 	}
 	if err := dae.Do(daemon.MethodReconcile, nil, &summary); err != nil {
+		a.invalidateDaemon(dae)
 		return ReconcileInfo{}, err
 	}
 	a.notifyStateChanged()
@@ -482,12 +576,11 @@ func (a *App) findWorkspace(name string) (*config.Workspace, config.Source, erro
 	if err != nil {
 		return nil, config.Source{}, fmt.Errorf("discover: %w", err)
 	}
-	for _, s := range sources {
-		if s.Workspace.Name == name {
-			return s.Workspace, s, nil
-		}
+	workspace, source, err := config.ResolveName(sources, name)
+	if err != nil {
+		return nil, config.Source{}, err
 	}
-	return nil, config.Source{}, fmt.Errorf("workspace %q not found", name)
+	return workspace, source, nil
 }
 
 func toInstanceInfo(inst *state.Instance) *InstanceInfo {
@@ -499,6 +592,7 @@ func toInstanceInfo(inst *state.Instance) *InstanceInfo {
 			PID:    a.PID,
 			Status: string(a.Status),
 			Err:    a.Err,
+			Note:   a.Note,
 		})
 	}
 	out := &InstanceInfo{
@@ -521,7 +615,7 @@ func (a *App) GetWorkspaceEditor(name string) (*WorkspaceEditor, error) {
 	if err != nil {
 		return nil, err
 	}
-	a.logger.Debug("get workspace editor", "name", name, "srcPath", src.Path, "srcLocal", src.Local)
+	a.logger.Debug("get workspace editor", "name", name, "srcLocal", src.Local)
 	cwd, _ := os.Getwd()
 	editor := &WorkspaceEditor{
 		OriginalName: ws.Name,
@@ -532,15 +626,28 @@ func (a *App) GetWorkspaceEditor(name string) (*WorkspaceEditor, error) {
 		Apps:         make([]AppEditor, 0, len(ws.Apps)),
 		Plugins:      make([]PluginRefEditor, 0, len(ws.Plugins)),
 	}
+	if ws.Hooks != nil {
+		editor.Hooks = &HooksEditor{
+			PreStart: append([]string(nil), ws.Hooks.PreStart...), PostStart: append([]string(nil), ws.Hooks.PostStart...),
+			PreStop: append([]string(nil), ws.Hooks.PreStop...), PostStop: append([]string(nil), ws.Hooks.PostStop...),
+		}
+	}
 	for _, app := range ws.Apps {
 		ae := AppEditor{
-			Label: app.Label,
-			Cmd:   app.Cmd,
-			Cwd:   app.Cwd,
-			Url:   app.Url,
+			Label:     app.Label,
+			Type:      app.Type,
+			Cmd:       app.Cmd,
+			Cwd:       app.Cwd,
+			Url:       app.Url,
+			Browser:   app.Browser,
+			Urls:      app.Urls,
+			NewWindow: app.NewWindow,
+			Env:       app.Env,
+			Args:      append([]string(nil), app.Args...),
 		}
-		if len(app.Args) > 0 {
-			ae.TermCmd = strings.Join(app.Args, " ")
+		if ae.Type == "browser" && len(ae.Urls) == 0 && ae.Url != "" {
+			ae.Urls = []string{ae.Url}
+			ae.Url = ""
 		}
 		editor.Apps = append(editor.Apps, ae)
 	}
@@ -554,11 +661,7 @@ func (a *App) GetWorkspaceEditor(name string) (*WorkspaceEditor, error) {
 }
 
 // SaveWorkspaceEditor validates and persists the workspace from the
-// form editor. If the name changed (OriginalName != Name), the old
-// file is removed. App type is inferred from the fields:
-//   - Cmd set → type=local
-//   - Only Url set → type=open
-//   - Both empty → validation error
+// form editor. If the name changed, the old file is removed.
 func (a *App) SaveWorkspaceEditor(editor WorkspaceEditor) error {
 	if editor.Name == "" {
 		return errors.New("name is required")
@@ -566,29 +669,54 @@ func (a *App) SaveWorkspaceEditor(editor WorkspaceEditor) error {
 	if err := config.ValidateName(editor.Name); err != nil {
 		return err
 	}
-	a.logger.Debug("save workspace editor", "originalPath", editor.OriginalPath, "originalName", editor.OriginalName, "name", editor.Name)
+	a.logger.Debug("save workspace editor", "hasOriginal", editor.OriginalPath != "", "originalNameChanged", editor.OriginalName != editor.Name, "name", editor.Name)
 	ws := &config.Workspace{
 		Version:     config.SchemaVersion,
 		Name:        editor.Name,
 		Description: editor.Description,
 		Apps:        make([]config.App, 0, len(editor.Apps)),
 	}
+	if editor.Hooks != nil {
+		ws.Hooks = &config.Hooks{
+			PreStart: append([]string(nil), editor.Hooks.PreStart...), PostStart: append([]string(nil), editor.Hooks.PostStart...),
+			PreStop: append([]string(nil), editor.Hooks.PreStop...), PostStop: append([]string(nil), editor.Hooks.PostStop...),
+		}
+	}
 	for _, ae := range editor.Apps {
-		appType := "local"
-		if ae.Url != "" && ae.Cmd == "" {
-			appType = "open"
-		} else if ae.Cmd == "" {
-			return fmt.Errorf("app %q: command or url is required", ae.Label)
+		aeType := ae.Type
+		if aeType == "browser" {
+			if len(ae.Urls) == 0 && ae.Url == "" {
+				return fmt.Errorf("app %q: browser app requires at least one url", ae.Label)
+			}
+			app := config.App{
+				Type:      "browser",
+				Label:     ae.Label,
+				Browser:   ae.Browser,
+				Urls:      ae.Urls,
+				Url:       ae.Url,
+				NewWindow: ae.NewWindow,
+				Cwd:       ae.Cwd,
+				Env:       ae.Env,
+				Args:      append([]string(nil), ae.Args...),
+			}
+			if app.Browser == "" && len(app.Urls) == 1 {
+				app.Url = app.Urls[0]
+				app.Urls = nil
+			}
+			ws.Apps = append(ws.Apps, app)
+			continue
 		}
 		app := config.App{
-			Type:  appType,
+			Type:  aeType,
 			Label: ae.Label,
 			Cmd:   ae.Cmd,
 			Cwd:   ae.Cwd,
 			Url:   ae.Url,
+			Env:   ae.Env,
+			Args:  append([]string(nil), ae.Args...),
 		}
 		if ae.TermCmd != "" {
-			app.Args = []string{"-e", ae.TermCmd}
+			app.Args = append(app.Args, "-e", ae.TermCmd)
 		}
 		ws.Apps = append(ws.Apps, app)
 	}
@@ -598,11 +726,14 @@ func (a *App) SaveWorkspaceEditor(editor WorkspaceEditor) error {
 			Config: ref.Config,
 		})
 	}
+	if err := config.Validate(ws); err != nil {
+		return err
+	}
 	out, err := yaml.Marshal(ws)
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	a.logger.Debug("save workspace editor: marshaled", "yaml", string(out), "plugins", ws.Plugins)
+	a.logger.Debug("save workspace editor: marshaled", "apps", len(ws.Apps), "plugins", len(ws.Plugins))
 	// Write to the same directory as the original file so that local
 	// workspaces stay local and global workspaces stay global.
 	dir := config.DefaultGlobalDir()
@@ -613,8 +744,11 @@ func (a *App) SaveWorkspaceEditor(editor WorkspaceEditor) error {
 		return err
 	}
 	wsPath := filepath.Join(dir, editor.Name+".yaml")
-	a.logger.Debug("save workspace editor: writing", "path", wsPath, "dir", dir)
-	if err := os.WriteFile(wsPath, out, 0o644); err != nil {
+	a.logger.Debug("save workspace editor: writing", "fileName", filepath.Base(wsPath))
+	if err := backupExistingFile(wsPath); err != nil {
+		return fmt.Errorf("backup workspace: %w", err)
+	}
+	if err := atomicWriteFile(wsPath, out, 0o644); err != nil {
 		return err
 	}
 	if editor.OriginalName != "" && editor.OriginalName != editor.Name {
@@ -670,7 +804,7 @@ func (a *App) NewWorkspace(name string, dir string) (string, error) {
 		return yamlPath, fmt.Errorf("workspace %q already exists at %s", name, yamlPath)
 	}
 	body := fmt.Sprintf("version: %d\nname: %s\n", config.SchemaVersion, name)
-	if err := os.WriteFile(yamlPath, []byte(body), 0o644); err != nil {
+	if err := atomicWriteFile(yamlPath, []byte(body), 0o644); err != nil {
 		return "", err
 	}
 	// Auto-register the parent directory as a root so the workspace
@@ -688,6 +822,45 @@ func (a *App) NewWorkspace(name string, dir string) (string, error) {
 	return yamlPath, nil
 }
 
+// ListWorkspacesPaginated returns a paginated slice of discovered workspaces.
+// limit <=0 means no limit. It exists so the frontend can bound Wails payloads.
+func (a *App) ListWorkspacesPaginated(limit, offset int) ([]WorkspaceInfo, error) {
+	all, err := a.ListWorkspaces()
+	if err != nil {
+		return nil, err
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(all) {
+		return []WorkspaceInfo{}, nil
+	}
+	end := len(all)
+	if limit > 0 && offset+limit < end {
+		end = offset + limit
+	}
+	return all[offset:end], nil
+}
+
+// ListInstancesPaginated returns a paginated slice of running/degraded instances.
+func (a *App) ListInstancesPaginated(limit, offset int) []InstanceInfo {
+	all := a.ListInstances()
+	if all == nil {
+		return nil
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(all) {
+		return []InstanceInfo{}
+	}
+	end := len(all)
+	if limit > 0 && offset+limit < end {
+		end = offset + limit
+	}
+	return all[offset:end]
+}
+
 // GetRecent returns the recently-started workspaces as
 // {name, count} entries, most recent first. Names that have not
 // been started since the recent list was last extended are absent.
@@ -701,5 +874,36 @@ func (a *App) GetRecent() []state.RecentEntry {
 	}
 	out := make([]state.RecentEntry, len(snap.Recent))
 	copy(out, snap.Recent)
+	return out
+}
+
+// ListAppTypes returns the registry descriptors for the editor.
+// The frontend uses these instead of hardcoding builtinAppTypes.
+func (a *App) ListAppTypes() []AppTypeDescriptor {
+	if a.reg == nil {
+		return nil
+	}
+	descs := a.reg.Descriptors()
+	out := make([]AppTypeDescriptor, 0, len(descs))
+	for _, d := range descs {
+		fields := make([]FieldDescriptor, len(d.Fields))
+		for i, f := range d.Fields {
+			fields[i] = FieldDescriptor{
+				Name:      f.Name,
+				Label:     f.Label,
+				Type:      f.Type,
+				Required:  f.Required,
+				Sensitive: f.Sensitive,
+				Help:      f.Help,
+			}
+		}
+		out = append(out, AppTypeDescriptor{
+			Type:        d.Type,
+			Label:       d.Label,
+			Description: d.Description,
+			Fields:      fields,
+			Summary:     d.Summary,
+		})
+	}
 	return out
 }

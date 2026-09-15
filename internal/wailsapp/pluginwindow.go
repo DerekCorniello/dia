@@ -18,6 +18,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
 
 	"github.com/DerekCorniello/dia/internal/config"
 	"github.com/DerekCorniello/dia/internal/plugins"
@@ -25,6 +26,8 @@ import (
 )
 
 var pluginWindowLogger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+const pluginContentSecurityPolicy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' wails://wails; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 
 // PluginWindowApp is the wails binding for a plugin's new-window
 // process. It exposes a single DiaCall method that the plugin's
@@ -85,7 +88,7 @@ func RunPluginWindow(id string, workspaceName string, workspacePath string) erro
 	if id == "" {
 		return errors.New("plugin id is required")
 	}
-	pluginWindowLogger.Debug("run plugin window", "id", id, "workspaceName", workspaceName, "workspacePath", workspacePath)
+	pluginWindowLogger.Debug("run plugin window", "id", id, "workspaceConfigured", workspaceName != "" && workspacePath != "")
 	dir, err := state.ResolveStateDir()
 	if err != nil {
 		return fmt.Errorf("resolve state dir: %w", err)
@@ -109,9 +112,9 @@ func RunPluginWindow(id string, workspaceName string, workspacePath string) erro
 			return fmt.Errorf("load plugin config: %w", err)
 		}
 		cfg = ws
-		pluginWindowLogger.Debug("run plugin window: loaded config", "pluginID", id, "config", cfg)
+		pluginWindowLogger.Debug("run plugin window: loaded workspace config", "pluginID", id, "configKeys", len(cfg))
 	} else {
-		pluginWindowLogger.Debug("run plugin window: no workspace config", "workspaceName", workspaceName, "workspacePath", workspacePath)
+		pluginWindowLogger.Debug("run plugin window: no workspace config")
 	}
 	host, err := newPluginWindowHost(dir)
 	if err != nil {
@@ -145,6 +148,11 @@ func RunPluginWindow(id string, workspaceName string, workspacePath string) erro
 		Title:  manifest.UI.Title,
 		Width:  width,
 		Height: height,
+		Linux: &linux.Options{
+			// A distinct app_id so compositor rules for the
+			// launcher (class "dia") do not catch plugin windows.
+			ProgramName: "dia-plugin-" + id,
+		},
 		AssetServer: &assetserver.Options{
 			Handler: handler,
 		},
@@ -186,6 +194,13 @@ type pluginAssetHandler struct {
 }
 
 func (h *pluginAssetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Plugin windows execute untrusted third-party assets. Keep the document
+	// local and disable embedding, plugins, and ambient browser capabilities;
+	// mutating operations still go through the capability-gated Go bridge.
+	w.Header().Set("Content-Security-Policy", pluginContentSecurityPolicy)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Permissions-Policy", "accelerometer=(), camera=(), geolocation=(), microphone=(), payment=(), usb=()")
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -433,7 +448,7 @@ func (h *pluginWindowHost) dispatchFetch(args []any) (any, error) {
 		return nil, fmt.Errorf("fetch: %w", err)
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	data, err := readFetchResponse(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
 	}
@@ -597,16 +612,16 @@ func workspaceSourceLabel(s config.Source) string {
 // loadWorkspacePluginConfig finds the workspace YAML by name, locates
 // the plugin ref with the given ID, and returns its config map.
 func loadWorkspacePluginConfig(workspacePath, pluginID string) (map[string]any, error) {
-	pluginWindowLogger.Debug("load workspace plugin config", "workspacePath", workspacePath, "pluginID", pluginID)
+	pluginWindowLogger.Debug("load workspace plugin config", "pluginID", pluginID)
 	w, err := config.Load(workspacePath)
 	if err != nil {
 		pluginWindowLogger.Debug("load workspace plugin config: load failed", "error", err)
 		return nil, fmt.Errorf("load workspace: %w", err)
 	}
-	pluginWindowLogger.Debug("load workspace plugin config: workspace loaded", "workspaceName", w.Name, "plugins", w.Plugins)
+	pluginWindowLogger.Debug("load workspace plugin config: workspace loaded", "workspaceName", w.Name, "pluginCount", len(w.Plugins))
 	for _, ref := range w.Plugins {
 		if ref.ID == pluginID {
-			pluginWindowLogger.Debug("load workspace plugin config: found plugin ref", "pluginID", pluginID, "config", ref.Config)
+			pluginWindowLogger.Debug("load workspace plugin config: found plugin ref", "pluginID", pluginID, "configKeys", len(ref.Config))
 			return ref.Config, nil
 		}
 	}

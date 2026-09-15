@@ -9,9 +9,16 @@ package daemon
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 )
+
+const maxMessageSize = 4 << 20
+
+const ProtocolVersion = 1
+
+var errMessageTooLarge = errors.New("daemon message exceeds 4 MiB")
 
 // request is one client request read from the socket. ID is echoed
 // back in the response so a client can correlate out-of-order replies.
@@ -35,7 +42,16 @@ const (
 	MethodReconcile = "reconcile"
 	MethodVersion   = "version"
 	MethodShutdown  = "shutdown"
+	MethodHello     = "hello"
 )
+
+type HelloParams struct {
+	Protocol int `json:"protocol"`
+}
+
+type HelloReply struct {
+	Protocol int `json:"protocol"`
+}
 
 // response is the reply to a single request. Exactly one of Result
 // and Error is set. Result is a raw payload: an Instance for
@@ -55,18 +71,39 @@ func writeRequest(w io.Writer, id int64, method string, params any) error {
 		}
 		raw = b
 	}
-	enc := json.NewEncoder(w)
-	return enc.Encode(request{ID: id, Method: method, Params: raw})
+	return writeJSONLine(w, request{ID: id, Method: method, Params: raw})
 }
 
 func writeResponse(w io.Writer, r response) error {
-	return json.NewEncoder(w).Encode(r)
+	return writeJSONLine(w, r)
 }
 
-func readLine(r io.Reader) ([]byte, error) {
-	br, ok := r.(*bufio.Reader)
-	if !ok {
-		br = bufio.NewReader(r)
+func writeJSONLine(w io.Writer, value any) error {
+	b, err := json.Marshal(value)
+	if err != nil {
+		return err
 	}
-	return br.ReadBytes('\n')
+	if len(b)+1 > maxMessageSize {
+		return errMessageTooLarge
+	}
+	b = append(b, '\n')
+	_, err = w.Write(b)
+	return err
+}
+
+func readLine(br *bufio.Reader) ([]byte, error) {
+	var line []byte
+	for {
+		part, err := br.ReadSlice('\n')
+		line = append(line, part...)
+		if len(line) > maxMessageSize {
+			return nil, errMessageTooLarge
+		}
+		if err == nil {
+			return line, nil
+		}
+		if err != bufio.ErrBufferFull {
+			return nil, err
+		}
+	}
 }

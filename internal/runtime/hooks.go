@@ -52,7 +52,7 @@ func (r *Runtime) runHooks(phase string, cmds []string, cwd string) error {
 		if err != nil {
 			return &HookError{Phase: phase, Index: i, Cmd: raw, Err: err}
 		}
-		r.log.Info("hook", "phase", phase, "index", i, "cmd", raw)
+		r.log.Info("hook", "phase", phase, "index", i)
 		out, err := r.pf.Run(platform.LaunchOpts{
 			Cmd:  program,
 			Args: args,
@@ -90,7 +90,7 @@ func (r *Runtime) workspaceHooks(inst state.Instance) (*config.Workspace, string
 	w, err := config.Load(inst.WorkspacePath)
 	if err != nil {
 		r.log.Warn("load workspace for stop hooks",
-			"instance", inst.ID, "path", inst.WorkspacePath, "error", err)
+			"instance", inst.ID, "error", err)
 		return nil, ""
 	}
 	return w, hookCwd(inst.WorkspacePath)

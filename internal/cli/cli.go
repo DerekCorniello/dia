@@ -96,6 +96,7 @@ func newRootCmd() *cobra.Command {
 		newDoctorCmd(),
 		newPluginCmd(),
 		newBrowserCmd(),
+		newBackupCmd(),
 		newServeCmd(),
 	)
 	return cmd
@@ -249,12 +250,14 @@ func resolveWorkspace(name string) (*config.Workspace, config.Source, error) {
 	if err != nil {
 		return nil, config.Source{}, fmt.Errorf("discover workspaces: %w", err)
 	}
-	for _, w := range all {
-		if w.Workspace.Name == name {
-			return w.Workspace, w, nil
+	workspace, source, err := config.ResolveName(all, name)
+	if err != nil {
+		if errors.Is(err, config.ErrWorkspaceNotFound) {
+			return nil, config.Source{}, &NotFoundError{What: "workspace " + name}
 		}
+		return nil, config.Source{}, err
 	}
-	return nil, config.Source{}, &NotFoundError{What: "workspace " + name}
+	return workspace, source, nil
 }
 
 // NotFoundError indicates the requested entity (workspace, instance)

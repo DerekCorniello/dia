@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { focusTrap } from '../focusTrap';
 
   export let title = 'Confirm';
   export let message = '';
@@ -7,9 +8,21 @@
   export let danger = false;
 
   const dispatch = createEventDispatcher<{ confirm: void; cancel: void }>();
+  let confirmButton: HTMLButtonElement;
+  let previousFocus: HTMLElement | null = null;
+
+  onMount(() => {
+    previousFocus = document.activeElement as HTMLElement | null;
+    confirmButton?.focus();
+  });
+
+  onDestroy(() => previousFocus?.focus());
 
   function onKey(e: KeyboardEvent) {
-    if (e.key === 'Escape') dispatch('cancel');
+    if (e.key === 'Escape') {
+      e.stopImmediatePropagation();
+      dispatch('cancel');
+    }
   }
 
   function onConfirm() {
@@ -36,9 +49,10 @@
     class="w-96 rounded-lg border border-primary/15 bg-bg-700 p-5 shadow-lg"
     role="alertdialog"
     aria-modal="true"
-    aria-label={title}
+    aria-labelledby="confirm-dialog-title"
+    use:focusTrap
   >
-    <h2 class="text-base font-medium text-fg mb-2">{title}</h2>
+    <h2 id="confirm-dialog-title" class="text-base font-medium text-fg mb-2">{title}</h2>
     <p class="text-sm text-fg-dim mb-5">{message}</p>
     <div class="flex justify-end gap-2">
       <button
@@ -50,6 +64,7 @@
       </button>
       <button
         type="button"
+        bind:this={confirmButton}
         on:click={onConfirm}
         class="rounded px-3 py-1.5 text-sm font-medium {danger
           ? 'bg-error text-white hover:bg-error/90'

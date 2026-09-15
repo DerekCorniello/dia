@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -32,7 +33,8 @@ type Server struct {
 	log      *slog.Logger
 	stateDir string
 
-	ln net.Listener
+	ln   net.Listener
+	done chan struct{}
 	// mu serializes dispatch: handlers mutate the same store the
 	// runtime supervises, and the resolver manager is not safe for
 	// concurrent use.
@@ -87,6 +89,9 @@ func NewServer(opts Options) (*Server, error) {
 		Registry: reg,
 		Logger:   log,
 	})
+	if err := rt.Reconcile(); err != nil {
+		log.Warn("reconcile persisted instances on startup", "error", err)
+	}
 	return &Server{
 		store:    st,
 		rt:       rt,
@@ -95,6 +100,7 @@ func NewServer(opts Options) (*Server, error) {
 		pmgr:     pmgr,
 		log:      log,
 		stateDir: stateDir,
+		done:     make(chan struct{}),
 	}, nil
 }
 
@@ -143,19 +149,32 @@ func syncPluginGrants(log *slog.Logger, st *state.Store, reg *registry.Registry,
 // Serve binds the daemon socket and blocks handling connections until
 // the listener is closed (Shutdown verb or Close).
 func (s *Server) Serve() error {
+	lock, err := acquireDaemonLock(filepath.Join(s.stateDir, "serve.lock"))
+	if err != nil {
+		return err
+	}
+	defer releaseDaemonLock(filepath.Join(s.stateDir, "serve.lock"), lock)
 	path := socketPath(s.stateDir)
 	ln, err := listenSocket(path)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", path, err)
 	}
+	if s.closeOnceDone() {
+		_ = ln.Close()
+		removeSocket(path)
+		return nil
+	}
 	s.ln = ln
-	s.log.Info("daemon serving", "socket", path)
+	s.log.Info("daemon serving")
 	defer removeSocket(path)
 
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			return nil
+			if s.closeOnceDone() {
+				return nil
+			}
+			return fmt.Errorf("accept: %w", err)
 		}
 		go s.handle(conn)
 	}
@@ -164,6 +183,7 @@ func (s *Server) Serve() error {
 // Close stops all supervised workspaces and closes the listener.
 func (s *Server) Close() {
 	s.closeOnce.Do(func() {
+		close(s.done)
 		if err := s.rt.StopAll(true); err != nil {
 			s.log.Warn("stop all on shutdown", "error", err)
 		}
@@ -179,21 +199,32 @@ func SocketPath(stateDir string) string { return socketPath(stateDir) }
 // handle serves a single client connection.
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
+	if err := verifyPeer(conn); err != nil {
+		s.log.Warn("reject daemon client", "error", err)
+		return
+	}
+	br := bufio.NewReader(conn)
 	for {
-		line, err := readLine(conn)
+		line, err := readLine(br)
 		if err != nil {
 			return
 		}
 		var req request
 		if err := json.Unmarshal(line, &req); err != nil {
-			_ = writeResponse(conn, response{Error: "bad request"})
+			if writeErr := writeResponse(conn, response{Error: "bad request"}); writeErr != nil {
+				return
+			}
 			continue
 		}
 		result, err := s.dispatch(req)
 		if err != nil {
-			_ = writeResponse(conn, response{ID: req.ID, Error: err.Error()})
+			if writeErr := writeResponse(conn, response{ID: req.ID, Error: err.Error()}); writeErr != nil {
+				return
+			}
 		} else {
-			_ = writeResponse(conn, response{ID: req.ID, Result: result})
+			if writeErr := writeResponse(conn, response{ID: req.ID, Result: result}); writeErr != nil {
+				return
+			}
 		}
 		if req.Method == MethodShutdown {
 			// The response above must reach the client before the
@@ -205,11 +236,31 @@ func (s *Server) handle(conn net.Conn) {
 	}
 }
 
+func (s *Server) closeOnceDone() bool {
+	select {
+	case <-s.done:
+		return true
+	default:
+		return false
+	}
+}
+
 // dispatch routes a request to a handler under the server mutex.
 func (s *Server) dispatch(req request) (json.RawMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// The GUI, CLI, and plugin host can all persist settings through their
+	// own Store handle. Refresh before lifecycle mutations so grants, roots,
+	// and the latest instance snapshot are not overwritten by stale memory.
 	switch req.Method {
+	case MethodStart, MethodStop, MethodRestart, MethodStopAll, MethodReconcile:
+		if err := s.store.Reload(); err != nil {
+			return nil, fmt.Errorf("reload state: %w", err)
+		}
+	}
+	switch req.Method {
+	case MethodHello:
+		return s.doHello(req.Params)
 	case MethodStart:
 		return s.doStart(req.Params)
 	case MethodStop:
@@ -219,7 +270,7 @@ func (s *Server) dispatch(req request) (json.RawMessage, error) {
 	case MethodStopAll:
 		return s.doStopAll(req.Params)
 	case MethodList, MethodStatus:
-		return s.doList()
+		return s.doListWithParams(req.Params)
 	case MethodReconcile:
 		return s.doReconcile()
 	case MethodVersion:
@@ -229,6 +280,17 @@ func (s *Server) dispatch(req request) (json.RawMessage, error) {
 	default:
 		return nil, fmt.Errorf("unknown method %q", req.Method)
 	}
+}
+
+func (s *Server) doHello(raw json.RawMessage) (json.RawMessage, error) {
+	var p HelloParams
+	if err := verbParams(raw, &p); err != nil {
+		return nil, fmt.Errorf("hello: bad params: %w", err)
+	}
+	if p.Protocol != ProtocolVersion {
+		return nil, fmt.Errorf("incompatible daemon protocol %d (supported %d)", p.Protocol, ProtocolVersion)
+	}
+	return jsonify(HelloReply{Protocol: ProtocolVersion})
 }
 
 // verbParams decodes request parameters into out. An empty body means
@@ -380,7 +442,7 @@ func (e *NoWorkspaceError) Error() string { return "workspace " + e.Name + " not
 // name, or nil when none is running.
 func (s *Server) runningInstanceByName(name string) *state.Instance {
 	for _, inst := range s.rt.Instances() {
-		if inst.WorkspaceName == name && inst.Status == state.StatusRunning {
+		if inst.WorkspaceName == name && inst.Status.Live() {
 			cp := inst
 			return &cp
 		}
@@ -401,7 +463,7 @@ func (s *Server) doStop(raw json.RawMessage) (json.RawMessage, error) {
 	}
 	ids := []string{}
 	for _, inst := range s.rt.Instances() {
-		if inst.WorkspaceName != p.Name || inst.Status != state.StatusRunning {
+		if inst.WorkspaceName != p.Name || !inst.Status.Live() {
 			continue
 		}
 		if err := s.stopInstance(inst.ID, p.Force); err != nil {
@@ -460,8 +522,35 @@ func (s *Server) stopInstance(id string, force bool) error {
 	return s.rt.Stop(id, force)
 }
 
-func (s *Server) doList() (json.RawMessage, error) {
-	return jsonify(s.rt.Instances())
+// ListParams controls pagination for list. Zero values mean no pagination.
+type ListParams struct {
+	Limit  int `json:"limit,omitempty"`
+	Offset int `json:"offset,omitempty"`
+}
+
+func (s *Server) doListWithParams(raw json.RawMessage) (json.RawMessage, error) {
+	all := s.rt.Instances()
+	if len(raw) == 0 {
+		return jsonify(all)
+	}
+	var p ListParams
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, fmt.Errorf("list: bad params: %w", err)
+	}
+	if p.Limit <= 0 && p.Offset <= 0 {
+		return jsonify(all)
+	}
+	if p.Offset < 0 {
+		p.Offset = 0
+	}
+	if p.Offset >= len(all) {
+		return jsonify([]state.Instance{})
+	}
+	end := len(all)
+	if p.Limit > 0 && p.Offset+p.Limit < end {
+		end = p.Offset + p.Limit
+	}
+	return jsonify(all[p.Offset:end])
 }
 
 func (s *Server) doReconcile() (json.RawMessage, error) {
@@ -481,7 +570,7 @@ func (s *Server) doReconcile() (json.RawMessage, error) {
 func runningCount(st *state.Store) int {
 	n := 0
 	for _, inst := range st.Snapshot().Instances {
-		if inst.Status == state.StatusRunning {
+		if inst.Status.Live() {
 			n++
 		}
 	}
@@ -518,7 +607,28 @@ func (s *Server) spawnPluginWindow(pluginID, workspaceName, workspacePath string
 	if err != nil {
 		return 0, err
 	}
-	return handle.PID(), nil
+	pid := handle.PID()
+	s.applyPluginWindowMode(pluginID, pid)
+	return pid, nil
+}
+
+// applyPluginWindowMode enforces the manifest's floating/tiling request
+// once the window process exists. Async and advisory: if the window
+// never appears, it just follows the compositor default.
+func (s *Server) applyPluginWindowMode(pluginID string, pid int) {
+	if s.pmgr == nil || pid <= 0 {
+		return
+	}
+	loaded, ok := s.pmgr.Loaded(pluginID)
+	if !ok || loaded.Manifest == nil {
+		return
+	}
+	floating := loaded.Manifest.UI.WindowFloating()
+	go func() {
+		if err := platform.SetFloating(pid, floating); err != nil {
+			s.log.Debug("apply plugin window mode", "id", pluginID, "error", err)
+		}
+	}()
 }
 
 // enableWorkspacePlugins persists workspace plugin config and derived

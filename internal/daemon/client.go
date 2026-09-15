@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -19,12 +20,16 @@ import (
 // listening on the far end, or the daemon is not running at all.
 var ErrNoDaemon = errors.New("no daemon is running")
 
+// ErrProtocolMismatch means a live daemon speaks an incompatible protocol.
+var ErrProtocolMismatch = errors.New("daemon protocol mismatch")
+
 // Client is a connection to a running daemon. It is safe for
 // concurrent use; each Do carries its own request ID.
 type Client struct {
 	conn   net.Conn
 	nextID int64
 	br     *bufio.Reader
+	mu     sync.Mutex
 }
 
 // Dial connects to the daemon socket for the given state dir. It does
@@ -38,21 +43,46 @@ func dialPath(path string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrNoDaemon, err)
 	}
-	return &Client{
+	c := &Client{
 		conn:   conn,
 		nextID: 1,
 		br:     bufio.NewReader(conn),
-	}, nil
+	}
+	var hello HelloReply
+	if err := c.Do(MethodHello, HelloParams{Protocol: ProtocolVersion}, &hello); err != nil {
+		_ = conn.Close()
+		if strings.Contains(err.Error(), "unknown method") || strings.Contains(err.Error(), "incompatible daemon protocol") {
+			return nil, fmt.Errorf("%w: %w", ErrProtocolMismatch, err)
+		}
+		return nil, fmt.Errorf("daemon handshake: %w", err)
+	}
+	if hello.Protocol != ProtocolVersion {
+		_ = conn.Close()
+		return nil, fmt.Errorf("%w: protocol %d; want %d", ErrProtocolMismatch, hello.Protocol, ProtocolVersion)
+	}
+	return c, nil
 }
 
 // Close detaches from the daemon. The daemon keeps running.
-func (c *Client) Close() error { return c.conn.Close() }
+func (c *Client) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conn == nil {
+		return nil
+	}
+	return c.conn.Close()
+}
 
 // Do sends one request and waits for its synchronous response. Each
-// request carries a unique ID; the daemon replies in order. Callers
-// are expected to serialize concurrent Do calls (the socket is
-// line-based), so one in-flight request at a time.
+// request carries a unique ID; the daemon replies in order.
 func (c *Client) Do(method string, params, result any) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conn == nil {
+		return ErrNoDaemon
+	}
+	_ = c.conn.SetDeadline(time.Now().Add(requestTimeout))
+	defer func() { _ = c.conn.SetDeadline(time.Time{}) }()
 	id := atomic.AddInt64(&c.nextID, 1)
 	if err := writeRequest(c.conn, id, method, params); err != nil {
 		return fmt.Errorf("send %s: %w", method, err)
@@ -101,11 +131,16 @@ type EnsureOpts struct {
 // spawnTimeout for the daemon to accept connections.
 const spawnTimeout = 10 * time.Second
 
+const requestTimeout = 30 * time.Second
+
 func Ensure(opts EnsureOpts) (*Client, error) {
 	path := socketPath(opts.StateDir)
 	c, err := dialPath(path)
 	if err == nil {
 		return c, nil
+	}
+	if errors.Is(err, ErrProtocolMismatch) {
+		return nil, err
 	}
 	if opts.NoSpawn {
 		return nil, err

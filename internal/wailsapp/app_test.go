@@ -6,9 +6,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"testing"
 	"time"
 
+	"github.com/DerekCorniello/dia/internal/config"
 	"github.com/DerekCorniello/dia/internal/daemon"
 )
 
@@ -20,6 +23,138 @@ func withTempXDG(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 	t.Setenv("XDG_STATE_HOME", tmp)
+}
+
+func TestWorkspaceEditorPreservesBrowserAndCommandFields(t *testing.T) {
+	withTempXDG(t)
+	a := New()
+	a.Startup(testCtx())
+	editor := WorkspaceEditor{
+		Name:  "roundtrip",
+		Hooks: &HooksEditor{PreStart: []string{"echo prepare"}, PostStop: []string{"echo cleanup"}},
+		Apps: []AppEditor{
+			{
+				Type: "browser", Label: "dashboards", Browser: "zen-browser",
+				Urls: []string{"dc/gh/mux/prs", "https://example.com"}, NewWindow: true,
+				Env: map[string]string{"MOZ_ENABLE_WAYLAND": "1"},
+			},
+			{
+				Type: "editor", Label: "code", Cmd: "code", Cwd: "/tmp/project",
+				Args: []string{"--wait", "."}, Env: map[string]string{"A": "B"},
+			},
+		},
+	}
+	if err := a.SaveWorkspaceEditor(editor); err != nil {
+		t.Fatalf("SaveWorkspaceEditor: %v", err)
+	}
+	path := filepath.Join(config.DefaultGlobalDir(), "roundtrip.yaml")
+	ws, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load saved workspace: %v", err)
+	}
+	if got := ws.Apps[0]; got.Browser != "zen-browser" || !got.NewWindow || !slices.Equal(got.Urls, editor.Apps[0].Urls) || got.Env["MOZ_ENABLE_WAYLAND"] != "1" {
+		t.Errorf("browser app did not round-trip: %#v", got)
+	}
+	if got := ws.Apps[1]; got.Type != "editor" || got.Cmd != "code" || !slices.Equal(got.Args, []string{"--wait", "."}) || got.Env["A"] != "B" {
+		t.Errorf("command app did not round-trip: %#v", got)
+	}
+	if ws.Hooks == nil || !slices.Equal(ws.Hooks.PreStart, []string{"echo prepare"}) || !slices.Equal(ws.Hooks.PostStop, []string{"echo cleanup"}) {
+		t.Errorf("hooks did not round-trip: %#v", ws.Hooks)
+	}
+	editor.Description = "updated"
+	if err := a.SaveWorkspaceEditor(editor); err != nil {
+		t.Fatalf("SaveWorkspaceEditor update: %v", err)
+	}
+	backup, err := os.ReadFile(path + ".bak")
+	if err != nil {
+		t.Fatalf("read workspace backup: %v", err)
+	}
+	if !contains(backup, "name: roundtrip") || contains(backup, "description: updated") {
+		t.Fatalf("workspace backup does not contain the previous version:\n%s", backup)
+	}
+}
+
+// TestEditorRoundTripAllTypes is the lossless-editor fixture table: every
+// built-in type plus hooks, env, and plugin types must survive
+// Save -> GetWorkspaceEditor -> Save without dropping representable data.
+func TestEditorRoundTripAllTypes(t *testing.T) {
+	withTempXDG(t)
+	a := New()
+	a.Startup(testCtx())
+	cases := []AppEditor{
+		{Type: "terminal", Label: "shell", Cmd: "kitty", Cwd: "/tmp", Args: []string{"--hold"}, Env: map[string]string{"A": "1"}, TermCmd: "claude"},
+		{Type: "editor", Label: "code", Cmd: "code", Args: []string{"--wait", "."}},
+		{Type: "service", Label: "db", Cmd: "postgres", Args: []string{"-D", "/data"}},
+		{Type: "browser", Label: "dash", Browser: "zen-browser", Urls: []string{"dc/gh/mux/prs", "https://example.com"}, NewWindow: true},
+		{Type: "browser", Label: "single", Url: "https://example.com"},
+		{Type: "open", Label: "docs", Url: "https://example.com/docs"},
+		{Type: "local", Label: "run", Cmd: "make", Args: []string{"test"}},
+		{Type: "custom", Label: "thing", Cmd: "thing", Env: map[string]string{"X": "y"}},
+		{Type: "ai", Label: "agent", Cmd: "agent", Args: []string{"--model", "m"}},
+		{Type: "gh", Label: "prs", Cmd: "pr", Args: []string{"list"}},
+		{Type: "gh:pr", Label: "pr", Args: []string{"view", "12"}},
+		{Type: "gh:issue", Label: "iss", Args: []string{"list"}},
+		{Type: "gh:checkout", Label: "co", Args: []string{"12"}},
+		{Type: "gh:repo-clone", Label: "clone", Url: "https://github.com/o/r", Cwd: "/tmp/dst"},
+		{Type: "my-plugin-type", Label: "plug", Cmd: "plug-cmd", Args: []string{"--x"}},
+	}
+	editor := WorkspaceEditor{
+		Name:        "alltypes",
+		Description: "every type",
+		Hooks:       &HooksEditor{PreStart: []string{"echo a"}, PostStart: []string{"echo b"}, PreStop: []string{"echo c"}, PostStop: []string{"echo d"}},
+		Apps:        cases,
+	}
+	if err := a.SaveWorkspaceEditor(editor); err != nil {
+		t.Fatalf("SaveWorkspaceEditor: %v", err)
+	}
+	path := filepath.Join(config.DefaultGlobalDir(), "alltypes.yaml")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := a.GetWorkspaceEditor("alltypes")
+	if err != nil {
+		t.Fatalf("GetWorkspaceEditor: %v", err)
+	}
+	if len(got.Apps) != len(cases) {
+		t.Fatalf("apps = %d, want %d", len(got.Apps), len(cases))
+	}
+	// Saving the reloaded editor must be a fixed point: identical bytes.
+	got.OriginalName = "alltypes"
+	got.OriginalPath = path
+	if err := a.SaveWorkspaceEditor(*got); err != nil {
+		t.Fatalf("resave: %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Errorf("editor is not a fixed point:\n--- first ---\n%s\n--- second ---\n%s", before, after)
+	}
+	ws, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(ws.Apps) != len(cases) {
+		t.Fatalf("reloaded apps = %d, want %d", len(ws.Apps), len(cases))
+	}
+	for i, want := range cases {
+		gotApp := ws.Apps[i]
+		if gotApp.Type != want.Type || gotApp.Label != want.Label {
+			t.Errorf("app[%d] type/label = %q/%q, want %q/%q", i, gotApp.Type, gotApp.Label, want.Type, want.Label)
+		}
+		if !reflect.DeepEqual(gotApp.Env, emptyToNil(want.Env)) {
+			t.Errorf("app[%d] env = %#v, want %#v", i, gotApp.Env, want.Env)
+		}
+	}
+}
+
+func emptyToNil(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }
 
 // xdgStateDir returns the state dir the app binds under the current
@@ -354,6 +489,48 @@ func TestListPlugins_NoActionsMarshalsAsArray(t *testing.T) {
 	}
 	if probe["grantedCapabilities"] == nil {
 		t.Errorf("`grantedCapabilities` should be present (possibly empty), got null/missing")
+	}
+}
+
+func TestGetPluginReturnsDetailOmittedFromList(t *testing.T) {
+	withTempXDG(t)
+	a := New()
+	a.Startup(testCtx())
+	stateDir, err := resolveStateDir(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pdir := filepath.Join(stateDir, "plugins", "details")
+	if err := os.MkdirAll(pdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"id":"details","name":"Details","version":"0.1.0","long_description":"Long help","config_schema":{"color":{"type":"text"}},"ui":{"type":"table","title":"Rows","columns":[{"key":"name","label":"Name"}]}}`
+	if err := os.WriteFile(filepath.Join(pdir, "plugin.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pdir, "index.js"), []byte("module.exports = {};"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.pmgr.Discover(); err != nil {
+		t.Fatal(err)
+	}
+
+	list := a.ListPlugins()
+	if len(list) != 1 {
+		t.Fatalf("ListPlugins len = %d, want 1", len(list))
+	}
+	if list[0].LongDescription != "" || list[0].ConfigSchema != nil {
+		t.Errorf("list contains detail fields: %#v", list[0])
+	}
+	if len(list[0].UI.Columns) != 1 {
+		t.Fatalf("list omitted table rendering contract: %#v", list[0].UI)
+	}
+	detail, err := a.GetPlugin("details")
+	if err != nil {
+		t.Fatalf("GetPlugin: %v", err)
+	}
+	if detail.LongDescription != "Long help" || detail.ConfigSchema["color"] == nil {
+		t.Errorf("detail fields missing: %#v", detail)
 	}
 }
 

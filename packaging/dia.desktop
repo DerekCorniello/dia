@@ -2,7 +2,11 @@
 Type=Application
 Name=dia
 Comment=Cross-platform launcher for dev workspaces
-Exec=@EXEC@
+# WEBKIT_DISABLE_DMABUF_RENDERER works around a WebKitGTK explicit-sync
+# crash ("Missing acquire timeline") on NVIDIA + Wayland that kills the
+# window milliseconds after launch. Absolute /usr/bin/env because some
+# launchers do not do PATH lookup on the Exec command itself.
+Exec=/usr/bin/env WEBKIT_DISABLE_DMABUF_RENDERER=1 @EXEC@
 Icon=@ICON@
 Terminal=false
 Categories=Development;Utility;

@@ -1,13 +1,117 @@
 package daemon
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/DerekCorniello/dia/internal/state"
 )
+
+func TestClientConcurrentDo(t *testing.T) {
+	stateDir := t.TempDir()
+	startServer(t, stateDir)
+	c := dialClient(t, stateDir)
+
+	const calls = 64
+	errCh := make(chan error, calls)
+	var wg sync.WaitGroup
+	for i := 0; i < calls; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var got map[string]string
+			if err := c.Do(MethodVersion, nil, &got); err != nil {
+				errCh <- err
+				return
+			}
+			if got["version"] == "" {
+				errCh <- fmt.Errorf("empty version response: %#v", got)
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Error(err)
+	}
+}
+
+func TestListPagination(t *testing.T) {
+	stateDir := t.TempDir()
+	startServer(t, stateDir)
+	c := dialClient(t, stateDir)
+
+	var full []state.Instance
+	if err := c.Do(MethodList, nil, &full); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	var page []state.Instance
+	if err := c.Do(MethodList, ListParams{Limit: 1, Offset: 0}, &page); err != nil {
+		t.Fatalf("paginated list: %v", err)
+	}
+	if len(page) > 1 {
+		t.Errorf("limit=1 returned %d instances", len(page))
+	}
+	var empty []state.Instance
+	if err := c.Do(MethodList, ListParams{Limit: 10, Offset: 1 << 20}, &empty); err != nil {
+		t.Fatalf("offset past end: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("offset past end returned %d instances, want 0", len(empty))
+	}
+	var bad []state.Instance
+	if err := c.Do(MethodList, ListParams{Limit: 0, Offset: -5}, &bad); err != nil {
+		t.Fatalf("negative offset: %v", err)
+	}
+}
+
+// TestDegradedInstanceStops proves a degraded workspace (some apps
+// crashed) is still stoppable by name. Stopping only StatusRunning
+// once made degraded instances unmanageable from both GUI and CLI.
+func TestDegradedInstanceStops(t *testing.T) {
+	stateDir := t.TempDir()
+	dir := t.TempDir()
+	w := `version: 1
+name: partfail
+apps:
+  - type: service
+    cmd: sleep
+    args: ["60"]
+  - type: service
+    cmd: /nope/definitely-missing
+`
+	wsPath := filepath.Join(dir, "partfail.yaml")
+	if err := os.WriteFile(wsPath, []byte(w), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	startServer(t, stateDir)
+	c := dialClient(t, stateDir)
+
+	var started StartReply
+	if err := c.Do(MethodStart, StartParams{Name: "partfail", Path: wsPath}, &started); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if started.Instance == nil || started.Instance.Status != state.StatusDegraded {
+		t.Fatalf("status = %+v, want degraded", started.Instance)
+	}
+	var stopped map[string]any
+	if err := c.Do(MethodStop, StopParams{Name: "partfail"}, &stopped); err != nil {
+		t.Fatalf("stop degraded: %v", err)
+	}
+	var list []state.Instance
+	if err := c.Do(MethodList, nil, &list); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	for _, inst := range list {
+		if inst.ID == started.Instance.ID && inst.Status.Live() {
+			t.Errorf("instance %s still live after stop: %s", inst.ID, inst.Status)
+		}
+	}
+}
 
 func writeWorkspace(t *testing.T, dir, name string) string {
 	t.Helper()

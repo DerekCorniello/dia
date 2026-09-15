@@ -101,3 +101,43 @@ func TestStartRoutesBrowserAppThroughSurface(t *testing.T) {
 		t.Errorf("closed wrong handle: %+v vs %+v", surf.closed[0], persisted.Apps[0].Browser)
 	}
 }
+
+// errSurface fails Open with a fixed error so the fallback path can be
+// tested without a real browser.
+type errSurface struct{ err error }
+
+func (s *errSurface) Open(browser.OpenOpts) (state.BrowserHandle, error) {
+	return state.BrowserHandle{}, s.err
+}
+func (s *errSurface) Alive(state.BrowserHandle) (bool, error) { return false, nil }
+func (s *errSurface) Close(state.BrowserHandle) error         { return nil }
+func (s *errSurface) Name() string                            { return browser.StrategyDedicatedProfile }
+
+// TestBrowserFallbackMarksDegraded proves the owned-profile fallback is
+// never silent: the app carries a Note and the instance is degraded.
+func TestBrowserFallbackMarksDegraded(t *testing.T) {
+	rt, _, st := newBrowserRuntime(t, &errSurface{err: browser.ErrUnsupportedBrowser})
+
+	ws := &config.Workspace{
+		Name: "w",
+		Apps: []config.App{{
+			Type: "browser", Browser: "not-a-browser",
+			Urls: []string{"https://a"},
+		}},
+	}
+	inst, err := rt.Start(ws, config.Source{Path: "/tmp/w.yaml"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	persisted := st.Snapshot().Instances[inst.ID]
+	if len(persisted.Apps) != 1 {
+		t.Fatalf("apps = %d, want 1", len(persisted.Apps))
+	}
+	if persisted.Apps[0].Note == "" {
+		t.Error("fallback app has no Note; the downgrade is silent")
+	}
+	if persisted.Status != state.StatusDegraded {
+		t.Errorf("instance status = %v, want degraded", persisted.Status)
+	}
+	_ = inst
+}

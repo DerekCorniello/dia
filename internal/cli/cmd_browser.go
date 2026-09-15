@@ -22,7 +22,61 @@ func newBrowserCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newBrowserListCmd())
 	cmd.AddCommand(newBrowserRefreshCmd())
+	cmd.AddCommand(newBrowserStatusCmd())
 	return cmd
+}
+
+func formatBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for n/div >= unit && exp < 4 {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGT"[exp])
+}
+
+func newBrowserStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "status",
+		Aliases: []string{"st"},
+		Short:   "Show disk usage of dia-managed browser profiles",
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir, err := resolveStateDir(cmd)
+			if err != nil {
+				return err
+			}
+			surf, err := browser.NewDedicatedProfile(browser.Options{
+				Platform: platform.New(),
+				StateDir: dir,
+			})
+			if err != nil {
+				return err
+			}
+			stats, err := surf.Status()
+			if err != nil {
+				return err
+			}
+			out := newOutput(cmd)
+			if out.IsJSON() {
+				return out.JSON(map[string]any{"browsers": stats})
+			}
+			if len(stats) == 0 {
+				return out.Println("no dia-managed browser profiles")
+			}
+			for _, st := range stats {
+				if err := out.Printf("%s: seed %s, %d clone(s) %s, %d active session(s)\n",
+					st.Browser, formatBytes(st.SeedBytes), st.Clones, formatBytes(st.CloneBytes), st.Active); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
 }
 
 func newBrowserListCmd() *cobra.Command {

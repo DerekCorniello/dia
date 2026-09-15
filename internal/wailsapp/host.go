@@ -177,7 +177,7 @@ func (h *wailsHost) Fetch(ctx context.Context, url string, opts map[string]any) 
 		return nil, fmt.Errorf("fetch: %w", err)
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	data, err := readFetchResponse(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
 	}

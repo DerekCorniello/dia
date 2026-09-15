@@ -55,10 +55,9 @@ type Platform interface {
 	// than "not found" are propagated; the caller decides.
 	IsRunning(pid int) (bool, error)
 
-	// Kill terminates pid. With force=false, implementations
-	// should send SIGTERM (or the Windows equivalent) and give
-	// the process a short grace period before escalating. With
-	// force=true, SIGKILL/taskkill /F is sent immediately.
+	// Kill terminates the process group rooted at pid. With force=false,
+	// implementations should send a graceful signal and with force=true
+	// terminate immediately.
 	// The entire process tree spawned under dia should be
 	// terminated.
 	Kill(pid int, force bool) error

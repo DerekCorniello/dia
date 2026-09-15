@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -74,17 +75,67 @@ type geckoAdapter struct {
 // geckoRoot returns the base directory holding profiles.ini for this
 // Gecko browser (e.g. ~/.zen, ~/.mozilla/firefox, ~/.librewolf).
 func (g *geckoAdapter) geckoRoot() string {
+	base := filepath.Join(g.home, ".mozilla", "firefox")
+	if runtime.GOOS == "darwin" {
+		base = filepath.Join(g.home, "Library", "Application Support", "Firefox")
+	} else if runtime.GOOS == "windows" {
+		cfg := os.Getenv("APPDATA")
+		if cfg == "" {
+			cfg = filepath.Join(g.home, "AppData", "Roaming")
+		}
+		base = filepath.Join(cfg, "Mozilla", "Firefox")
+	}
 	switch g.key {
 	case "zen":
+		if runtime.GOOS == "darwin" {
+			return filepath.Join(g.home, "Library", "Application Support", "zen")
+		}
+		if runtime.GOOS == "windows" {
+			cfg := os.Getenv("APPDATA")
+			if cfg == "" {
+				cfg = filepath.Join(g.home, "AppData", "Roaming")
+			}
+			return filepath.Join(cfg, "zen")
+		}
 		return filepath.Join(g.home, ".zen")
 	case "librewolf":
+		if runtime.GOOS == "darwin" {
+			return filepath.Join(g.home, "Library", "Application Support", "LibreWolf")
+		}
+		if runtime.GOOS == "windows" {
+			cfg := os.Getenv("APPDATA")
+			if cfg == "" {
+				cfg = filepath.Join(g.home, "AppData", "Roaming")
+			}
+			return filepath.Join(cfg, "librewolf")
+		}
 		return filepath.Join(g.home, ".librewolf")
 	case "waterfox":
+		if runtime.GOOS == "darwin" {
+			return filepath.Join(g.home, "Library", "Application Support", "Waterfox")
+		}
+		if runtime.GOOS == "windows" {
+			cfg := os.Getenv("APPDATA")
+			if cfg == "" {
+				cfg = filepath.Join(g.home, "AppData", "Roaming")
+			}
+			return filepath.Join(cfg, "Waterfox")
+		}
 		return filepath.Join(g.home, ".waterfox")
 	case "floorp":
+		if runtime.GOOS == "darwin" {
+			return filepath.Join(g.home, "Library", "Application Support", "Floorp")
+		}
+		if runtime.GOOS == "windows" {
+			cfg := os.Getenv("APPDATA")
+			if cfg == "" {
+				cfg = filepath.Join(g.home, "AppData", "Roaming")
+			}
+			return filepath.Join(cfg, "Floorp")
+		}
 		return filepath.Join(g.home, ".floorp")
 	default: // firefox and icecat use the mozilla dir
-		return filepath.Join(g.home, ".mozilla", "firefox")
+		return base
 	}
 }
 
@@ -137,14 +188,34 @@ type chromiumAdapter struct {
 // chromiumConfigDir returns the user-data-dir for this Chromium browser.
 func (c *chromiumAdapter) chromiumConfigDir() string {
 	cfg := filepath.Join(c.home, ".config")
+	if runtime.GOOS == "darwin" {
+		cfg = filepath.Join(c.home, "Library", "Application Support")
+	} else if runtime.GOOS == "windows" {
+		cfg = os.Getenv("LOCALAPPDATA")
+		if cfg == "" {
+			cfg = filepath.Join(c.home, "AppData", "Local")
+		}
+	}
 	switch chromiumFamily[c.base] {
 	case "google-chrome":
+		if runtime.GOOS == "windows" {
+			return filepath.Join(cfg, "Google", "Chrome", "User Data")
+		}
 		return filepath.Join(cfg, "google-chrome")
 	case "brave":
+		if runtime.GOOS == "windows" {
+			return filepath.Join(cfg, "BraveSoftware", "Brave-Browser", "User Data")
+		}
 		return filepath.Join(cfg, "BraveSoftware", "Brave-Browser")
 	case "vivaldi":
+		if runtime.GOOS == "windows" {
+			return filepath.Join(cfg, "Vivaldi", "User Data")
+		}
 		return filepath.Join(cfg, "vivaldi")
 	case "microsoft-edge":
+		if runtime.GOOS == "windows" {
+			return filepath.Join(cfg, "Microsoft", "Edge", "User Data")
+		}
 		return filepath.Join(cfg, "microsoft-edge")
 	default:
 		return filepath.Join(cfg, "chromium")

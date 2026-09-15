@@ -1,10 +1,29 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestResolveNameRejectsAmbiguousWorkspace(t *testing.T) {
+	sources := []Source{
+		{Workspace: &Workspace{Name: "shared"}, Path: "/one.yaml"},
+		{Workspace: &Workspace{Name: "shared"}, Path: "/two.yaml"},
+	}
+	_, _, err := ResolveName(sources, "shared")
+	if err == nil {
+		t.Fatal("ambiguous workspace unexpectedly resolved")
+	}
+	if errors.Is(err, ErrWorkspaceNotFound) {
+		t.Fatalf("ambiguous workspace reported as not found: %v", err)
+	}
+	if !strings.Contains(err.Error(), "/one.yaml") || !strings.Contains(err.Error(), "/two.yaml") {
+		t.Fatalf("ambiguity error = %v, want both paths", err)
+	}
+}
 
 func writeYAML(t *testing.T, dir, name, content string) string {
 	t.Helper()

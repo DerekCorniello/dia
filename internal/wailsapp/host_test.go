@@ -1,7 +1,9 @@
 package wailsapp
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -271,6 +273,17 @@ func TestWailsHost_Fetch_ErrorStatusReturnsBodyAndError(t *testing.T) {
 	}
 	if got != "boom" {
 		t.Errorf("got %+v, want the error body", got)
+	}
+}
+
+func TestWailsHost_Fetch_RejectsOversizedResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(bytes.Repeat([]byte{'x'}, maxFetchResponseBytes+1))
+	}))
+	defer srv.Close()
+	_, err := (&wailsHost{}).Fetch(context.Background(), srv.URL, nil)
+	if !errors.Is(err, errFetchResponseTooLarge) {
+		t.Fatalf("Fetch error = %v, want oversized response error", err)
 	}
 }
 

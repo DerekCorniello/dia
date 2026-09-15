@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/DerekCorniello/dia/internal/config"
+	"github.com/DerekCorniello/dia/internal/daemon"
 	"github.com/DerekCorniello/dia/internal/diag"
 	"github.com/DerekCorniello/dia/internal/platform"
 	"github.com/DerekCorniello/dia/internal/state"
@@ -129,6 +130,35 @@ func (a *App) Paths() PathsInfo {
 	return out
 }
 
+// DaemonInfo tells the UI whether the session daemon is reachable and
+// which protocol it speaks, so a disconnect renders as a banner instead
+// of an empty workspace list that looks like "nothing running".
+type DaemonInfo struct {
+	Reachable bool   `json:"reachable"`
+	Version   string `json:"version,omitempty"`
+	Protocol  int    `json:"protocol,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+// DaemonStatus dials the daemon without spawning it. A down daemon is a
+// normal state (it starts on demand), not an error.
+func (a *App) DaemonStatus() DaemonInfo {
+	if a.store == nil {
+		return DaemonInfo{Error: "not initialized"}
+	}
+	dae, err := daemon.Ensure(daemon.EnsureOpts{StateDir: a.StateDir(), NoSpawn: true})
+	if err != nil {
+		return DaemonInfo{Error: err.Error()}
+	}
+	defer func() { _ = dae.Close() }()
+	var ver map[string]string
+	version := ""
+	if err := dae.Do(daemon.MethodVersion, nil, &ver); err == nil {
+		version = ver["version"]
+	}
+	return DaemonInfo{Reachable: true, Version: version, Protocol: daemon.ProtocolVersion}
+}
+
 // Doctor runs smoke checks and returns one row per check.
 func (a *App) Doctor() []CheckInfo {
 	stateDir, stateFile := "", ""
@@ -140,6 +170,11 @@ func (a *App) Doctor() []CheckInfo {
 	out := make([]CheckInfo, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, CheckInfo{Name: r.Name, Status: r.Status, Detail: r.Detail})
+	}
+	if st := a.DaemonStatus(); st.Reachable {
+		out = append(out, CheckInfo{Name: "daemon", Status: "ok", Detail: st.Version})
+	} else {
+		out = append(out, CheckInfo{Name: "daemon", Status: "warn", Detail: "not running (starts on demand)"})
 	}
 	// A plugin that lost an app-type claim is otherwise invisible: the
 	// workspace starts and launches the winner's command instead.

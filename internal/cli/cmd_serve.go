@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"github.com/DerekCorniello/dia/internal/daemon"
 	"github.com/DerekCorniello/dia/internal/state"
 )
+
+const maxDaemonLogBytes = 10 << 20
 
 func newServeCmd() *cobra.Command {
 	return &cobra.Command{
@@ -58,11 +61,35 @@ func serveLogger(cmd *cobra.Command) *slog.Logger {
 		}
 	}
 	var w io.Writer
-	f, err := os.OpenFile(filepath.Join(dir, state.LogFile), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	path := filepath.Join(dir, state.LogFile)
+	f, err := openDaemonLog(path)
 	if err != nil {
 		w = cmd.ErrOrStderr()
 	} else {
 		w = f
 	}
 	return slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo}))
+}
+
+func openDaemonLog(path string) (*os.File, error) {
+	if info, err := os.Stat(path); err == nil && info.Size() >= maxDaemonLogBytes {
+		rotated := path + ".1"
+		if err := os.Remove(rotated); err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("remove old daemon log: %w", err)
+		}
+		if err := os.Rename(path, rotated); err != nil {
+			return nil, fmt.Errorf("rotate daemon log: %w", err)
+		}
+	} else if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
 }

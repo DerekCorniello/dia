@@ -58,6 +58,28 @@ func TestManifestWindow(t *testing.T) {
 	}
 }
 
+func TestManifestWindowMode(t *testing.T) {
+	for _, mode := range []string{"", "tiling", "floating"} {
+		m := Manifest{
+			ID: "wmode", Name: "Wmode", Version: "0.1.0",
+			UI: UISpec{Type: "window", Title: "W", WindowMode: mode},
+		}
+		if err := m.Validate(); err != nil {
+			t.Errorf("window_mode %q should validate, got %v", mode, err)
+		}
+		if floating := m.UI.WindowFloating(); floating != (mode == "floating") {
+			t.Errorf("window_mode %q WindowFloating = %v", mode, floating)
+		}
+	}
+	m := Manifest{
+		ID: "wmode", Name: "Wmode", Version: "0.1.0",
+		UI: UISpec{Type: "window", Title: "W", WindowMode: "sideways"},
+	}
+	if err := m.Validate(); err == nil {
+		t.Error("window_mode sideways should fail validation")
+	}
+}
+
 // TestManifestRejectsBadEntry covers the top-level entry, which the
 // runtime reads and executes as JS, so an escaping path is worse than a
 // read. The embedded-traversal cases have no leading ".." and only

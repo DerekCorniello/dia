@@ -6,6 +6,8 @@ import {context} from '../models';
 
 export function AddRoot(arg1:string):Promise<void>;
 
+export function DaemonStatus():Promise<wailsapp.DaemonInfo>;
+
 export function DeleteCustomTheme(arg1:string):Promise<void>;
 
 export function DeleteWorkspace(arg1:string):Promise<void>;
@@ -19,6 +21,8 @@ export function GetCwd():Promise<string>;
 export function GetHomeDir():Promise<string>;
 
 export function GetKeybindings():Promise<Record<string, string>>;
+
+export function GetPlugin(arg1:string):Promise<wailsapp.PluginInfo>;
 
 export function GetPluginCapabilities(arg1:string):Promise<wailsapp.PluginCapabilityInfo>;
 
@@ -36,15 +40,21 @@ export function InstallPluginFromFolder():Promise<string>;
 
 export function InstallPluginFromSource(arg1:string,arg2:string):Promise<string>;
 
+export function ListAppTypes():Promise<Array<wailsapp.AppTypeDescriptor>>;
+
 export function ListCustomThemes():Promise<Array<wailsapp.CustomThemeInfo>>;
 
 export function ListInstances():Promise<Array<wailsapp.InstanceInfo>>;
+
+export function ListInstancesPaginated(arg1:number,arg2:number):Promise<Array<wailsapp.InstanceInfo>>;
 
 export function ListPlugins():Promise<Array<wailsapp.PluginInfo>>;
 
 export function ListRoots():Promise<Array<string>>;
 
 export function ListWorkspaces():Promise<Array<wailsapp.WorkspaceInfo>>;
+
+export function ListWorkspacesPaginated(arg1:number,arg2:number):Promise<Array<wailsapp.WorkspaceInfo>>;
 
 export function NewWorkspace(arg1:string,arg2:string):Promise<string>;
 

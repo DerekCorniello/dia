@@ -32,16 +32,25 @@ type Manifest struct {
 // the host spawns a second dia process that serves the plugin's
 // panel/ folder and exposes dia.* as a wails binding.
 type UISpec struct {
-	Type        string         `json:"type"`
-	Title       string         `json:"title"`
-	Entry       string         `json:"entry,omitempty"`
-	Width       int            `json:"width,omitempty"`
-	Height      int            `json:"height,omitempty"`
-	Refreshable bool           `json:"refreshable,omitempty"`
-	Actions     []UIAction     `json:"actions,omitempty"`
-	Columns     []UIColumn     `json:"columns,omitempty"`
-	Extra       map[string]any `json:"-"`
+	Type        string     `json:"type"`
+	Title       string     `json:"title"`
+	Entry       string     `json:"entry,omitempty"`
+	Width       int        `json:"width,omitempty"`
+	Height      int        `json:"height,omitempty"`
+	Refreshable bool       `json:"refreshable,omitempty"`
+	Actions     []UIAction `json:"actions,omitempty"`
+	Columns     []UIColumn `json:"columns,omitempty"`
+	// WindowMode is "tiling" (default) or "floating" for ui.type=window.
+	// On Wayland the compositor owns placement, so this is a request dia
+	// enforces where the platform allows (Hyprland via hyprctl) and
+	// documents as window rules elsewhere. Empty means tiling.
+	WindowMode string         `json:"window_mode,omitempty"`
+	Extra      map[string]any `json:"-"`
 }
+
+// WindowFloating reports whether a window plugin wants to float.
+// Unknown values are rejected at validation, so anything else tiles.
+func (u UISpec) WindowFloating() bool { return u.WindowMode == "floating" }
 
 // UIAction is a button in a plugin panel. Capability is required;
 // an action's call is rejected if the plugin lacks the capability.
@@ -187,6 +196,9 @@ func (m *Manifest) Validate() error {
 	case "window":
 		if m.UI.Entry != "" && !ContainedRelPath(m.UI.Entry) {
 			return fmt.Errorf("ui.entry %q must be a relative path with no parent references", m.UI.Entry)
+		}
+		if m.UI.WindowMode != "" && m.UI.WindowMode != "tiling" && m.UI.WindowMode != "floating" {
+			return fmt.Errorf("ui.window_mode %q must be tiling|floating", m.UI.WindowMode)
 		}
 	default:
 		return fmt.Errorf("ui.type %q must be one of list|grid|table|kv|text|canvas|window", m.UI.Type)

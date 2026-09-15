@@ -35,9 +35,8 @@ type App struct {
 	pmgr   *plugins.Manager
 	logger *slog.Logger
 
-	dialOnce sync.Once
-	dae      *daemon.Client
-	dialErr  error
+	daeMu sync.Mutex
+	dae   *daemon.Client
 }
 
 // New returns an App with no context set; Startup fills it in and
@@ -101,13 +100,27 @@ func (a *App) daemonClient() (*daemon.Client, error) {
 	if a.store == nil {
 		return nil, errors.New("not initialized")
 	}
-	a.dialOnce.Do(func() {
-		a.dae, a.dialErr = daemon.Ensure(daemon.EnsureOpts{StateDir: a.StateDir()})
-	})
-	if a.dialErr != nil {
-		return nil, a.dialErr
+	a.daeMu.Lock()
+	defer a.daeMu.Unlock()
+	if a.dae != nil {
+		return a.dae, nil
 	}
-	return a.dae, nil
+	dae, err := daemon.Ensure(daemon.EnsureOpts{StateDir: a.StateDir()})
+	if err != nil {
+		return nil, err
+	}
+	a.dae = dae
+	return dae, nil
+}
+
+func (a *App) invalidateDaemon(c *daemon.Client) {
+	a.daeMu.Lock()
+	defer a.daeMu.Unlock()
+	if a.dae != c {
+		return
+	}
+	_ = c.Close()
+	a.dae = nil
 }
 
 // registerPluginAppTypes adds every app type claimed by a plugin to
@@ -147,7 +160,12 @@ func (a *App) StartStateWatcher() {
 		var debounce *time.Timer
 		for {
 			select {
-			case ev := <-w.Events:
+			case <-a.ctx.Done():
+				return
+			case ev, ok := <-w.Events:
+				if !ok {
+					return
+				}
 				if filepath.Base(ev.Name) != stateName {
 					continue
 				}

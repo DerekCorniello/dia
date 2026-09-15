@@ -82,12 +82,19 @@ func (unixPlatform) Kill(pid int, force bool) error {
 	if pid <= 0 {
 		return nil
 	}
+	if pid == 1 {
+		return fmt.Errorf("refusing to signal init process")
+	}
 	sig := syscall.SIGTERM
 	if force {
 		sig = syscall.SIGKILL
 	}
-	if err := syscall.Kill(pid, sig); err != nil && err != syscall.ESRCH {
-		return fmt.Errorf("kill %d: %w", pid, err)
+	// Launch uses Setsid, making the child PID the process-group ID. Signal
+	// the group so shells and descendants cannot outlive the workspace.
+	// Do not fall back to signalling a reused PID: that could terminate an
+	// unrelated process after dia has been restarted.
+	if err := syscall.Kill(-pid, sig); err != nil && err != syscall.ESRCH {
+		return fmt.Errorf("kill process group %d: %w", pid, err)
 	}
 	return nil
 }

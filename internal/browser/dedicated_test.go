@@ -311,6 +311,17 @@ func TestRefreshRepullsRealProfile(t *testing.T) {
 	}
 }
 
+func TestRefreshRejectsActiveManagedSession(t *testing.T) {
+	home := writeZenSeed(t)
+	d := newSurface(t, home, newFakePlatform())
+	if _, err := d.Open(OpenOpts{Bin: "zen-browser", URLs: []string{"https://x"}, Instance: "active"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Refresh("zen-browser"); err == nil {
+		t.Fatal("Refresh succeeded while a managed session was active")
+	}
+}
+
 func TestUnsupportedBrowser(t *testing.T) {
 	pf := newFakePlatform()
 	d := newSurface(t, t.TempDir(), pf)

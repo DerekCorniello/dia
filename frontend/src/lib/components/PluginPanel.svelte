@@ -10,7 +10,9 @@
     refresh: void;
   }>();
 
-  let data: any = null;
+  type JsonObject = Record<string, unknown>;
+  type ListItem = JsonObject & { id: unknown; label: unknown };
+  let data: unknown = null;
   let loading = false;
   let error: string | null = null;
   let showActionConfirm = false;
@@ -53,7 +55,7 @@
   }
 
   async function executeAction(action: PluginActionDef) {
-    let ctx: any = {};
+    const ctx: JsonObject = {};
     if (plugin.ui.type === 'canvas') {
       ctx.strokes = strokes;
     }
@@ -80,36 +82,37 @@
     fetchData();
   }
 
-  function asList(v: any): Array<{ id: any; label: any; [k: string]: any }> {
+  function asList(v: unknown): ListItem[] {
     if (!Array.isArray(v)) return [];
     return v.map((item, i) => {
       if (item == null) return { id: i, label: '' };
       if (typeof item !== 'object') return { id: i, label: String(item) };
+      const object = item as JsonObject;
       return {
-        id: item.id ?? i,
-        label: item.label ?? item.name ?? item.title ?? String(item),
-        ...item,
+        ...object,
+        id: object.id ?? i,
+        label: object.label ?? object.name ?? object.title ?? String(item),
       };
     });
   }
 
-  function asKv(v: any): Array<{ key: string; value: any }> {
+  function asKv(v: unknown): Array<{ key: string; value: unknown }> {
     if (v == null || typeof v !== 'object' || Array.isArray(v)) return [];
     return Object.entries(v).map(([k, val]) => ({ key: k, value: val }));
   }
 
-  function asText(v: any): string {
+  function asText(v: unknown): string {
     if (v == null) return '';
     if (typeof v === 'string') return v;
     return JSON.stringify(v, null, 2);
   }
 
-  function asTable(v: any): Array<Record<string, any>> {
+  function asTable(v: unknown): JsonObject[] {
     if (!Array.isArray(v)) return [];
-    return v.filter((r) => r != null && typeof r === 'object') as Array<Record<string, any>>;
+    return v.filter((r): r is JsonObject => r != null && typeof r === 'object') as JsonObject[];
   }
 
-  function formatCell(col: { key: string; label: string; format?: string }, v: any): string {
+  function formatCell(col: { key: string; label: string; format?: string }, v: unknown): string {
     if (v == null) return '';
     if (col.format === 'duration' && typeof v === 'number') {
       const sec = Math.floor(v / 1000);
@@ -173,8 +176,9 @@
     isDrawing = true;
     const p = canvasPt(ev);
     lastPt = p;
-    const color = (data && typeof data === 'object' && data.color) || '#000000';
-    const width = (data && typeof data === 'object' && data.width) || 2;
+    const drawingData = data && typeof data === 'object' ? (data as JsonObject) : {};
+    const color = typeof drawingData.color === 'string' ? drawingData.color : '#000000';
+    const width = typeof drawingData.width === 'number' ? drawingData.width : 2;
     strokes = [...strokes, { color, width, points: [p] }];
   }
 

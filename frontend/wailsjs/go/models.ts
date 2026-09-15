@@ -21,9 +21,15 @@ export namespace wailsapp {
 	
 	export class AppEditor {
 	    label: string;
+	    type: string;
 	    cmd: string;
 	    cwd: string;
 	    url: string;
+	    browser: string;
+	    urls: string[];
+	    newWindow: boolean;
+	    env: Record<string, string>;
+	    args: string[];
 	    termCmd: string;
 	
 	    static createFrom(source: any = {}) {
@@ -33,9 +39,15 @@ export namespace wailsapp {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.label = source["label"];
+	        this.type = source["type"];
 	        this.cmd = source["cmd"];
 	        this.cwd = source["cwd"];
 	        this.url = source["url"];
+	        this.browser = source["browser"];
+	        this.urls = source["urls"];
+	        this.newWindow = source["newWindow"];
+	        this.env = source["env"];
+	        this.args = source["args"];
 	        this.termCmd = source["termCmd"];
 	    }
 	}
@@ -45,6 +57,11 @@ export namespace wailsapp {
 	    cmd: string;
 	    args: string;
 	    url?: string;
+	    browser?: string;
+	    urls?: string[];
+	    newWindow?: boolean;
+	    cwd?: string;
+	    env?: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppInfo(source);
@@ -57,7 +74,72 @@ export namespace wailsapp {
 	        this.cmd = source["cmd"];
 	        this.args = source["args"];
 	        this.url = source["url"];
+	        this.browser = source["browser"];
+	        this.urls = source["urls"];
+	        this.newWindow = source["newWindow"];
+	        this.cwd = source["cwd"];
+	        this.env = source["env"];
 	    }
+	}
+	export class FieldDescriptor {
+	    name: string;
+	    label: string;
+	    type: string;
+	    required?: boolean;
+	    sensitive?: boolean;
+	    help?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new FieldDescriptor(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.label = source["label"];
+	        this.type = source["type"];
+	        this.required = source["required"];
+	        this.sensitive = source["sensitive"];
+	        this.help = source["help"];
+	    }
+	}
+	export class AppTypeDescriptor {
+	    type: string;
+	    label: string;
+	    description: string;
+	    fields: FieldDescriptor[];
+	    summary?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AppTypeDescriptor(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.type = source["type"];
+	        this.label = source["label"];
+	        this.description = source["description"];
+	        this.fields = this.convertValues(source["fields"], FieldDescriptor);
+	        this.summary = source["summary"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class CapabilityInfo {
 	    name: string;
@@ -107,6 +189,24 @@ export namespace wailsapp {
 	        this.colors = source["colors"];
 	    }
 	}
+	export class DaemonInfo {
+	    reachable: boolean;
+	    version?: string;
+	    protocol?: number;
+	    error?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DaemonInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.reachable = source["reachable"];
+	        this.version = source["version"];
+	        this.protocol = source["protocol"];
+	        this.error = source["error"];
+	    }
+	}
 	export class DetectedTool {
 	    label: string;
 	    command: string;
@@ -123,12 +223,32 @@ export namespace wailsapp {
 	        this.url = source["url"];
 	    }
 	}
+	
+	export class HooksEditor {
+	    preStart?: string[];
+	    postStart?: string[];
+	    preStop?: string[];
+	    postStop?: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new HooksEditor(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.preStart = source["preStart"];
+	        this.postStart = source["postStart"];
+	        this.preStop = source["preStop"];
+	        this.postStop = source["postStop"];
+	    }
+	}
 	export class ProcessInfo {
 	    type: string;
 	    cmd: string;
 	    pid: number;
 	    status: string;
 	    err?: string;
+	    note?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ProcessInfo(source);
@@ -141,6 +261,7 @@ export namespace wailsapp {
 	        this.pid = source["pid"];
 	        this.status = source["status"];
 	        this.err = source["err"];
+	        this.note = source["note"];
 	    }
 	}
 	export class InstanceInfo {
@@ -489,7 +610,10 @@ export namespace wailsapp {
 	    source: string;
 	    path: string;
 	    running: boolean;
+	    lastStatus?: string;
+	    lastError?: string;
 	    plugins?: string[];
+	    pluginCount?: number;
 	    useCount?: number;
 	    app_details: AppInfo[];
 	
@@ -505,7 +629,10 @@ export namespace wailsapp {
 	        this.source = source["source"];
 	        this.path = source["path"];
 	        this.running = source["running"];
+	        this.lastStatus = source["lastStatus"];
+	        this.lastError = source["lastError"];
 	        this.plugins = source["plugins"];
+	        this.pluginCount = source["pluginCount"];
 	        this.useCount = source["useCount"];
 	        this.app_details = this.convertValues(source["app_details"], AppInfo);
 	    }
@@ -536,6 +663,7 @@ export namespace wailsapp {
 	    defaultCwd: string;
 	    apps: AppEditor[];
 	    plugins: PluginRefEditor[];
+	    hooks?: HooksEditor;
 	
 	    static createFrom(source: any = {}) {
 	        return new WorkspaceEditor(source);
@@ -550,6 +678,7 @@ export namespace wailsapp {
 	        this.defaultCwd = source["defaultCwd"];
 	        this.apps = this.convertValues(source["apps"], AppEditor);
 	        this.plugins = this.convertValues(source["plugins"], PluginRefEditor);
+	        this.hooks = this.convertValues(source["hooks"], HooksEditor);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -577,7 +706,10 @@ export namespace wailsapp {
 	    source: string;
 	    path: string;
 	    running: boolean;
+	    lastStatus?: string;
+	    lastError?: string;
 	    plugins?: string[];
+	    pluginCount?: number;
 	    useCount?: number;
 	
 	    static createFrom(source: any = {}) {
@@ -592,7 +724,10 @@ export namespace wailsapp {
 	        this.source = source["source"];
 	        this.path = source["path"];
 	        this.running = source["running"];
+	        this.lastStatus = source["lastStatus"];
+	        this.lastError = source["lastError"];
 	        this.plugins = source["plugins"];
+	        this.pluginCount = source["pluginCount"];
 	        this.useCount = source["useCount"];
 	    }
 	}

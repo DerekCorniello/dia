@@ -34,7 +34,12 @@ func dialSocket(path string) (net.Conn, error) {
 // listenSocket binds the named pipe name. The server half of a named
 // pipe cannot be unlinked, so there is nothing to clean up beforehand.
 func listenSocket(path string) (net.Listener, error) {
-	return winio.ListenPipe(path, nil)
+	// Restrict the control plane to the account that owns the daemon. The
+	// pipe is a local privilege boundary because requests can launch and
+	// terminate arbitrary configured processes.
+	return winio.ListenPipe(path, &winio.PipeConfig{
+		SecurityDescriptor: "D:P(A;;GA;;;OW)",
+	})
 }
 
 // removeSocket is a no-op on Windows: named pipes go away when the

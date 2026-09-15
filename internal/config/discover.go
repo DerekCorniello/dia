@@ -23,11 +23,40 @@ const (
 	LocalDirName = ".dia"
 )
 
+// ErrWorkspaceNotFound identifies a name lookup with no matching source.
+// Callers can preserve their own command-specific exit errors with errors.Is.
+var ErrWorkspaceNotFound = errors.New("workspace not found")
+
 // Source describes a discovered workspace and where it came from.
 type Source struct {
 	Workspace *Workspace
 	Path      string // absolute path to the YAML file
 	Local     bool   // true for project-local; false for global
+}
+
+// ResolveName selects one workspace source from Discover's results. Names
+// are a user-facing convenience, not a stable identity; refusing ambiguity
+// prevents a start, stop, or edit command from silently targeting whichever
+// file happened to sort first.
+func ResolveName(sources []Source, name string) (*Workspace, Source, error) {
+	var matches []Source
+	for _, source := range sources {
+		if source.Workspace != nil && source.Workspace.Name == name {
+			matches = append(matches, source)
+		}
+	}
+	switch len(matches) {
+	case 0:
+		return nil, Source{}, fmt.Errorf("%w: %q", ErrWorkspaceNotFound, name)
+	case 1:
+		return matches[0].Workspace, matches[0], nil
+	default:
+		paths := make([]string, 0, len(matches))
+		for _, match := range matches {
+			paths = append(paths, match.Path)
+		}
+		return nil, Source{}, fmt.Errorf("workspace %q is ambiguous; found: %s", name, strings.Join(paths, ", "))
+	}
 }
 
 // DiscoverOptions controls how Discover searches for workspaces.
@@ -62,19 +91,33 @@ func Discover(opts DiscoverOptions) ([]Source, error) {
 		}
 		opts.CWD = cwd
 	}
+	absCWD, err := filepath.Abs(opts.CWD)
+	if err != nil {
+		return nil, fmt.Errorf("resolve cwd: %w", err)
+	}
+	opts.CWD = absCWD
 	if opts.GlobalDir == "" {
 		opts.GlobalDir = defaultGlobalDir()
 	}
+	absGlobal, err := filepath.Abs(opts.GlobalDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve global dir: %w", err)
+	}
+	opts.GlobalDir = absGlobal
 
 	seen := map[string]bool{}
 	var sources []Source
 
+	var discoverErrs []error
 	// collect scans a directory for .yaml/.yml workspace files and
-	// appends them as sources. The Local flag is set when the path
-	// falls under one of the roots or the CWD walk-up.
+	// appends them as sources. Read and parse failures are reported with
+	// their path instead of silently making a workspace disappear.
 	collect := func(dir string, local bool) {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				discoverErrs = append(discoverErrs, fmt.Errorf("read workspace directory %s: %w", dir, err))
+			}
 			return
 		}
 		for _, e := range entries {
@@ -92,7 +135,8 @@ func Discover(opts DiscoverOptions) ([]Source, error) {
 			seen[p] = true
 			w, err := Load(p)
 			if err != nil {
-				return
+				discoverErrs = append(discoverErrs, fmt.Errorf("load workspace %s: %w", p, err))
+				continue
 			}
 			sources = append(sources, Source{Workspace: w, Path: p, Local: local})
 		}
@@ -113,6 +157,7 @@ func Discover(opts DiscoverOptions) ([]Source, error) {
 			seen[localPath] = true
 			w, err := Load(localPath)
 			if err != nil {
+				discoverErrs = append(discoverErrs, fmt.Errorf("load workspace %s: %w", localPath, err))
 				continue
 			}
 			sources = append(sources, Source{Workspace: w, Path: localPath, Local: true})
@@ -127,6 +172,8 @@ func Discover(opts DiscoverOptions) ([]Source, error) {
 		w, err := Load(local)
 		if err == nil {
 			sources = append(sources, Source{Workspace: w, Path: local, Local: true})
+		} else {
+			discoverErrs = append(discoverErrs, fmt.Errorf("load workspace %s: %w", local, err))
 		}
 	}
 
@@ -135,9 +182,12 @@ func Discover(opts DiscoverOptions) ([]Source, error) {
 
 	// Stable, sorted output.
 	sort.Slice(sources, func(i, j int) bool {
-		return sources[i].Workspace.Name < sources[j].Workspace.Name
+		if sources[i].Workspace.Name != sources[j].Workspace.Name {
+			return sources[i].Workspace.Name < sources[j].Workspace.Name
+		}
+		return sources[i].Path < sources[j].Path
 	})
-	return sources, nil
+	return sources, errors.Join(discoverErrs...)
 }
 
 // FindLocal returns the path of the .dia.yaml walking up from dir, or

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, describeError } from '../api';
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
 
   export let onClose: () => void = () => {};
 
@@ -10,18 +10,24 @@
   let cwd = '';
   let busy = false;
   let nameError = '';
+  let nameInput: HTMLInputElement;
+  let previousFocus: HTMLElement | null = null;
   const dispatch = createEventDispatcher<{ created: string }>();
 
   type LocationOption = 'cwd' | 'home' | 'custom';
   let location: LocationOption = 'cwd';
 
   onMount(async () => {
+    previousFocus = document.activeElement as HTMLElement | null;
+    nameInput?.focus();
     try {
       cwd = await api.getCwd();
     } catch {
       cwd = '';
     }
   });
+
+  onDestroy(() => previousFocus?.focus());
 
   function validateName(v: string): string {
     if (!v) return '';
@@ -38,7 +44,10 @@
   }
 
   function onKey(e: KeyboardEvent) {
-    if (e.key === 'Escape') onClose();
+    if (e.key === 'Escape') {
+      e.stopImmediatePropagation();
+      onClose();
+    }
   }
 
   function resolveDir(): string {
@@ -100,6 +109,7 @@
         <input
           type="text"
           value={name}
+          bind:this={nameInput}
           on:input={onNameInput}
           on:blur={() => (nameError = validateName(name))}
           disabled={busy}

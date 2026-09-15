@@ -6,6 +6,10 @@ export function AddRoot(arg1) {
   return window['go']['wailsapp']['App']['AddRoot'](arg1);
 }
 
+export function DaemonStatus() {
+  return window['go']['wailsapp']['App']['DaemonStatus']();
+}
+
 export function DeleteCustomTheme(arg1) {
   return window['go']['wailsapp']['App']['DeleteCustomTheme'](arg1);
 }
@@ -32,6 +36,10 @@ export function GetHomeDir() {
 
 export function GetKeybindings() {
   return window['go']['wailsapp']['App']['GetKeybindings']();
+}
+
+export function GetPlugin(arg1) {
+  return window['go']['wailsapp']['App']['GetPlugin'](arg1);
 }
 
 export function GetPluginCapabilities(arg1) {
@@ -66,12 +74,20 @@ export function InstallPluginFromSource(arg1, arg2) {
   return window['go']['wailsapp']['App']['InstallPluginFromSource'](arg1, arg2);
 }
 
+export function ListAppTypes() {
+  return window['go']['wailsapp']['App']['ListAppTypes']();
+}
+
 export function ListCustomThemes() {
   return window['go']['wailsapp']['App']['ListCustomThemes']();
 }
 
 export function ListInstances() {
   return window['go']['wailsapp']['App']['ListInstances']();
+}
+
+export function ListInstancesPaginated(arg1, arg2) {
+  return window['go']['wailsapp']['App']['ListInstancesPaginated'](arg1, arg2);
 }
 
 export function ListPlugins() {
@@ -84,6 +100,10 @@ export function ListRoots() {
 
 export function ListWorkspaces() {
   return window['go']['wailsapp']['App']['ListWorkspaces']();
+}
+
+export function ListWorkspacesPaginated(arg1, arg2) {
+  return window['go']['wailsapp']['App']['ListWorkspacesPaginated'](arg1, arg2);
 }
 
 export function NewWorkspace(arg1, arg2) {

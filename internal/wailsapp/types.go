@@ -1,5 +1,15 @@
 package wailsapp
 
+// HooksEditor preserves lifecycle hooks while the form editor is open. The
+// current UI does not edit hooks yet, but silently dropping them on save would
+// change workspace behavior.
+type HooksEditor struct {
+	PreStart  []string `json:"preStart,omitempty"`
+	PostStart []string `json:"postStart,omitempty"`
+	PreStop   []string `json:"preStop,omitempty"`
+	PostStop  []string `json:"postStop,omitempty"`
+}
+
 // WorkspaceInfo is a one-line summary of a discovered workspace,
 // suitable for the workspace list in the UI. The full app list lives
 // in WorkspaceDetail.
@@ -10,19 +20,29 @@ type WorkspaceInfo struct {
 	Source      string   `json:"source"`
 	Path        string   `json:"path"`
 	Running     bool     `json:"running"`
+	LastStatus  string   `json:"lastStatus,omitempty"`
+	LastError   string   `json:"lastError,omitempty"`
 	Plugins     []string `json:"plugins,omitempty"`
+	PluginCount int      `json:"pluginCount,omitempty"`
 	UseCount    int      `json:"useCount,omitempty"`
 }
 
 // AppInfo is the launch summary of one entry in a workspace's apps
 // list. Cmd is the executable (or URL for type=open/browser); Args is
-// the joined argument string.
+// the joined argument string. Browser/Urls/NewWindow/Cwd/Env are only
+// populated for the relevant types and are omitted otherwise to keep
+// the Wails IPC payload small.
 type AppInfo struct {
-	Label string `json:"label,omitempty"`
-	Type  string `json:"type"`
-	Cmd   string `json:"cmd"`
-	Args  string `json:"args"`
-	URL   string `json:"url,omitempty"`
+	Label     string            `json:"label,omitempty"`
+	Type      string            `json:"type"`
+	Cmd       string            `json:"cmd"`
+	Args      string            `json:"args"`
+	URL       string            `json:"url,omitempty"`
+	Browser   string            `json:"browser,omitempty"`
+	Urls      []string          `json:"urls,omitempty"`
+	NewWindow bool              `json:"newWindow,omitempty"`
+	Cwd       string            `json:"cwd,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
 }
 
 // WorkspaceDetail is everything the UI needs to render a workspace
@@ -55,6 +75,7 @@ type ProcessInfo struct {
 	PID    int    `json:"pid"`
 	Status string `json:"status"`
 	Err    string `json:"err,omitempty"`
+	Note   string `json:"note,omitempty"`
 }
 
 // ReconcileInfo summarizes what Reconcile did so the UI can show
@@ -188,13 +209,20 @@ type DetectedTool struct {
 }
 
 // AppEditor is the editable view of one workspace app for the
-// form-based workspace editor.
+// form-based workspace editor. Browser/Urls/NewWindow mirror
+// config.App so the editor can round-trip browser apps without loss.
 type AppEditor struct {
-	Label   string `json:"label"`
-	Cmd     string `json:"cmd"`
-	Cwd     string `json:"cwd"`
-	Url     string `json:"url"`
-	TermCmd string `json:"termCmd"`
+	Label     string            `json:"label"`
+	Type      string            `json:"type"`
+	Cmd       string            `json:"cmd"`
+	Cwd       string            `json:"cwd"`
+	Url       string            `json:"url"`
+	Browser   string            `json:"browser"`
+	Urls      []string          `json:"urls"`
+	NewWindow bool              `json:"newWindow"`
+	Env       map[string]string `json:"env"`
+	Args      []string          `json:"args"`
+	TermCmd   string            `json:"termCmd"`
 }
 
 // WorkspaceEditor is the editable view of an entire workspace.
@@ -209,10 +237,32 @@ type WorkspaceEditor struct {
 	DefaultCwd   string            `json:"defaultCwd"`
 	Apps         []AppEditor       `json:"apps"`
 	Plugins      []PluginRefEditor `json:"plugins"`
+	Hooks        *HooksEditor      `json:"hooks,omitempty"`
 }
 
 // PluginRefEditor is a plugin reference with config in the editor.
 type PluginRefEditor struct {
 	ID     string         `json:"id"`
 	Config map[string]any `json:"config"`
+}
+
+// AppTypeDescriptor is the GUI-facing view of a registry type.
+// The frontend uses it to render type-specific fields instead of
+// hardcoding builtinAppTypes.
+type AppTypeDescriptor struct {
+	Type        string            `json:"type"`
+	Label       string            `json:"label"`
+	Description string            `json:"description"`
+	Fields      []FieldDescriptor `json:"fields"`
+	Summary     string            `json:"summary,omitempty"`
+}
+
+// FieldDescriptor describes one editable field within an app type.
+type FieldDescriptor struct {
+	Name      string `json:"name"`
+	Label     string `json:"label"`
+	Type      string `json:"type"`
+	Required  bool   `json:"required,omitempty"`
+	Sensitive bool   `json:"sensitive,omitempty"`
+	Help      string `json:"help,omitempty"`
 }

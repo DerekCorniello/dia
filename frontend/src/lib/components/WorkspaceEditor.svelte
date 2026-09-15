@@ -10,6 +10,7 @@
     type DetectedTool,
   } from '../api';
   import ConfirmDialog from './ConfirmDialog.svelte';
+  import { focusTrap } from '../focusTrap';
 
   export let name: string;
   export let plugins: PluginInfo[] = [];
@@ -25,6 +26,7 @@
     defaultCwd: '',
     apps: [],
     plugins: [],
+    hooks: undefined,
   };
   let busy = false;
   let error: string | null = null;
@@ -34,6 +36,36 @@
   let pluginSearch = '';
   let openConfigPlugin: string | null = null;
   let showDeleteConfirm = false;
+
+  type SchemaField = {
+    type?: string;
+    options?: unknown[];
+    default?: unknown;
+    label?: string;
+  };
+
+  function asSchemaField(value: unknown): SchemaField {
+    return value && typeof value === 'object' ? (value as SchemaField) : {};
+  }
+
+  let appTypeDescriptors: import('../api').AppTypeDescriptor[] = [];
+  const fallbackAppTypes = [
+    'terminal',
+    'editor',
+    'service',
+    'browser',
+    'open',
+    'local',
+    'custom',
+    'ai',
+    'gh',
+    'gh:pr',
+    'gh:issue',
+    'gh:checkout',
+    'gh:repo-clone',
+  ];
+  $: builtinAppTypes =
+    appTypeDescriptors.length > 0 ? appTypeDescriptors.map((d) => d.type) : fallbackAppTypes;
 
   async function load() {
     try {
@@ -49,6 +81,11 @@
     } catch {
       // non-fatal
     }
+    try {
+      appTypeDescriptors = await api.listAppTypes();
+    } catch {
+      // non-fatal: fallback list remains
+    }
   }
 
   function addApp() {
@@ -56,24 +93,44 @@
       ...editor,
       apps: [
         ...editor.apps,
-        { label: '', cmd: '', cwd: editor.defaultCwd || '', url: '', termCmd: '', _showUrl: false },
+        {
+          label: '',
+          type: 'terminal',
+          cmd: '',
+          cwd: editor.defaultCwd || '',
+          url: '',
+          browser: '',
+          urls: [],
+          newWindow: false,
+          env: {},
+          args: [],
+          termCmd: '',
+          _showUrl: false,
+        },
       ],
     };
   }
 
   function addTool(tool: DetectedTool, cat: string) {
+    const isBrowser = cat === 'Browsers';
     editor = {
       ...editor,
       apps: [
         ...editor.apps,
         {
           label: tool.label,
+          type: isBrowser ? 'browser' : tool.url && !tool.command ? 'open' : 'terminal',
           cmd: tool.command,
           cwd: editor.defaultCwd || '',
           url: tool.url || '',
+          browser: isBrowser ? tool.command : '',
+          urls: isBrowser && tool.url ? [tool.url] : [],
+          newWindow: false,
+          env: {},
+          args: [],
           termCmd: '',
           _cat: cat,
-          _showUrl: cat === 'Browsers',
+          _showUrl: isBrowser,
         },
       ],
     };
@@ -84,12 +141,16 @@
     editor = { ...editor, apps: editor.apps.filter((_, idx) => idx !== i) };
   }
 
+  function parseArgs(value: string): string[] {
+    return value === '' ? [] : value.split('\n');
+  }
+
   let pluginKeyCounter = 0;
 
   function addPlugin(p: PluginInfo) {
     pluginKeyCounter++;
-    const config: Record<string, any> = {};
-    const ps = (p as any).configSchema;
+    const config: Record<string, unknown> = {};
+    const ps = p.configSchema;
     if (ps && typeof ps === 'object') {
       for (const [key, field] of Object.entries(ps)) {
         if (field && typeof field === 'object' && 'default' in field) {
@@ -108,11 +169,11 @@
     editor = { ...editor, plugins: editor.plugins.filter((r) => r._key !== key) };
   }
 
-  function pluginConfig(ref: PluginRefEditor): Record<string, any> {
+  function pluginConfig(ref: PluginRefEditor): Record<string, unknown> {
     return ref?.config || {};
   }
 
-  function setPluginConfig(id: string, key: string, value: any) {
+  function setPluginConfig(id: string, key: string, value: unknown) {
     editor = {
       ...editor,
       plugins: editor.plugins.map((r) =>
@@ -121,26 +182,25 @@
     };
   }
 
-  function configFieldDefault(schema: any): any {
-    if (schema && typeof schema === 'object' && 'default' in schema) return schema.default;
-    return '';
+  function configFieldDefault(schema: unknown): unknown {
+    return asSchemaField(schema).default ?? '';
   }
 
-  function configFieldType(schema: any): string {
-    if (!schema || typeof schema !== 'object') return 'text';
-    if (schema.type === 'number' || schema.type === 'integer') return 'number';
-    if (schema.type === 'boolean') return 'checkbox';
-    if (schema.type === 'select' && schema.options) return 'select';
+  function configFieldType(schema: unknown): string {
+    const field = asSchemaField(schema);
+    if (field.type === 'number' || field.type === 'integer') return 'number';
+    if (field.type === 'boolean') return 'checkbox';
+    if (field.type === 'select' && field.options) return 'select';
     return 'text';
   }
 
-  function pluginConfigSchema(p: PluginInfo): Record<string, any> {
-    return (p as any).configSchema || {};
+  function pluginConfigSchema(p: PluginInfo): Record<string, unknown> {
+    return p.configSchema || {};
   }
 
-  function schemaEntries(s: any): Array<[string, any]> {
+  function schemaEntries(s: unknown): Array<[string, SchemaField]> {
     if (!s || typeof s !== 'object') return [];
-    return Object.entries(s);
+    return Object.entries(s).map(([key, value]) => [key, asSchemaField(value)]);
   }
 
   async function save() {
@@ -186,6 +246,10 @@
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-bg-900/80 p-4">
   <div
     class="flex max-h-[calc(100vh-2rem)] w-[min(56rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-primary/15 bg-bg-700 shadow-lg"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Edit workspace"
+    use:focusTrap
   >
     <div class="flex items-center justify-between border-b border-primary/15 px-4 py-3">
       <h2 class="text-sm font-semibold uppercase tracking-wide text-fg-dim">Edit workspace</h2>
@@ -295,6 +359,11 @@
         </div>
       {/if}
 
+      <p class="text-[11px] text-fg-mute">
+        Saving rewrites the YAML file: comments and formatting are not preserved. A backup of the
+        previous version is kept next to the file with a .bak extension.
+      </p>
+
       <div>
         <div class="flex items-center justify-between mb-2">
           <span class="text-xs font-semibold uppercase tracking-wide text-fg-mute"
@@ -310,73 +379,142 @@
         {#if editor.apps.length === 0}
           <p class="text-xs text-fg-mute">No apps configured. Use Quick add or + Add app.</p>
         {:else}
-          <div class="space-y-2">
+          <div class="space-y-3">
             {#each editor.apps as app, i (i)}
-              <div class="rounded border border-bg-600 bg-bg-800 p-3">
-                <div class="flex items-center justify-between mb-2">
-                  <span class="text-xs text-fg-mute font-mono">{app.label || `app [${i}]`}</span>
+              <div class="rounded border border-bg-600 bg-bg-800 p-3 space-y-2">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <select
+                      bind:value={app.type}
+                      disabled={busy}
+                      class="rounded border border-bg-600 bg-bg-700 px-1.5 py-1 text-[11px] font-medium focus:border-accent focus:outline-none"
+                    >
+                      <option value="">default</option>
+                      {#if app.type && !builtinAppTypes.includes(app.type)}
+                        <option value={app.type}>{app.type}</option>
+                      {/if}
+                      {#each builtinAppTypes as type (type)}
+                        <option value={type}>{type}</option>
+                      {/each}
+                    </select>
+                    <span class="text-xs text-fg-mute font-mono">{app.label || `app [${i}]`}</span>
+                  </div>
                   <button
                     type="button"
                     on:click={() => removeApp(i)}
                     class="text-accent-err hover:underline text-[10px]">remove</button
                   >
                 </div>
-                <div class="grid grid-cols-2 gap-2">
-                  <label class="block text-xs">
-                    <span class="text-fg-mute">label</span>
-                    <input
-                      type="text"
-                      bind:value={app.label}
-                      disabled={busy}
-                      placeholder="e.g. API Server"
-                      class="mt-0.5 block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-xs font-mono focus:border-accent focus:outline-none"
-                    />
-                  </label>
-                  <label class="block text-xs">
-                    <span class="text-fg-mute">command</span>
-                    <input
-                      type="text"
-                      bind:value={app.cmd}
-                      disabled={busy}
-                      placeholder="executable and args"
-                      class="mt-0.5 block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-xs font-mono focus:border-accent focus:outline-none"
-                    />
-                  </label>
-                  <label class="block text-xs">
-                    <span class="text-fg-mute">cwd</span>
-                    <input
-                      type="text"
-                      bind:value={app.cwd}
-                      disabled={busy}
-                      placeholder="working directory"
-                      class="mt-0.5 block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-xs font-mono focus:border-accent focus:outline-none"
-                    />
-                  </label>
-                  {#if app._cat === 'Terminals'}
+                <label class="block text-xs">
+                  <span class="text-fg-mute">label - display name</span>
+                  <input
+                    type="text"
+                    bind:value={app.label}
+                    disabled={busy}
+                    placeholder="e.g. mux dashboards"
+                    class="mt-0.5 block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-xs font-mono focus:border-accent focus:outline-none"
+                  />
+                </label>
+
+                {#if app.type === 'browser'}
+                  <div class="grid grid-cols-2 gap-2">
                     <label class="block text-xs">
-                      <span class="text-fg-mute">run in terminal</span>
+                      <span class="text-fg-mute">browser binary</span>
+                      <input
+                        type="text"
+                        bind:value={app.browser}
+                        disabled={busy}
+                        placeholder="zen-browser, firefox, google-chrome"
+                        class="mt-0.5 block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-xs font-mono focus:border-accent focus:outline-none"
+                      />
+                      <span class="text-[10px] text-fg-mute/60">empty = OS default handler</span>
+                    </label>
+                    <label class="flex items-center gap-1.5 text-xs mt-5">
+                      <input
+                        type="checkbox"
+                        bind:checked={app.newWindow}
+                        disabled={busy}
+                        class="accent-primary"
+                      />
+                      <span class="text-fg-mute">new window</span>
+                    </label>
+                  </div>
+                  <label class="block text-xs">
+                    <span class="text-fg-mute">urls - one per line (tabs in one window)</span>
+                    <textarea
+                      value={(app.urls || []).join('\n')}
+                      on:input={(e) =>
+                        (app.urls = e.currentTarget.value
+                          .split('\n')
+                          .map((s) => s.trim())
+                          .filter(Boolean))}
+                      disabled={busy}
+                      rows={Math.max(2, app.urls?.length || 1)}
+                      placeholder="dc/gh/mux/prs&#10;https://app.greptile.com/..."
+                      class="mt-0.5 block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-xs font-mono focus:border-accent focus:outline-none"
+                    ></textarea>
+                    <span class="text-[10px] text-fg-mute/60"
+                      >{app.urls?.length || 0} url{(app.urls?.length || 0) === 1 ? '' : 's'} - dedicated
+                      profile when browser is set</span
+                    >
+                  </label>
+                {:else if app.type === 'open' || app.type === 'gh:repo-clone'}
+                  <label class="block text-xs">
+                    <span class="text-fg-mute">url - opened with OS handler</span>
+                    <input
+                      type="text"
+                      bind:value={app.url}
+                      disabled={busy}
+                      placeholder="https://..."
+                      class="mt-0.5 block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-xs font-mono focus:border-accent focus:outline-none"
+                    />
+                  </label>
+                {:else}
+                  <div class="grid grid-cols-2 gap-2">
+                    <label class="block text-xs">
+                      <span class="text-fg-mute">command</span>
+                      <input
+                        type="text"
+                        bind:value={app.cmd}
+                        disabled={busy}
+                        placeholder="kitty, code, etc."
+                        class="mt-0.5 block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-xs font-mono focus:border-accent focus:outline-none"
+                      />
+                    </label>
+                    <label class="block text-xs">
+                      <span class="text-fg-mute">cwd</span>
+                      <input
+                        type="text"
+                        bind:value={app.cwd}
+                        disabled={busy}
+                        placeholder="working directory"
+                        class="mt-0.5 block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-xs font-mono focus:border-accent focus:outline-none"
+                      />
+                    </label>
+                  </div>
+                  <label class="block text-xs">
+                    <span class="text-fg-mute">arguments - one per line</span>
+                    <textarea
+                      value={(app.args || []).join('\n')}
+                      on:input={(e) => (app.args = parseArgs(e.currentTarget.value))}
+                      disabled={busy}
+                      rows={Math.max(2, app.args?.length || 1)}
+                      class="mt-0.5 block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-xs font-mono focus:border-accent focus:outline-none"
+                    ></textarea>
+                  </label>
+                  {#if app.type === 'terminal'}
+                    <label class="block text-xs">
+                      <span class="text-fg-mute">terminal command - appended after -e</span>
                       <input
                         type="text"
                         bind:value={app.termCmd}
                         disabled={busy}
-                        placeholder="e.g. btop or bash -c 'make; exec bash'"
+                        placeholder="e.g. claude or bash -c 'make; exec bash'"
                         class="mt-0.5 block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-xs font-mono focus:border-accent focus:outline-none"
                       />
                     </label>
                   {/if}
-                  {#if app._showUrl || app.url}
-                    <label class="block text-xs">
-                      <span class="text-fg-mute">url</span>
-                      <input
-                        type="text"
-                        bind:value={app.url}
-                        disabled={busy}
-                        placeholder="https://..."
-                        class="mt-0.5 block w-full rounded border border-bg-600 bg-bg-700 px-2 py-1 text-xs font-mono focus:border-accent focus:outline-none"
-                      />
-                    </label>
-                  {/if}
-                </div>
+                {/if}
               </div>
             {/each}
           </div>

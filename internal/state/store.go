@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -17,14 +18,28 @@ import (
 // DefaultTheme is the theme name used when none is persisted.
 const DefaultTheme = "dia"
 
+// SchemaVersion is the newest state-file schema this build can read and
+// write. New fields should be added with a migration before this changes.
+const SchemaVersion = 1
+
 // Status is the lifecycle state of an app or instance.
 type Status string
 
 const (
-	StatusRunning Status = "running"
-	StatusStopped Status = "stopped"
-	StatusCrashed Status = "crashed"
+	StatusRunning  Status = "running"
+	StatusStopped  Status = "stopped"
+	StatusCrashed  Status = "crashed"
+	StatusDegraded Status = "degraded"
 )
+
+// Live reports whether the status counts as active for lifecycle
+// purposes: running and degraded instances are supervised, stoppable,
+// and attachable. Stopped and crashed are terminal. Every lifecycle
+// decision must use this instead of comparing against StatusRunning,
+// or degraded workspaces become unmanageable (unstoppable, unwatched).
+func (s Status) Live() bool {
+	return s == StatusRunning || s == StatusDegraded
+}
 
 // AppProcess describes a single spawned process tracked by dia.
 //
@@ -34,11 +49,18 @@ const (
 // directly, because the meaningful thing to clean up is the owned
 // browser instance and its ephemeral profile, not a bare PID.
 type AppProcess struct {
-	Type    string         `json:"type"`
-	Cmd     string         `json:"cmd"`
-	PID     int            `json:"pid"`
-	Status  Status         `json:"status"`
-	Err     string         `json:"err,omitempty"`
+	Type string `json:"type"`
+	Cmd  string `json:"cmd"`
+	PID  int    `json:"pid"`
+	// Identity is an OS process-start token captured at launch. It prevents
+	// a recycled PID from being mistaken for dia's child during reconcile.
+	Identity string `json:"identity,omitempty"`
+	Status   Status `json:"status"`
+	Err      string `json:"err,omitempty"`
+	// Note is a non-fatal caveat on a running app (e.g. a browser that
+	// fell back to a plain launch dia cannot close on stop). It makes
+	// degraded launches visible instead of silently downgraded.
+	Note    string         `json:"note,omitempty"`
 	Browser *BrowserHandle `json:"browser,omitempty"`
 }
 
@@ -53,7 +75,8 @@ type BrowserHandle struct {
 	Strategy string `json:"strategy"`
 	// PID is the owned browser process. Because the launch used a
 	// unique profile, this is a fresh instance dia owns and may kill.
-	PID int `json:"pid"`
+	PID      int    `json:"pid"`
+	Identity string `json:"identity,omitempty"`
 	// ProfileDir is the ephemeral clone that backs this launch. It is
 	// removed on close.
 	ProfileDir string `json:"profile_dir"`
@@ -142,11 +165,16 @@ func OpenAt(path string) (*Store, error) {
 	// below: a caller that writes into one on a brand new state file
 	// (no state.json yet) would otherwise panic assigning to a nil map.
 	s := &Store{path: path, data: Data{
-		Version:      1,
+		Version:      SchemaVersion,
 		Instances:    map[string]Instance{},
 		CustomThemes: map[string]CustomTheme{},
 		Plugins:      map[string]PluginState{},
 	}}
+	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("state path is a symlink: %s", path)
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("stat state: %w", err)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -157,12 +185,22 @@ func OpenAt(path string) (*Store, error) {
 	if len(data) == 0 {
 		return s, nil
 	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return nil, fmt.Errorf("protect state: %w", err)
+	}
 	var raw rawData
 	if err := json.Unmarshal(data, &raw); err != nil {
+		backup := path + ".bak"
+		if _, backupErr := os.Stat(backup); backupErr == nil {
+			return nil, fmt.Errorf("parse state: %w (backup available at %s)", err, backup)
+		}
 		return nil, fmt.Errorf("parse state: %w", err)
 	}
+	if raw.Version > SchemaVersion {
+		return nil, fmt.Errorf("state schema version %d is newer than supported version %d", raw.Version, SchemaVersion)
+	}
 	loaded := Data{
-		Version:      raw.Version,
+		Version:      SchemaVersion,
 		Instances:    raw.Instances,
 		Favorites:    raw.Favorites,
 		Theme:        raw.Theme,
@@ -256,14 +294,92 @@ func (s *Store) Reload() error {
 	return nil
 }
 
-// Snapshot returns a deep-enough copy of the current state for the
-// caller to read without holding the lock. The Instances map and slices
-// are shared with the store, so callers must not mutate them; use
-// Mutate to make changes.
+// Snapshot returns an independent copy of the current state for the
+// caller to read without holding the lock. Callers may safely retain or
+// modify the returned value; use Mutate to persist changes.
 func (s *Store) Snapshot() Data {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.data
+	return cloneData(s.data)
+}
+
+func cloneData(in Data) Data {
+	out := in
+	out.Instances = make(map[string]Instance, len(in.Instances))
+	for id, inst := range in.Instances {
+		cp := inst
+		cp.Apps = append([]AppProcess(nil), inst.Apps...)
+		for i := range cp.Apps {
+			if inst.Apps[i].Browser != nil {
+				h := *inst.Apps[i].Browser
+				cp.Apps[i].Browser = &h
+			}
+		}
+		cp.Plugins = append([]string(nil), inst.Plugins...)
+		cp.PluginPIDs = append([]int(nil), inst.PluginPIDs...)
+		out.Instances[id] = cp
+	}
+	out.Recent = append([]RecentEntry(nil), in.Recent...)
+	out.Favorites = append([]string(nil), in.Favorites...)
+	out.Roots = append([]string(nil), in.Roots...)
+	if in.Keybindings != nil {
+		out.Keybindings = mapsClone(in.Keybindings)
+	}
+	if in.CustomThemes != nil {
+		out.CustomThemes = make(map[string]CustomTheme, len(in.CustomThemes))
+		for name, theme := range in.CustomThemes {
+			cp := theme
+			if theme.Colors != nil {
+				cp.Colors = mapsClone(theme.Colors)
+			}
+			out.CustomThemes[name] = cp
+		}
+	}
+	if in.Plugins != nil {
+		out.Plugins = make(map[string]PluginState, len(in.Plugins))
+		for id, plugin := range in.Plugins {
+			cp := plugin
+			cp.GrantedCapabilities = append([]string(nil), plugin.GrantedCapabilities...)
+			if plugin.Config != nil {
+				cp.Config = cloneAnyMap(plugin.Config)
+			}
+			out.Plugins[id] = cp
+		}
+	}
+	return out
+}
+
+func mapsClone[V any](in map[string]V) map[string]V {
+	out := make(map[string]V, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = cloneAny(v)
+	}
+	return out
+}
+
+func cloneAny(v any) any {
+	switch value := v.(type) {
+	case map[string]any:
+		return cloneAnyMap(value)
+	case []any:
+		out := make([]any, len(value))
+		for i, item := range value {
+			out[i] = cloneAny(item)
+		}
+		return out
+	case []string:
+		return append([]string(nil), value...)
+	default:
+		return v
+	}
 }
 
 // Mutate runs fn with exclusive access to the state, then persists the
@@ -273,6 +389,14 @@ func (s *Store) Snapshot() Data {
 func (s *Store) Mutate(fn func(d *Data)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := acquireStateLock(s.path + ".lock")
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err := s.reloadLocked(); err != nil {
+		return err
+	}
 	fn(&s.data)
 	return s.writeLocked()
 }
@@ -286,6 +410,14 @@ func (s *Store) Mutate(fn func(d *Data)) error {
 func (s *Store) MutateIfChanged(fn func(d *Data) bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := acquireStateLock(s.path + ".lock")
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err := s.reloadLocked(); err != nil {
+		return err
+	}
 	if !fn(&s.data) {
 		return nil
 	}
@@ -297,6 +429,14 @@ func (s *Store) MutateIfChanged(fn func(d *Data) bool) error {
 func (s *Store) MutateErr(fn func(d *Data) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := acquireStateLock(s.path + ".lock")
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err := s.reloadLocked(); err != nil {
+		return err
+	}
 	if err := fn(&s.data); err != nil {
 		return err
 	}
@@ -308,12 +448,64 @@ func (s *Store) MutateErr(fn func(d *Data) error) error {
 func (s *Store) Save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	release, err := acquireStateLock(s.path + ".lock")
+	if err != nil {
+		return err
+	}
+	defer release()
 	return s.writeLocked()
+}
+
+func (s *Store) reloadLocked() error {
+	fresh, err := OpenAt(s.path)
+	if err != nil {
+		return err
+	}
+	s.data = fresh.data
+	return nil
+}
+
+func acquireStateLock(path string) (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("create state lock directory: %w", err)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, _ = f.WriteString(strconv.Itoa(os.Getpid()))
+			_ = f.Sync()
+			return func() {
+				_ = f.Close()
+				_ = os.Remove(path)
+			}, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			return nil, fmt.Errorf("acquire state lock: %w", err)
+		}
+		if owner, readErr := os.ReadFile(path); readErr == nil {
+			if pid, parseErr := strconv.Atoi(string(owner)); parseErr == nil && pid > 0 && !lockOwnerAlive(pid) {
+				_ = os.Remove(path)
+				continue
+			}
+		}
+		if info, statErr := os.Stat(path); statErr == nil && time.Since(info.ModTime()) > time.Hour {
+			_ = os.Remove(path)
+			continue
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("acquire state lock: timed out waiting for %s", path)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 }
 
 func (s *Store) writeLocked() error {
 	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(s.data, "", "  ")
@@ -341,7 +533,56 @@ func (s *Store) writeLocked() error {
 		cleanup()
 		return err
 	}
+	if previous, err := os.ReadFile(s.path); err == nil {
+		if err := atomicBackup(s.path+".bak", previous); err != nil {
+			cleanup()
+			return fmt.Errorf("backup state: %w", err)
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		cleanup()
+		return fmt.Errorf("read previous state: %w", err)
+	}
 	if err := os.Rename(tmpName, s.path); err != nil {
+		cleanup()
+		return err
+	}
+	if err := os.Chmod(s.path, 0o600); err != nil {
+		return err
+	}
+	if err := syncDir(dir); err != nil {
+		return err
+	}
+	return nil
+}
+
+func atomicBackup(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "state-backup-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := func() { _ = os.Remove(tmpName) }
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
 		cleanup()
 		return err
 	}

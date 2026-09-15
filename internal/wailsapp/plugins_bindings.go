@@ -27,6 +27,20 @@ func (a *App) ListPlugins() []PluginInfo {
 	return out
 }
 
+// GetPlugin returns the fields used by plugin detail and configuration
+// views. Keeping these out of ListPlugins prevents one large manifest
+// from inflating every application refresh.
+func (a *App) GetPlugin(id string) (PluginInfo, error) {
+	if a.pmgr == nil {
+		return PluginInfo{}, errors.New("plugin manager not initialized")
+	}
+	l, ok := a.pmgr.Get(id)
+	if !ok {
+		return PluginInfo{}, fmt.Errorf("plugin %q not found", id)
+	}
+	return loadedToDetailInfo(l), nil
+}
+
 // PluginCall invokes an exported method on a plugin's module.exports.
 // Args are JSON-marshalled to any and passed through to the plugin.
 // The plugin must be enabled.
@@ -381,7 +395,6 @@ func loadedToInfo(l plugins.Loaded) PluginInfo {
 		out.Name = l.Manifest.Name
 		out.Version = l.Manifest.Version
 		out.Description = l.Manifest.Description
-		out.LongDescription = l.Manifest.LongDescription
 		out.Author = l.Manifest.Author
 		out.UI = PluginUIInfo{
 			Type:        l.Manifest.UI.Type,
@@ -398,9 +411,15 @@ func loadedToInfo(l plugins.Loaded) PluginInfo {
 		for _, ad := range l.Manifest.UI.Actions {
 			out.Actions = append(out.Actions, PluginActionDef{ID: ad.ID, Label: ad.Label, Confirm: ad.Confirm, Capability: ad.Capability})
 		}
-		if l.Manifest.ConfigSchema != nil {
-			out.ConfigSchema = l.Manifest.ConfigSchema
-		}
+	}
+	return out
+}
+
+func loadedToDetailInfo(l plugins.Loaded) PluginInfo {
+	out := loadedToInfo(l)
+	if l.Manifest != nil {
+		out.LongDescription = l.Manifest.LongDescription
+		out.ConfigSchema = l.Manifest.ConfigSchema
 	}
 	return out
 }

@@ -260,6 +260,9 @@ express it.
 
 dia's plugin system runs in two flavors:
 
+The trust boundaries, capability model, and reporting guidance are documented
+in [the plugin threat model](docs/PLUGIN_THREAT_MODEL.md).
+
 - **Embedded panels** (`ui.type` of `list|grid|table|kv|text|canvas`):
   the GUI loads a plugin's `index.js` in a [goja](https://github.com/dop251/goja)
   interpreter and auto-wraps a panel from the plugin's manifest. The
@@ -269,7 +272,12 @@ dia's plugin system runs in two flavors:
   plugin's `panel/` folder. The plugin author writes plain
   HTML/CSS/JS -- the host injects a `window.dia` proxy that
   dispatches to the host or to the plugin's goja runtime. No
-  framework required.
+  framework required. Each window advertises its own Wayland
+  app-id (`dia-plugin-<id>`), so compositor rules for the launcher
+  (`dia`) do not catch plugin windows. Set
+  `ui.window_mode` to `"floating"` (default `"tiling"`) to request
+  a floating window; on Hyprland dia enforces it via hyprctl, and
+  elsewhere it documents the rule to write.
 
 ### Plugin layout (embedded panels)
 
@@ -886,8 +894,7 @@ examples/              sample workspaces and plugins
 
 Out of scope: window positioning, sleep/resume, workspace
 templates marketplace, TUI mode, log rotation, JSON Schema
-validation, Homebrew/Scoop/apt distribution, partial
-workspace launch.
+validation, Homebrew/Scoop/apt distribution.
 
 ## Contributing
 
