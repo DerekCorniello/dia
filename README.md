@@ -12,6 +12,10 @@ snapshot -- just deterministic rebuilds from a config.
 dia is a desktop app first. The scriptable CLI is a convenience for
 automation, not a rival interface.
 
+## Demo
+
+<video src="examples/demo.mp4" controls width="100%"></video>
+
 ## Status
 
 v0.5.0 is released. This is the release that makes sessions real:
