@@ -173,7 +173,7 @@ func createProcessJob(pid uint32) (windows.Handle, error) {
 		_ = windows.CloseHandle(job)
 		return 0, err
 	}
-	defer windows.CloseHandle(process)
+	defer func() { _ = windows.CloseHandle(process) }()
 	if err := windows.AssignProcessToJobObject(job, process); err != nil {
 		_ = windows.CloseHandle(job)
 		return 0, err
