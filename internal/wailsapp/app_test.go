@@ -79,6 +79,7 @@ func TestWorkspaceEditorPreservesBrowserAndCommandFields(t *testing.T) {
 // Save -> GetWorkspaceEditor -> Save without dropping representable data.
 func TestEditorRoundTripAllTypes(t *testing.T) {
 	withTempXDG(t)
+	startDaemon(t, xdgStateDir(t))
 	a := New()
 	a.Startup(testCtx())
 	cases := []AppEditor{

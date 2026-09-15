@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"testing"
 	"time"
 
 	"github.com/DerekCorniello/dia/internal/platform"
@@ -148,16 +148,14 @@ func Ensure(opts EnsureOpts) (*Client, error) {
 
 	bin := opts.BinaryPath
 	if bin == "" {
+		// Checking the build mode also covers Windows .test.exe and
+		// renamed test binaries, which would recursively run the suite.
+		if testing.Testing() {
+			return nil, fmt.Errorf("%w: refusing to spawn a test binary", ErrNoDaemon)
+		}
 		exe, err := os.Executable()
 		if err != nil {
 			return nil, fmt.Errorf("find executable: %w", err)
-		}
-		// A Go test binary (`go test` appends `.test`) must never be
-		// relaunched with the daemon args: it would re-run the suite,
-		// recursively spawn itself, and fork-bomb the machine. Tests
-		// that need a daemon start one in-process instead.
-		if strings.HasSuffix(filepath.Base(exe), ".test") {
-			return nil, fmt.Errorf("%w: refusing to spawn a test binary", ErrNoDaemon)
 		}
 		bin = exe
 	}

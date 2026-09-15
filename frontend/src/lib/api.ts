@@ -49,14 +49,13 @@ import {
   GetCwd as _GetCwd,
   GetHomeDir as _GetHomeDir,
 } from '../../wailsjs/go/wailsapp/App';
+import * as bindings from '../../wailsjs/go/wailsapp/App';
 import { wailsapp } from '../../wailsjs/go/models';
 
-// Optional bindings are resolved lazily (not at module load) so unit
-// tests that mock the generated module keep working, and so the UI
-// degrades gracefully when bindings predate the backend method.
+// Resolve optional bindings at call time so partial test mocks work.
 async function optionalCall<T>(name: string, fallback: T): Promise<T> {
   try {
-    const mod = (await import('../../wailsjs/go/wailsapp/App')) as unknown as Record<
+    const mod = bindings as unknown as Record<
       string,
       (() => Promise<T>) | undefined
     >;

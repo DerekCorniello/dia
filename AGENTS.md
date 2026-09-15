@@ -45,9 +45,10 @@ Protocol files: `message.go` (verbs + request/response envelope),
 `client.go` (dial + Ensure), `server.go` (dispatch + handlers). Keep
 verbs stable; append, never rename. `daemon.Ensure` spawns the daemon
 by relaunching the current executable with `serve`. **Never let a test
-binary be spawned**: `Ensure` refuses executables named `*.test`
-because relaunching `go test` re-runs the suite and fork-bombs the
-machine. Tests must host an in-process `daemon.Server` on the state
+binary be spawned**: `Ensure` uses `testing.Testing()` to refuse
+self-spawning from any test build, including Windows `*.test.exe`
+and renamed binaries. Relaunching a test build re-runs the suite and
+fork-bombs the machine. Tests must host an in-process `daemon.Server` on the state
 dir socket (see `internal/cli/daemon_test.go` and
 `internal/wailsapp/app_test.go`) so client methods dial instead of
 spawn. The GUI refreshes from the daemon via its `workspace:state-changed`

@@ -1,12 +1,17 @@
 package plugins
 
 import (
+	"context"
+	"errors"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fileURL returns a hostless file:// URL for a local path. A Windows
@@ -166,11 +171,88 @@ func gitRepo(t *testing.T, manifest string) string {
 
 const gitManifest = `{"id":"from-git","name":"From Git","version":"0.1.0","ui":{"type":"list","title":"T"}}`
 
+func TestGitCloneSSHHelper(t *testing.T) {
+	ready := os.Getenv("DIA_TEST_GIT_SSH_READY")
+	if ready == "" {
+		return
+	}
+	if err := os.WriteFile(ready+".tmp", []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(ready+".tmp", ready); err != nil {
+		t.Fatal(err)
+	}
+	// Git's child keeps its inherited output pipes open after git is killed.
+	time.Sleep(5 * time.Second)
+}
+
+func TestGitCloneCancellationWithInheritedPipes(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready := filepath.Join(t.TempDir(), "ssh-ready")
+	t.Setenv("DIA_TEST_GIT_SSH_READY", ready)
+	t.Setenv("GIT_SSH_COMMAND", `"`+filepath.ToSlash(executable)+`" -test.run=^TestGitCloneSSHHelper$ --`)
+	t.Setenv("GIT_SSH_VARIANT", "ssh")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dst := filepath.Join(t.TempDir(), "clone")
+	result := make(chan error, 1)
+	go func() {
+		result <- gitCloneContext(ctx, "ssh://git@localhost/repo", "", dst)
+	}()
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if data, readErr := os.ReadFile(ready); readErr == nil {
+			pid, parseErr := strconv.Atoi(string(data))
+			if parseErr != nil {
+				t.Fatal(parseErr)
+			}
+			process, findErr := os.FindProcess(pid)
+			if findErr != nil {
+				t.Fatal(findErr)
+			}
+			t.Cleanup(func() { _ = process.Kill() })
+			break
+		}
+		select {
+		case err := <-result:
+			t.Fatalf("clone exited before SSH helper started: %v", err)
+		case <-timer.C:
+			t.Fatal("SSH helper did not start")
+		case <-ticker.C:
+		}
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled clone error = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceled git clone blocked on inherited output pipes")
+	}
+}
+
 func TestLocalDirFromFileURL(t *testing.T) {
 	dir := t.TempDir()
-	// EqualFold: URL parsing lowercases the drive letter on Windows.
-	if got, ok := localDirFromFileURL("file://" + filepath.ToSlash(dir)); !ok || !strings.EqualFold(got, dir) {
-		t.Errorf("local file URL: got %q, %v; want %q, true", got, ok, dir)
+	for _, raw := range []string{fileURL(dir), "file://" + filepath.ToSlash(dir)} {
+		if got, ok := localDirFromFileURL(raw); !ok || got != dir {
+			t.Errorf("local file URL %q: got %q, %v; want %q, true", raw, got, ok, dir)
+		}
+	}
+	if runtime.GOOS == "windows" {
+		remote := "file://" + strings.Replace(filepath.ToSlash(dir), ":", "", 1)
+		if got, ok := localDirFromFileURL(remote); ok {
+			t.Errorf("single-letter remote host %q unexpectedly resolved to %q", remote, got)
+		}
 	}
 	for _, bad := range []string{
 		"https://github.com/o/r",

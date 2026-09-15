@@ -17,6 +17,9 @@ import (
 // against an unreachable host hangs the CLI indefinitely.
 const cloneTimeout = 2 * time.Minute
 
+// Git helpers can retain output pipes after git exits or is killed.
+const cloneWaitDelay = time.Second
+
 // provenanceFile records where a plugin was installed from, written
 // inside the installed plugin dir. Keeping it with the plugin rather
 // than in the state store means it is removed with the plugin and
@@ -127,26 +130,22 @@ func (s InstallSource) materialize() (dir string, cleanup func(), err error) {
 // a git library dependency for one shallow clone, and it means the
 // user's existing credential helpers and SSH config just work.
 func gitClone(url, ref, dst string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), cloneTimeout)
+	defer cancel()
+	return gitCloneContext(ctx, url, ref, dst)
+}
+
+func gitCloneContext(ctx context.Context, url, ref, dst string) error {
 	if _, err := exec.LookPath("git"); err != nil {
 		return errors.New("git is required to install a plugin from a URL, but it was not found on PATH")
 	}
-	// A hostless file:// URL that resolves to a local directory is
-	// cloned as a plain path. The file:// transport spawns upload-pack
-	// negotiation even for repositories already on disk, which is a
-	// known intermittent hang on Windows; a plain path uses git's
-	// direct filesystem copy instead. Ref selection still works.
+	localSource := strings.HasPrefix(url, "file://")
+	// Plain local paths use git's filesystem copy without upload-pack.
 	if dir, ok := localDirFromFileURL(url); ok {
 		url = dir
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), cloneTimeout)
-	defer cancel()
-
 	args := []string{"clone"}
-	// Shallow clone only for remotes. --depth makes git negotiate a
-	// pack over the upload-pack protocol, which adds nothing for a
-	// file:// source already on disk and is a known intermittent hang
-	// on Windows; a local clone via the filesystem is what we want.
-	if !strings.HasPrefix(url, "file://") {
+	if !localSource {
 		args = append(args, "--depth", "1")
 	}
 	if ref != "" {
@@ -156,12 +155,13 @@ func gitClone(url, ref, dst string) error {
 	args = append(args, "--", url, dst)
 
 	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.WaitDelay = cloneWaitDelay
 	// Fail fast instead of blocking on a credential prompt the CLI
 	// cannot answer.
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {
-		return fmt.Errorf("git clone %s timed out after %s", url, cloneTimeout)
+		return fmt.Errorf("git clone %s: %w", url, ctx.Err())
 	}
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
@@ -189,10 +189,9 @@ func localDirFromFileURL(raw string) (string, bool) {
 	if runtime.GOOS == "windows" {
 		// file://C:/... parses the drive letter as the URL host,
 		// so reattach it before treating anything as remote. A
-		// single-character host is never real here, and the Stat
-		// below rejects anything bogus.
-		if h := u.Hostname(); len(h) == 1 && u.Port() == "" && strings.HasPrefix(u.Path, "/") {
-			p = h + ":" + u.Path
+		// colon distinguishes a drive from a single-letter hostname.
+		if len(host) == 2 && host[1] == ':' && strings.HasPrefix(u.Path, "/") {
+			p = host + u.Path
 			host = ""
 		}
 		if len(p) >= 3 && p[0] == '/' && p[2] == ':' {

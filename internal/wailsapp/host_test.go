@@ -23,6 +23,7 @@ func newTestHost(t *testing.T) *wailsHost {
 
 func TestWailsHost_ListWorkspaces(t *testing.T) {
 	h := newTestHost(t)
+	startDaemon(t, h.app.StateDir())
 	if _, err := h.app.NewWorkspace("alpha", ""); err != nil {
 		t.Fatalf("NewWorkspace: %v", err)
 	}

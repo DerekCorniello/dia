@@ -23,6 +23,7 @@ func marshalSize(t *testing.T, v any) int {
 
 func TestListPayloadBudget(t *testing.T) {
 	withTempXDG(t)
+	startDaemon(t, xdgStateDir(t))
 	a := New()
 	a.Startup(testCtx())
 
@@ -58,6 +59,7 @@ func TestListPluginsOmitsHeavyFields(t *testing.T) {
 
 func TestPaginatedLists(t *testing.T) {
 	withTempXDG(t)
+	startDaemon(t, xdgStateDir(t))
 	a := New()
 	a.Startup(testCtx())
 	if _, err := a.NewWorkspace("alpha", ""); err != nil {

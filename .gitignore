@@ -41,3 +41,6 @@ completions/
 # Compiled binaries (build artifacts, not source)
 /dia
 /gen-completions
+
+# ignore python testing artifacts
+tools/ci/__pycache__/*
